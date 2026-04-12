@@ -5,6 +5,7 @@ import { AuthPages } from './pages/AuthPages';
 import { ChatInterface } from './components/Chat/ChatInterface';
 import { MainLayout } from './components/Layout/MainLayout';
 import { ProfilePage } from './pages/ProfilePage';
+import { PolicyPage } from './pages/PolicyPages';
 
 const AppRoutes = () => {
 
@@ -14,6 +15,9 @@ const AppRoutes = () => {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<AuthPages mode="login" />} />
       <Route path="/signup" element={<AuthPages mode="signup" />} />
+      <Route path="/T&C" element={<PolicyPage type="terms" />} />
+      <Route path="/refund_policy" element={<PolicyPage type="refund" />} />
+      <Route path="/privacy_policy" element={<PolicyPage type="privacy" />} />
 
       {/* Private Chat Routes */}
       <Route 

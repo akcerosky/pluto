@@ -289,6 +289,11 @@ export const LandingPage = () => {
         <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
           © 2026 AKCERO PRIVATE LIMITED. All rights reserved.
         </div>
+        <div style={{ marginTop: '18px', display: 'flex', gap: '18px', justifyContent: 'center', flexWrap: 'wrap', fontSize: '0.84rem' }}>
+          <Link to="/T&C" style={footerLinkStyle}>Terms & Conditions</Link>
+          <Link to="/privacy_policy" style={footerLinkStyle}>Privacy Policy</Link>
+          <Link to="/refund_policy" style={footerLinkStyle}>Refund and Cancellation Policy</Link>
+        </div>
         <div style={{ color: 'var(--text-secondary)', opacity: 0.8, fontSize: '0.82rem', marginTop: '8px' }}>
           Registered Business Name: AKCERO PRIVATE LIMITED
         </div>
@@ -337,3 +342,9 @@ const PricingRow = ({ label, free, plus, pro }: { label: string; free: string; p
     <span>{pro}</span>
   </div>
 );
+
+const footerLinkStyle: React.CSSProperties = {
+  color: 'var(--text-secondary)',
+  textDecoration: 'none',
+  fontWeight: 600,
+};
