@@ -23,6 +23,7 @@ interface AppContextType {
   threads: Thread[];
   activeThreadId: string | null;
   setActiveThreadId: (id: string | null) => void;
+  startNewChat: () => void;
   createThread: (mode: ChatMode, projectId?: string) => string;
   assignThreadToProject: (threadId: string, projectId: string | null) => void;
   updateThread: (id: string, data: Partial<Thread>) => void;
@@ -53,6 +54,7 @@ interface AppContextType {
 
 const STORAGE_KEY = 'pluto_v2';
 const CLOUD_STATE_DOC = 'main';
+const START_NEW_CHAT_KEY = `${STORAGE_KEY}_start_new_chat`;
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
@@ -90,6 +92,15 @@ const getLocalStateUpdatedAt = (threads: Thread[], projects: Project[]) => {
   );
 };
 
+const removeEmptyThreads = (threads: Thread[]) => {
+  return threads.filter((thread) => Array.isArray(thread.messages) && thread.messages.length > 0);
+};
+
+const getSafeActiveThreadId = (activeThreadId: string | null | undefined, threads: Thread[]) => {
+  if (!activeThreadId) return null;
+  return threads.some((thread) => thread.id === activeThreadId) ? activeThreadId : null;
+};
+
 const userFromFirebase = (firebaseUser: FirebaseUser): UserSession => ({
   id: firebaseUser.uid,
   name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
@@ -99,6 +110,18 @@ const userFromFirebase = (firebaseUser: FirebaseUser): UserSession => ({
   objective: 'General Learning',
   plan: DEFAULT_PLAN,
 });
+
+const requestFreshChatView = () => {
+  sessionStorage.setItem(START_NEW_CHAT_KEY, '1');
+};
+
+const consumeFreshChatViewRequest = () => {
+  const shouldStartNew = sessionStorage.getItem(START_NEW_CHAT_KEY) === '1';
+  if (shouldStartNew) {
+    sessionStorage.removeItem(START_NEW_CHAT_KEY);
+  }
+  return shouldStartNew;
+};
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   // --- Auth State ---
@@ -110,10 +133,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // --- Thread State ---
   const [threads, setThreads] = useState<Thread[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_threads`);
-    return saved ? JSON.parse(saved) : [];
+    return saved ? removeEmptyThreads(JSON.parse(saved)) : [];
   });
   const [activeThreadId, setActiveThreadId] = useState<string | null>(() => {
-    return localStorage.getItem(`${STORAGE_KEY}_active_thread_id`);
+    const savedThreads = localStorage.getItem(`${STORAGE_KEY}_threads`);
+    const activeThreadId = localStorage.getItem(`${STORAGE_KEY}_active_thread_id`);
+    const cleanedThreads = savedThreads ? removeEmptyThreads(JSON.parse(savedThreads)) : [];
+    return getSafeActiveThreadId(activeThreadId, cleanedThreads);
   });
 
   // --- Projects State ---
@@ -146,6 +172,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const setUser = useCallback((nextUser: UserSession | null) => {
     setUserState(normalizeUser(nextUser));
+  }, []);
+
+  const startNewChat = useCallback(() => {
+    requestFreshChatView();
+    setActiveThreadId(null);
+    setActiveProjectId(null);
   }, []);
 
   useEffect(() => {
@@ -196,16 +228,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [user]);
 
   useEffect(() => {
-    localStorage.setItem(`${STORAGE_KEY}_threads`, JSON.stringify(threads));
+    const cleanedThreads = removeEmptyThreads(threads);
+    localStorage.setItem(`${STORAGE_KEY}_threads`, JSON.stringify(cleanedThreads));
   }, [threads]);
 
   useEffect(() => {
-    if (activeThreadId) {
-      localStorage.setItem(`${STORAGE_KEY}_active_thread_id`, activeThreadId);
+    const safeActiveThreadId = getSafeActiveThreadId(activeThreadId, removeEmptyThreads(threads));
+    if (safeActiveThreadId) {
+      localStorage.setItem(`${STORAGE_KEY}_active_thread_id`, safeActiveThreadId);
     } else {
       localStorage.removeItem(`${STORAGE_KEY}_active_thread_id`);
     }
-  }, [activeThreadId]);
+  }, [activeThreadId, threads]);
 
   useEffect(() => {
     localStorage.setItem(`${STORAGE_KEY}_projects`, JSON.stringify(projects));
@@ -227,8 +261,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const firebaseUid = auth?.currentUser?.uid ?? user.id;
         const stateRef = doc(firestore, 'users', firebaseUid, 'appState', CLOUD_STATE_DOC);
         const snapshot = await getDoc(stateRef);
+        const shouldStartNewChat = consumeFreshChatViewRequest();
 
         if (!snapshot.exists() || isCancelled) {
+          if (shouldStartNewChat) {
+            setActiveThreadId(null);
+          }
           setIsCloudHydrated(true);
           return;
         }
@@ -254,14 +292,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
 
-        if (Array.isArray(data.threads)) {
-          setThreads(data.threads);
+        const cleanedCloudThreads = Array.isArray(data.threads) ? removeEmptyThreads(data.threads) : null;
+        if (cleanedCloudThreads) {
+          setThreads(cleanedCloudThreads);
         }
         if (Array.isArray(data.projects)) {
           setProjects(data.projects);
         }
-        if (typeof data.activeThreadId === 'string' || data.activeThreadId === null) {
-          setActiveThreadId(data.activeThreadId);
+        if (shouldStartNewChat) {
+          setActiveThreadId(null);
+        } else if (typeof data.activeThreadId === 'string' || data.activeThreadId === null) {
+          setActiveThreadId(getSafeActiveThreadId(data.activeThreadId, cleanedCloudThreads ?? threadsRef.current));
         }
       } catch (error) {
         console.warn('Cloud sync load failed. Falling back to local state.', error);
@@ -285,14 +326,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (!user || !firestore || !hasFirebaseConfig || !isCloudHydrated) return;
 
     const timeoutId = setTimeout(() => {
+      const cleanedThreads = removeEmptyThreads(threads);
+      const safeActiveThreadId = getSafeActiveThreadId(activeThreadId, cleanedThreads);
       const firebaseUid = auth?.currentUser?.uid ?? user.id;
       const stateRef = doc(firestore, 'users', firebaseUid, 'appState', CLOUD_STATE_DOC);
       void setDoc(
         stateRef,
         stripUndefined({
-          threads,
+          threads: cleanedThreads,
           projects,
-          activeThreadId,
+          activeThreadId: safeActiveThreadId,
           updatedAt: Date.now(),
         }),
         { merge: true }
@@ -449,6 +492,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         threads,
         activeThreadId,
         setActiveThreadId,
+        startNewChat,
         createThread,
         assignThreadToProject,
         updateThread,

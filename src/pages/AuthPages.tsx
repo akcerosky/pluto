@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useApp } from '../context/AppContext';
 import { useNavigate, Link } from 'react-router-dom';
@@ -61,7 +61,7 @@ const getAuthErrorMessage = (error: unknown) => {
 };
 
 export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
-  const { setUser } = useApp();
+  const { user, setUser, startNewChat } = useApp();
   const navigate = useNavigate();
   
   const [email, setEmail] = useState('');
@@ -71,9 +71,20 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const openFreshChat = useCallback(() => {
+    startNewChat();
+    navigate('/chat', { replace: true });
+  }, [navigate, startNewChat]);
+
   useEffect(() => {
     setError(null);
   }, [mode]);
+
+  useEffect(() => {
+    if (user) {
+      openFreshChat();
+    }
+  }, [user, openFreshChat]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,7 +124,7 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
       }
 
       setUser(toUserSession(firebaseUser));
-      navigate('/chat');
+      openFreshChat();
     } catch (err) {
       console.error(err);
       setError(getAuthErrorMessage(err));
@@ -135,7 +146,7 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
     try {
       const credential = await signInWithPopup(auth, new GoogleAuthProvider());
       setUser(toUserSession(credential.user));
-      navigate('/chat');
+      openFreshChat();
     } catch (err) {
       console.error(err);
       setError(getAuthErrorMessage(err));
