@@ -14,6 +14,7 @@ dist-ssr
 .env
 .npm-cache
 .dist
+.codex/environments/
 
 # Editor directories and files
 .vscode/*
