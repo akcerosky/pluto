@@ -123,15 +123,15 @@ export const ProfilePage = () => {
   };
 
   return (
-    <div style={{ flex: 1, padding: '60px 40px', overflowY: 'auto' }}>
-      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
+    <div className="profile-page" style={{ flex: 1, padding: '60px 40px', overflowY: 'auto' }}>
+      <div className="profile-inner" style={{ maxWidth: '1000px', margin: '0 auto' }}>
         <header style={{ marginBottom: '40px' }}>
           <h1 style={{ fontSize: '2.5rem', fontWeight: '800', marginBottom: '8px' }}>Profile Settings</h1>
           <p style={{ color: 'var(--text-secondary)' }}>Manage your astronaut profile, learning preferences, and plan.</p>
         </header>
 
         <div style={{ display: 'grid', gap: '32px' }}>
-          <section style={sectionStyle}>
+          <section className="profile-section" style={sectionStyle}>
             <h3 style={sectionTitleStyle}>Subscription</h3>
             <div style={{ marginBottom: '18px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
               <strong style={{ color: 'white' }}>{currentPlan}</strong> plan active
@@ -208,9 +208,9 @@ export const ProfilePage = () => {
             </div>
           </section>
 
-          <section style={sectionStyle}>
+          <section className="profile-section" style={sectionStyle}>
             <h3 style={sectionTitleStyle}>Basic Information</h3>
-            <div style={gridStyle}>
+            <div className="profile-grid" style={gridStyle}>
               <div style={inputGroupStyle}>
                 <label style={labelStyle}>DISPLAY NAME</label>
                 <div style={inputContainerStyle}>
@@ -228,9 +228,9 @@ export const ProfilePage = () => {
             </div>
           </section>
 
-          <section style={sectionStyle}>
+          <section className="profile-section" style={sectionStyle}>
             <h3 style={sectionTitleStyle}>Learning Profile</h3>
-            <div style={gridStyle}>
+            <div className="profile-grid" style={gridStyle}>
               <div style={inputGroupStyle}>
                 <label style={labelStyle}>EDUCATION LEVEL</label>
                 <div style={inputContainerStyle}>
@@ -254,7 +254,7 @@ export const ProfilePage = () => {
             </div>
           </section>
 
-          <div style={{ display: 'flex', gap: '16px', marginTop: '20px' }}>
+          <div className="profile-actions" style={{ display: 'flex', gap: '16px', marginTop: '20px' }}>
             <button
               onClick={handleSave}
               style={{

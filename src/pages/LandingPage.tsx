@@ -1,11 +1,16 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Rocket, Sparkles, BookOpen, Brain, Globe, Shield, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Rocket, Sparkles, BookOpen, Brain, Globe, Shield, ArrowRight, CheckCircle2, Menu, X } from 'lucide-react';
 import { PLAN_CONFIGS } from '../config/subscription';
 import { Link } from 'react-router-dom';
 
 export const LandingPage = () => {
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const closeMobileMenu = () => setIsMobileMenuOpen(false);
+
   return (
-    <div style={{ 
+    <div className="landing-page" style={{ 
       minHeight: '100vh', 
       background: 'var(--background)', 
       color: 'var(--foreground)',
@@ -17,7 +22,7 @@ export const LandingPage = () => {
       </div>
 
       {/* Navigation */}
-      <nav style={{ 
+      <nav className="landing-nav" style={{ 
         padding: '20px 60px', 
         display: 'flex', 
         justifyContent: 'space-between', 
@@ -31,8 +36,8 @@ export const LandingPage = () => {
         backdropFilter: 'blur(30px)',
         borderBottom: '1px solid rgba(255,255,255,0.08)'
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1.6rem', fontWeight: '900', letterSpacing: '-0.04em' }}>
-          <div style={{ 
+        <div className="landing-brand" style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1.6rem', fontWeight: '900', letterSpacing: '-0.04em' }}>
+          <div className="landing-logo" style={{ 
             width: '36px', 
             height: '36px', 
             background: 'linear-gradient(45deg, var(--primary), var(--secondary))', 
@@ -51,13 +56,21 @@ export const LandingPage = () => {
             fontWeight: '900'
           }}>PLUTO</span>
         </div>
-        <div style={{ display: 'flex', gap: '40px', alignItems: 'center' }}>
-          <a href="#features" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.95rem', fontWeight: '500', transition: 'color 0.3s' }} onMouseOver={(e) => e.currentTarget.style.color = 'white'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}>Features</a>
-          <a href="#pricing" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.95rem', fontWeight: '500', transition: 'color 0.3s' }} onMouseOver={(e) => e.currentTarget.style.color = 'white'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}>Pricing</a>
-          <a href="#about" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.95rem', fontWeight: '500', transition: 'color 0.3s' }} onMouseOver={(e) => e.currentTarget.style.color = 'white'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}>Adaptive Engine</a>
-          <div style={{ height: '24px', width: '1px', background: 'rgba(255,255,255,0.1)' }} />
-          <Link to="/login" style={{ color: 'white', textDecoration: 'none', fontSize: '0.95rem', fontWeight: '600' }}>Login</Link>
-          <Link to="/signup" className="hover-glow" style={{ 
+        <button
+          className="landing-menu-toggle mobile-only"
+          type="button"
+          aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+          onClick={() => setIsMobileMenuOpen((value) => !value)}
+        >
+          {isMobileMenuOpen ? <X size={20} /> : <Menu size={20} />}
+        </button>
+        <div className={`landing-nav-links ${isMobileMenuOpen ? 'mobile-open' : ''}`} style={{ display: 'flex', gap: '40px', alignItems: 'center' }}>
+          <a href="#features" onClick={closeMobileMenu} style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.95rem', fontWeight: '500', transition: 'color 0.3s' }} onMouseOver={(e) => e.currentTarget.style.color = 'white'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}>Features</a>
+          <a href="#pricing" onClick={closeMobileMenu} style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.95rem', fontWeight: '500', transition: 'color 0.3s' }} onMouseOver={(e) => e.currentTarget.style.color = 'white'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}>Pricing</a>
+          <a href="#about" onClick={closeMobileMenu} style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.95rem', fontWeight: '500', transition: 'color 0.3s' }} onMouseOver={(e) => e.currentTarget.style.color = 'white'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}>Adaptive Engine</a>
+          <div className="landing-nav-separator" style={{ height: '24px', width: '1px', background: 'rgba(255,255,255,0.1)' }} />
+          <Link to="/login" className="landing-login-link" onClick={closeMobileMenu} style={{ color: 'white', textDecoration: 'none', fontSize: '0.95rem', fontWeight: '600' }}>Login</Link>
+          <Link to="/signup" className="hover-glow landing-signup-link" style={{ 
             color: 'white', 
             textDecoration: 'none', 
             fontSize: '0.95rem', 
@@ -67,12 +80,12 @@ export const LandingPage = () => {
             background: 'linear-gradient(45deg, var(--primary), #6a1b9a)',
             boxShadow: '0 10px 30px var(--primary-glow)',
             transition: 'all 0.3s ease'
-          }}>Sign Up</Link>
+          }} onClick={closeMobileMenu}>Sign Up</Link>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section style={{ 
+      <section className="landing-hero" style={{ 
         padding: '220px 40px 140px', 
         display: 'flex', 
         flexDirection: 'column', 
@@ -81,9 +94,10 @@ export const LandingPage = () => {
         position: 'relative'
       }}>
         {/* Glow Effects */}
-        <div style={{ position: 'absolute', top: '10%', left: '50%', transform: 'translateX(-50%)', width: '800px', height: '800px', background: 'radial-gradient(circle, rgba(138, 43, 226, 0.2) 0%, transparent 60%)', opacity: 0.4, zIndex: -1 }} />
+        <div className="landing-hero-glow" style={{ position: 'absolute', top: '10%', left: '50%', transform: 'translateX(-50%)', width: '800px', height: '800px', background: 'radial-gradient(circle, rgba(138, 43, 226, 0.2) 0%, transparent 60%)', opacity: 0.4, zIndex: -1 }} />
         
         <motion.div
+          className="landing-hero-copy"
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, ease: "easeOut" }}
@@ -127,12 +141,13 @@ export const LandingPage = () => {
             color: 'var(--text-secondary)', 
             maxWidth: '750px', 
             lineHeight: 1.6,
-            marginBottom: '56px',
+            margin: '0 auto 56px',
+            textAlign: 'center',
             fontWeight: '400'
           }}>
             Pluto is your intelligent astronaut companion. Adapting its synthesis and persona in real-time to match your unique education level—from Elementary wonder to Professional mastery.
           </p>
-          <div style={{ display: 'flex', gap: '24px', justifyContent: 'center' }}>
+          <div className="landing-hero-actions" style={{ display: 'flex', gap: '24px', justifyContent: 'center' }}>
             <Link to="/signup" className="hover-glow" style={{ 
               padding: '18px 48px', 
               borderRadius: '16px', 
@@ -165,8 +180,8 @@ export const LandingPage = () => {
         </motion.div>
       </section>
 
-      <section id="features" style={{ padding: '100px 40px' }}>
-        <div style={{ 
+      <section id="features" className="landing-section" style={{ padding: '100px 40px' }}>
+        <div className="landing-feature-list" style={{ 
           maxWidth: '1200px', 
           margin: '0 auto', 
           display: 'flex', 
@@ -197,8 +212,8 @@ export const LandingPage = () => {
         </div>
       </section>
 
-      <section id="pricing" style={{ padding: '40px 40px 120px' }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+      <section id="pricing" className="landing-section landing-pricing" style={{ padding: '40px 40px 120px' }}>
+        <div className="landing-section-inner" style={{ maxWidth: '1200px', margin: '0 auto' }}>
           <h2 style={{ fontSize: '2.2rem', fontWeight: 900, marginBottom: '14px', textAlign: 'center' }}>Plans For Every Learner</h2>
           <p style={{ color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '28px' }}>
             Start free each day, then upgrade to Plus or Pro for more usage and advanced learning modes.
@@ -218,9 +233,9 @@ export const LandingPage = () => {
           >
             Freemium rule: Free includes daily usage. Once your daily limit is reached, upgrade to Plus or Pro to keep learning the same day.
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
+          <div className="landing-pricing-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
             {Object.values(PLAN_CONFIGS).map((plan) => (
-              <div key={plan.id} className="glass-card" style={{ padding: '24px', border: plan.id === 'Plus' ? '1px solid rgba(138, 43, 226, 0.55)' : '1px solid var(--glass-border)' }}>
+              <div key={plan.id} className="glass-card pricing-card" style={{ padding: '24px', border: plan.id === 'Plus' ? '1px solid rgba(138, 43, 226, 0.55)' : '1px solid var(--glass-border)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                   <h3 style={{ fontSize: '1.3rem', fontWeight: 800 }}>{plan.id}</h3>
                   <div style={{ color: '#f59e0b', fontWeight: 700 }}>{plan.price}</div>
@@ -259,15 +274,15 @@ export const LandingPage = () => {
             ))}
           </div>
           <div
-            className="glass-card"
+            className="glass-card pricing-table-card"
             style={{
               marginTop: '18px',
               padding: '20px',
               overflowX: 'auto',
             }}
           >
-            <div style={{ minWidth: '760px' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '10px 0', borderBottom: '1px solid var(--glass-border)', fontWeight: 700 }}>
+            <div className="pricing-table" style={{ minWidth: '760px' }}>
+              <div className="pricing-row pricing-row-heading" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '10px 0', borderBottom: '1px solid var(--glass-border)', fontWeight: 700 }}>
                 <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>FEATURES</span>
                 <span>Free</span>
                 <span>Plus</span>
@@ -285,14 +300,14 @@ export const LandingPage = () => {
       </section>
 
       {/* Footer */}
-      <footer style={{ padding: '80px 40px', borderTop: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
+      <footer className="landing-footer" style={{ padding: '46px 40px', borderTop: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
         <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
           © 2026 AKCERO PRIVATE LIMITED. All rights reserved.
         </div>
-        <div style={{ marginTop: '18px', display: 'flex', gap: '18px', justifyContent: 'center', flexWrap: 'wrap', fontSize: '0.84rem' }}>
-          <Link to="/T&C" style={footerLinkStyle}>Terms & Conditions</Link>
-          <Link to="/privacy_policy" style={footerLinkStyle}>Privacy Policy</Link>
-          <Link to="/refund_policy" style={footerLinkStyle}>Refund and Cancellation Policy</Link>
+        <div className="landing-footer-links" style={{ marginTop: '18px', display: 'flex', gap: '18px', justifyContent: 'center', flexWrap: 'wrap', fontSize: '0.84rem' }}>
+          <Link to="/terms" style={footerLinkStyle}>Terms & Conditions</Link>
+          <Link to="/privacy" style={footerLinkStyle}>Privacy Policy</Link>
+          <Link to="/refund" style={footerLinkStyle}>Refund and Cancellation Policy</Link>
         </div>
         <div style={{ color: 'var(--text-secondary)', opacity: 0.8, fontSize: '0.82rem', marginTop: '8px' }}>
           Registered Business Name: AKCERO PRIVATE LIMITED
@@ -305,7 +320,7 @@ export const LandingPage = () => {
 const FeatureCard = ({ icon, title, description }: { icon: any, title: string, description: string }) => (
   <motion.div 
     whileHover={{ y: -10, boxShadow: '0 20px 40px rgba(0,0,0,0.6)' }}
-    className="glass-card"
+    className="glass-card feature-card"
     style={{ 
       padding: '48px 40px', 
       display: 'flex',
@@ -335,11 +350,11 @@ const FeatureCard = ({ icon, title, description }: { icon: any, title: string, d
 );
 
 const PricingRow = ({ label, free, plus, pro }: { label: string; free: string; plus: string; pro: string }) => (
-  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '11px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', fontSize: '0.86rem' }}>
-    <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
-    <span>{free}</span>
-    <span>{plus}</span>
-    <span>{pro}</span>
+  <div className="pricing-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '11px 0', borderBottom: '1px solid rgba(255,255,255,0.06)', fontSize: '0.86rem' }}>
+    <span className="pricing-feature-label" style={{ color: 'var(--text-secondary)' }}>{label}</span>
+    <span data-plan="Free">{free}</span>
+    <span data-plan="Plus">{plus}</span>
+    <span data-plan="Pro">{pro}</span>
   </div>
 );
 

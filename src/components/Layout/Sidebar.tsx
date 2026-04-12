@@ -7,14 +7,21 @@ import {
   LayoutGrid, 
   Search,
   ChevronLeft,
-  Trash2
+  Trash2,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ProjectsModal } from '../Modals/ProjectsModal';
 
-export const Sidebar = () => {
+interface SidebarProps {
+  isMobile?: boolean;
+  isMobileOpen?: boolean;
+  onCloseMobile?: () => void;
+}
+
+export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile }: SidebarProps) => {
   const { 
     threads,
     activeThreadId, 
@@ -32,10 +39,15 @@ export const Sidebar = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isProjectsOpen, setIsProjectsOpen] = useState(false);
   const navigate = useNavigate();
+  const effectiveCollapsed = isMobile ? false : isCollapsed;
+  const closeMobile = () => {
+    if (isMobile) onCloseMobile?.();
+  };
 
   const handleNewChat = () => {
     setActiveThreadId(null);
     navigate('/chat');
+    closeMobile();
   };
   
   const filteredThreads = activeProjectId 
@@ -50,8 +62,9 @@ export const Sidebar = () => {
 
   return (
     <motion.aside
+      className={`app-sidebar ${isMobileOpen ? 'mobile-open' : ''}`}
       initial={false}
-      animate={{ width: isCollapsed ? 80 : 280 }}
+      animate={{ width: effectiveCollapsed ? 80 : 280 }}
       style={{
         height: '100%',
         background: 'rgba(5, 5, 20, 0.4)',
@@ -64,7 +77,17 @@ export const Sidebar = () => {
       }}
     >
       {/* Header / New Chat */}
-      <div style={{ padding: '24px 20px', borderBottom: '1px solid var(--card-border)' }}>
+      <div style={{ padding: '24px 20px', borderBottom: '1px solid var(--card-border)', position: 'relative' }}>
+        {isMobile && (
+          <button
+            className="app-sidebar-mobile-close"
+            type="button"
+            onClick={closeMobile}
+            aria-label="Close navigation"
+          >
+            <X size={18} />
+          </button>
+        )}
         <motion.button
           whileHover={{ scale: 1.02, boxShadow: '0 0 20px var(--primary-glow)' }}
           whileTap={{ scale: 0.98 }}
@@ -78,7 +101,7 @@ export const Sidebar = () => {
             border: 'none',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: isCollapsed ? 'center' : 'flex-start',
+            justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
             gap: '12px',
             cursor: 'pointer',
             fontWeight: '600',
@@ -86,7 +109,7 @@ export const Sidebar = () => {
           }}
         >
           <Plus size={20} />
-          {!isCollapsed && <span>New Chat</span>}
+          {!effectiveCollapsed && <span>New Chat</span>}
         </motion.button>
       </div>
 
@@ -95,18 +118,21 @@ export const Sidebar = () => {
          <SidebarLink 
           icon={<LayoutGrid size={20} />} 
           label="Projects" 
-          isCollapsed={isCollapsed} 
+          isCollapsed={effectiveCollapsed} 
           onClick={() => setIsProjectsOpen(true)}
         />
          <SidebarLink 
           icon={<Search size={20} />} 
           label="Discover" 
-          isCollapsed={isCollapsed} 
-          onClick={() => handleComingSoon('Discover')}
+          isCollapsed={effectiveCollapsed} 
+          onClick={() => {
+            handleComingSoon('Discover');
+            closeMobile();
+          }}
         />
       </div>
 
-      {!isCollapsed && projects.length > 0 && (
+      {!effectiveCollapsed && projects.length > 0 && (
         <div style={{ padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
           {projects.map(p => (
             <motion.button 
@@ -116,6 +142,7 @@ export const Sidebar = () => {
                 setActiveProjectId(p.id);
                 setActiveThreadId(null);
                 navigate('/chat');
+                closeMobile();
               }}
               style={{ 
                 display: 'flex', 
@@ -149,7 +176,7 @@ export const Sidebar = () => {
         flexDirection: 'column',
         gap: '6px'
       }}>
-        {!isCollapsed && (
+        {!effectiveCollapsed && (
           <div style={{ 
             fontSize: '0.65rem', 
             color: 'var(--text-secondary)', 
@@ -168,7 +195,10 @@ export const Sidebar = () => {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
               whileHover={{ background: 'var(--surface-2)' }}
-              onClick={() => setActiveThreadId(thread.id)}
+              onClick={() => {
+                setActiveThreadId(thread.id);
+                closeMobile();
+              }}
               style={{
                 position: 'relative',
                 padding: '12px 12px',
@@ -198,7 +228,7 @@ export const Sidebar = () => {
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px', overflow: 'hidden', marginLeft: activeThreadId === thread.id ? '6px' : '0' }}>
                 <MessageSquare size={16} color={activeThreadId === thread.id ? 'var(--primary)' : 'currentColor'} />
-                {!isCollapsed && <span style={{ 
+                {!effectiveCollapsed && <span style={{ 
                   fontSize: '0.85rem', 
                   whiteSpace: 'nowrap', 
                   overflow: 'hidden', 
@@ -208,7 +238,7 @@ export const Sidebar = () => {
                   {thread.title}
                 </span>}
               </div>
-              {!isCollapsed && activeThreadId === thread.id && (
+              {!effectiveCollapsed && activeThreadId === thread.id && (
                 <button 
                   onClick={(e) => { e.stopPropagation(); deleteThread(thread.id); }}
                   style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
@@ -235,7 +265,7 @@ export const Sidebar = () => {
           display: 'flex', 
           alignItems: 'center', 
           gap: '12px',
-          justifyContent: isCollapsed ? 'center' : 'flex-start'
+          justifyContent: effectiveCollapsed ? 'center' : 'flex-start'
         }}>
           <div style={{ 
             width: '36px', 
@@ -252,7 +282,7 @@ export const Sidebar = () => {
           }}>
             {user?.name?.[0] || 'U'}
           </div>
-          {!isCollapsed && (
+          {!effectiveCollapsed && (
             <div style={{ overflow: 'hidden', flex: 1 }}>
               <div style={{ fontSize: '0.85rem', fontWeight: '600' }}>{user?.name}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -266,15 +296,21 @@ export const Sidebar = () => {
           )}
         </div>
         
-        {!isCollapsed && (
+        {!effectiveCollapsed && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <SidebarLink 
               icon={<Settings size={18} />} 
               label="Settings" 
-              onClick={() => navigate('/profile')}
+              onClick={() => {
+                navigate('/profile');
+                closeMobile();
+              }}
             />
             <button 
-              onClick={logout}
+              onClick={() => {
+                logout();
+                closeMobile();
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -302,6 +338,7 @@ export const Sidebar = () => {
 
       {/* Collapse Toggle */}
       <button
+        className="app-sidebar-collapse"
         onClick={() => setIsCollapsed(!isCollapsed)}
         style={{
           position: 'absolute',
@@ -320,7 +357,7 @@ export const Sidebar = () => {
           boxShadow: '0 4px 10px rgba(0,0,0,0.3)'
         }}
       >
-        <ChevronLeft size={14} style={{ transform: isCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }} />
+        <ChevronLeft size={14} style={{ transform: effectiveCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }} />
       </button>
 
       <ProjectsModal 

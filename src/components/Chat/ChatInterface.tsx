@@ -57,12 +57,12 @@ export const ChatInterface = () => {
 
   if (!activeThread) {
     return (
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', textAlign: 'center' }}>
+      <div className="chat-empty-state" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', textAlign: 'center' }}>
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, ease: 'easeOut' }}
-          className="glass-card"
+          className="glass-card chat-empty-card"
           style={{ padding: '60px 40px', maxWidth: '600px' }}
         >
           <motion.div
@@ -89,7 +89,7 @@ export const ChatInterface = () => {
           <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', marginBottom: '40px' }}>
             Ready to continue your learning journey? Select a past conversation or start a new one to begin.
           </p>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center' }}>
+          <div className="chat-empty-modes" style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center' }}>
             <motion.button
               whileHover={{ y: -5, background: 'rgba(138, 43, 226, 0.1)' }}
               onClick={() => createThread('Conversational', activeProjectId || undefined)}
@@ -204,8 +204,9 @@ export const ChatInterface = () => {
   };
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', width: '100%', position: 'relative' }}>
+    <div className="chat-shell" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', width: '100%', position: 'relative' }}>
       <header
+        className="chat-header"
         style={{
           padding: '16px 24px',
           borderBottom: '1px solid var(--card-border)',
@@ -216,13 +217,14 @@ export const ChatInterface = () => {
           backdropFilter: 'blur(10px)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="chat-header-main" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div className="chat-thread-title" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ color: 'var(--primary)' }}>{modeIcons[activeThread.mode]}</div>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{activeThread.title}</h3>
           </div>
-          <div style={{ width: '1px', height: '20px', background: 'var(--card-border)' }} />
+          <div className="chat-header-divider" style={{ width: '1px', height: '20px', background: 'var(--card-border)' }} />
           <motion.button
+            className="chat-project-button"
             whileHover={{ background: 'rgba(255,255,255,0.05)' }}
             onClick={() => setIsProjectsOpen(true)}
             style={{
@@ -244,20 +246,20 @@ export const ChatInterface = () => {
           </motion.button>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: '#f59e0b', fontWeight: '700', letterSpacing: '0.5px' }}>
+        <div className="chat-status-pills" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: '#f59e0b', fontWeight: '700', letterSpacing: '0.5px' }}>
             {currentPlan.toUpperCase()}
           </div>
-          <div style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontWeight: '700', letterSpacing: '0.5px' }}>
+          <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontWeight: '700', letterSpacing: '0.5px' }}>
             {dailyLimit === null ? 'UNLIMITED DAILY' : `${remainingToday} LEFT TODAY`}
           </div>
-          <div style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontWeight: '700', letterSpacing: '0.5px' }}>
+          <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontWeight: '700', letterSpacing: '0.5px' }}>
             {activeThread.mode.toUpperCase()}
           </div>
         </div>
       </header>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '32px' }}>
+      <div className="chat-messages" style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '32px' }}>
         {activeThread.messages.length === 0 && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', opacity: 0.5 }}>
             <Sparkles size={48} color="var(--primary)" />
@@ -270,6 +272,7 @@ export const ChatInterface = () => {
             initial={{ opacity: 0, y: 10, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             key={msg.id}
+            className={`chat-message-row ${msg.role === 'user' ? 'chat-message-row-user' : 'chat-message-row-assistant'}`}
             style={{ display: 'flex', gap: '16px', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row', alignItems: 'flex-start', padding: '0 20px' }}
           >
             <div
@@ -290,7 +293,7 @@ export const ChatInterface = () => {
             </div>
 
             <div
-              className="markdown-content"
+              className="markdown-content chat-bubble"
               style={{
                 maxWidth: '75%',
                 padding: '18px 24px',
@@ -312,7 +315,7 @@ export const ChatInterface = () => {
           </motion.div>
         ))}
         {isLoading && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', gap: '16px', alignItems: 'center', padding: '0 20px' }}>
+          <motion.div className="chat-message-row chat-message-row-assistant" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', gap: '16px', alignItems: 'center', padding: '0 20px' }}>
             <div className="animate-thinking" style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--card-border)' }}>
               <Sparkles size={18} color="var(--primary)" />
             </div>
@@ -322,15 +325,16 @@ export const ChatInterface = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      <footer style={{ padding: '24px 20px', width: '100%', maxWidth: '850px', margin: '0 auto', zIndex: 10 }}>
+      <footer className="chat-footer" style={{ padding: '24px 20px', width: '100%', maxWidth: '850px', margin: '0 auto', zIndex: 10 }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ padding: '0 12px' }}>
+          <motion.div className="chat-mode-panel" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ padding: '0 12px' }}>
             {activeThread.mode === 'Conversational' && <ConversationalModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
             {activeThread.mode === 'Homework' && <HomeworkModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
             {activeThread.mode === 'ExamPrep' && <ExamPrepUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
           </motion.div>
 
           <div
+            className="chat-composer"
             style={{
               display: 'flex',
               gap: '12px',
@@ -343,6 +347,7 @@ export const ChatInterface = () => {
             }}
           >
             <textarea
+              className="chat-textarea"
               rows={1}
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -367,6 +372,7 @@ export const ChatInterface = () => {
               }}
             />
             <motion.button
+              className="chat-send-button"
               whileHover={{ scale: 1.05, background: 'var(--secondary)' }}
               whileTap={{ scale: 0.95 }}
               onClick={handleSend}

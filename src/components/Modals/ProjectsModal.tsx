@@ -41,7 +41,7 @@ export const ProjectsModal = ({ isOpen, onClose, activeThreadId }: ProjectsModal
   if (!isOpen) return null;
 
   return (
-    <div style={{
+    <div className="project-modal-overlay" style={{
       position: 'fixed',
       top: 0,
       left: 0,
@@ -58,7 +58,7 @@ export const ProjectsModal = ({ isOpen, onClose, activeThreadId }: ProjectsModal
       <motion.div 
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        className="glass-card"
+        className="glass-card project-modal-card"
         style={{
           width: '100%',
           maxWidth: '500px',
@@ -88,7 +88,7 @@ export const ProjectsModal = ({ isOpen, onClose, activeThreadId }: ProjectsModal
           </p>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '300px', overflowY: 'auto', paddingRight: '8px' }}>
+        <div className="project-list" style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '300px', overflowY: 'auto', paddingRight: '8px' }}>
           {/* Unassigned Option (if moving a thread) */}
           {activeThreadId && (
             <button
@@ -128,6 +128,7 @@ export const ProjectsModal = ({ isOpen, onClose, activeThreadId }: ProjectsModal
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
+              className="project-create-row"
               style={{ display: 'flex', gap: '12px' }}
             >
               <input 

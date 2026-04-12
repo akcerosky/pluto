@@ -15,9 +15,9 @@ const AppRoutes = () => {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<AuthPages mode="login" />} />
       <Route path="/signup" element={<AuthPages mode="signup" />} />
-      <Route path="/T&C" element={<PolicyPage type="terms" />} />
-      <Route path="/refund_policy" element={<PolicyPage type="refund" />} />
-      <Route path="/privacy_policy" element={<PolicyPage type="privacy" />} />
+      <Route path="/terms" element={<PolicyPage type="terms" />} />
+      <Route path="/refund" element={<PolicyPage type="refund" />} />
+      <Route path="/privacy" element={<PolicyPage type="privacy" />} />
 
       {/* Private Chat Routes */}
       <Route 

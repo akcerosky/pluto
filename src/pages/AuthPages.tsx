@@ -145,7 +145,7 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
   };
 
   return (
-    <div style={{ 
+    <div className="auth-page" style={{ 
       minHeight: '100vh', 
       background: '#0a0a0a',
       display: 'flex', 
@@ -172,6 +172,7 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
       </Link>
 
       <motion.div
+        className="auth-card"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         style={{
