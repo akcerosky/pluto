@@ -44,6 +44,9 @@ fi
 
 cd "\$APP_DIR"
 
+echo "==> Syncing git remote"
+git remote set-url origin "\$REPO_URL"
+
 echo "==> Pulling latest code"
 git fetch origin "\$BRANCH"
 git reset --hard "origin/\$BRANCH"
