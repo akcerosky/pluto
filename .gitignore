@@ -12,9 +12,11 @@ dist
 dist-ssr
 *.local
 .env
+.env.production
 .npm-cache
 .dist
 .codex/environments/
+.tmp/
 
 # Editor directories and files
 .vscode/*

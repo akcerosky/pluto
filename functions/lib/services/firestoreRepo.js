@@ -7,14 +7,15 @@ export const getUserDefaults = (uid, identity) => {
     const now = toIstIsoString(getIstNow());
     const email = identity?.email?.trim() || '';
     const name = identity?.name?.trim() || email.split('@')[0] || `User ${uid.slice(0, 6)}`;
+    const avatar = identity?.avatar?.trim();
     return {
         profile: {
             name,
             email,
-            avatar: identity?.avatar?.trim() || undefined,
             educationLevel: 'High School',
             objective: 'General Learning',
             updatedAt: now,
+            ...(avatar ? { avatar } : {}),
         },
         subscription: {
             plan: DEFAULT_PLAN,

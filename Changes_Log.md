@@ -157,3 +157,35 @@
 - Uploaded the production frontend env file to `/var/www/pluto/.env.production` on EC2.
 - Deployed the latest frontend build on EC2 by pulling `razorpay-backend`, installing dependencies, building with Vite, validating Nginx config, and reloading Nginx.
 - Verified that `https://pluto.akcero.ai` returned HTTP 200 and served the new production asset bundle after deployment.
+
+### Email Verification and Password Reset Action Handling
+
+- Fixed the live `meGet` bootstrap crash by preventing `avatar: undefined` from being written into Firestore profile documents during first-user creation.
+- Updated the verify-email polling flow to:
+  - reload the current Firebase user repeatedly
+  - force an ID token refresh
+  - read `emailVerified` from the refreshed `auth.currentUser`
+  - redirect immediately to `/chat` once verification is detected
+- Reworked auth action code settings to derive redirect URLs from the current browser origin so localhost and production send the user back to the right destination.
+- Added a custom auth action handler route at `src/pages/AuthActionPage.tsx` and wired `/__/auth/action` in the React router so EC2-hosted auth links can process Firebase action codes instead of falling through to the landing page.
+- Added password reset handling to the auth action page:
+  - supports `mode=resetPassword`
+  - verifies the reset code
+  - shows a new-password form
+  - confirms the reset and returns the user to login
+- Updated password reset emails to send with explicit action code settings so reset links return to the correct app domain.
+
+### Frontend Auth State Reliability
+
+- Hardened `src/context/AppContext.tsx` so app startup/auth-state refreshes call `firebaseUser.reload()` before trusting cached verification state.
+- Updated the in-app verification resend banner to use the same runtime-origin action code settings as signup and verify-email resend flows.
+- Added temporary console diagnostics around verification email sending and verification polling to confirm runtime environment and refreshed verification state during debugging.
+
+### EC2 Deployment Reliability
+
+- Fixed the EC2 deployment flow so the server repo remote is reset to the correct GitHub origin before each deploy.
+- Redeployed the frontend from the corrected remote after pushing:
+  - `08d6a9e` `Fix email verification action flow`
+  - `9038554` `Fix password reset action flow`
+  - `ad1612f` `Fix EC2 repo remote during deploy`
+- Verified the live deployment was updated on EC2 by confirming the server pulled the latest `razorpay-backend` branch and rebuilt the production bundle successfully.
