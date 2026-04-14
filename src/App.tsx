@@ -6,15 +6,23 @@ import { ChatInterface } from './components/Chat/ChatInterface';
 import { MainLayout } from './components/Layout/MainLayout';
 import { ProfilePage } from './pages/ProfilePage';
 import { PolicyPage } from './pages/PolicyPages';
+import { VerifyEmailPage } from './pages/VerifyEmailPage';
+import { AuthActionPage } from './pages/AuthActionPage';
+import { useApp } from './context/useApp';
 
 const AppRoutes = () => {
+  const { user } = useApp();
+  const canAccessApp = Boolean(user && user.emailVerified);
+  const needsVerification = Boolean(user && !user.emailVerified);
 
   return (
     <Routes>
       {/* Public Routes */}
       <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<AuthPages mode="login" />} />
-      <Route path="/signup" element={<AuthPages mode="signup" />} />
+      <Route path="/login" element={user ? <Navigate to={needsVerification ? '/verify-email' : '/chat'} replace /> : <AuthPages mode="login" />} />
+      <Route path="/signup" element={user ? <Navigate to={needsVerification ? '/verify-email' : '/chat'} replace /> : <AuthPages mode="signup" />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
+      <Route path="/__/auth/action" element={<AuthActionPage />} />
       <Route path="/terms" element={<PolicyPage type="terms" />} />
       <Route path="/refund" element={<PolicyPage type="refund" />} />
       <Route path="/privacy" element={<PolicyPage type="privacy" />} />
@@ -23,17 +31,25 @@ const AppRoutes = () => {
       <Route 
         path="/chat" 
         element={
-          <MainLayout>
-            <ChatInterface />
-          </MainLayout>
+          canAccessApp ? (
+            <MainLayout>
+              <ChatInterface />
+            </MainLayout>
+          ) : (
+            <Navigate to={needsVerification ? '/verify-email' : '/login'} replace />
+          )
         } 
       />
       <Route 
         path="/profile" 
         element={
-          <MainLayout>
-            <ProfilePage />
-          </MainLayout>
+          canAccessApp ? (
+            <MainLayout>
+              <ProfilePage />
+            </MainLayout>
+          ) : (
+            <Navigate to={needsVerification ? '/verify-email' : '/login'} replace />
+          )
         } 
       />
       

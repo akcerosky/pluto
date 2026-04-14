@@ -196,38 +196,49 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     if (!auth || !hasFirebaseConfig) return;
+    const firebaseAuth = auth;
 
-    return onAuthStateChanged(auth, (firebaseUser) => {
-      if (!firebaseUser) {
-        setUserState(null);
-        setThreads([]);
-        setProjects([]);
-        setActiveThreadId(null);
-        setUsageToday(0);
-        setDailyLimit(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
-        setRemainingToday(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
-        setIsCloudHydrated(true);
-        return;
-      }
-
-      setUserState((prev) => {
-        const firebaseSession = userFromFirebase(firebaseUser);
-        if (prev?.id === firebaseUser.uid) {
-          return normalizeUser({
-            ...firebaseSession,
-            ...prev,
-            id: firebaseUser.uid,
-            email: firebaseSession.email,
-            emailVerified: firebaseSession.emailVerified,
-            avatar: prev.avatar || firebaseSession.avatar,
-          });
+    return onAuthStateChanged(firebaseAuth, (firebaseUser) => {
+      void (async () => {
+        if (!firebaseUser) {
+          setUserState(null);
+          setThreads([]);
+          setProjects([]);
+          setActiveThreadId(null);
+          setUsageToday(0);
+          setDailyLimit(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
+          setRemainingToday(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
+          setIsCloudHydrated(true);
+          return;
         }
-        return firebaseSession;
-      });
 
-      void refreshServerState().catch((error) => {
-        console.warn('Unable to refresh Pluto server state.', error);
-      });
+        try {
+          await firebaseUser.reload();
+        } catch (error) {
+          console.warn('Unable to refresh Firebase auth user.', error);
+        }
+
+        const freshUser = firebaseAuth.currentUser ?? firebaseUser;
+
+        setUserState((prev) => {
+          const firebaseSession = userFromFirebase(freshUser);
+          if (prev?.id === freshUser.uid) {
+            return normalizeUser({
+              ...firebaseSession,
+              ...prev,
+              id: freshUser.uid,
+              email: firebaseSession.email,
+              emailVerified: firebaseSession.emailVerified,
+              avatar: prev.avatar || firebaseSession.avatar,
+            });
+          }
+          return firebaseSession;
+        });
+
+        void refreshServerState().catch((error) => {
+          console.warn('Unable to refresh Pluto server state.', error);
+        });
+      })();
     });
   }, [refreshServerState]);
 

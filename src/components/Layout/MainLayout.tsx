@@ -5,6 +5,7 @@ import { Navigate } from 'react-router-dom';
 import { Menu, Rocket } from 'lucide-react';
 import { sendEmailVerification } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
+import { getEmailVerificationActionCodeSettings } from '../../lib/authActionCode';
 
 const useIsMobileShell = () => {
   const [isMobile, setIsMobile] = useState(false);
@@ -38,7 +39,13 @@ export const MainLayout = ({ children }: { children: ReactNode }) => {
     setIsSendingVerification(true);
     setVerificationNotice(null);
     try {
-      await sendEmailVerification(auth.currentUser);
+      const actionCodeSettings = getEmailVerificationActionCodeSettings();
+      console.log('sendEmailVerification debug', {
+        source: 'MainLayout.bannerResend',
+        env: import.meta.env.VITE_APP_ENV,
+        actionCodeSettings,
+      });
+      await sendEmailVerification(auth.currentUser, actionCodeSettings);
       setVerificationNotice('Verification email sent. Check your inbox for the latest link.');
     } catch (error) {
       console.error(error);

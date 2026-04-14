@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { DEFAULT_PLAN } from '../config/subscription';
 import { auth } from '../lib/firebase';
+import { getEmailVerificationActionCodeSettings } from '../lib/authActionCode';
 
 const toUserSession = (firebaseUser: FirebaseUser) => ({
   id: firebaseUser.uid,
@@ -80,6 +81,10 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
     navigate('/chat', { replace: true });
   }, [navigate, startNewChat]);
 
+  const openVerifyEmail = useCallback(() => {
+    navigate('/verify-email', { replace: true });
+  }, [navigate]);
+
   useEffect(() => {
     setError(null);
     setNotice(null);
@@ -87,9 +92,13 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
 
   useEffect(() => {
     if (user) {
-      openFreshChat();
+      if (user.emailVerified) {
+        openFreshChat();
+      } else {
+        openVerifyEmail();
+      }
     }
-  }, [user, openFreshChat]);
+  }, [user, openFreshChat, openVerifyEmail]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -124,15 +133,25 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
         await updateProfile(firebaseUser, {
           displayName: email.split('@')[0],
         });
-        await sendEmailVerification(firebaseUser);
-        setNotice('Verification email sent. Please check your inbox before relying on full account access.');
+        const actionCodeSettings = getEmailVerificationActionCodeSettings();
+        console.log('sendEmailVerification debug', {
+          source: 'AuthPages.signup',
+          env: import.meta.env.VITE_APP_ENV,
+          actionCodeSettings,
+        });
+        await sendEmailVerification(firebaseUser, actionCodeSettings);
+        setNotice('Verification email sent. Please check your inbox to continue.');
       } else {
         const credential = await signInWithEmailAndPassword(auth, email, password);
         firebaseUser = credential.user;
       }
 
       setUser(toUserSession(firebaseUser));
-      openFreshChat();
+      if (firebaseUser.providerData.some((provider) => provider.providerId === 'google.com') || firebaseUser.emailVerified) {
+        openFreshChat();
+      } else {
+        openVerifyEmail();
+      }
     } catch (err) {
       console.error(err);
       setError(getAuthErrorMessage(err));
