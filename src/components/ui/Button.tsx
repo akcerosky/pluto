@@ -1,9 +1,11 @@
-import { motion } from 'framer-motion';
+import { motion, type HTMLMotionProps } from 'framer-motion';
+import type { CSSProperties } from 'react';
 
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+interface ButtonProps extends HTMLMotionProps<'button'> {
   variant?: 'primary' | 'secondary' | 'outline' | 'ghost';
   size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
+  style?: CSSProperties;
 }
 
 export const Button = ({ 
@@ -47,8 +49,8 @@ export const Button = ({
       whileHover={{ scale: 1.02, translateY: -2 }}
       whileTap={{ scale: 0.98 }}
       className={`btn-${variant} ${className}`}
-      style={getStyles() as any}
-      {...(props as any)}
+      style={getStyles()}
+      {...props}
     >
       {loading ? (
         <span className="spinner" style={{ width: '20px', height: '20px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />

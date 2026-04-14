@@ -1,11 +1,16 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { motion } from 'framer-motion';
 import { Rocket, Sparkles, BookOpen, Brain, Globe, Shield, ArrowRight, CheckCircle2, Menu, X } from 'lucide-react';
 import { PLAN_CONFIGS } from '../config/subscription';
 import { Link } from 'react-router-dom';
+import { useApp } from '../context/useApp';
 
 export const LandingPage = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const { user } = useApp();
+  const primaryCtaTarget = user ? '/chat' : '/signup';
+  const pricingCtaTarget = user ? '/profile' : '/signup';
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
@@ -69,8 +74,8 @@ export const LandingPage = () => {
           <a href="#pricing" onClick={closeMobileMenu} style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.95rem', fontWeight: '500', transition: 'color 0.3s' }} onMouseOver={(e) => e.currentTarget.style.color = 'white'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}>Pricing</a>
           <a href="#about" onClick={closeMobileMenu} style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: '0.95rem', fontWeight: '500', transition: 'color 0.3s' }} onMouseOver={(e) => e.currentTarget.style.color = 'white'} onMouseOut={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}>Adaptive Engine</a>
           <div className="landing-nav-separator" style={{ height: '24px', width: '1px', background: 'rgba(255,255,255,0.1)' }} />
-          <Link to="/login" className="landing-login-link" onClick={closeMobileMenu} style={{ color: 'white', textDecoration: 'none', fontSize: '0.95rem', fontWeight: '600' }}>Login</Link>
-          <Link to="/signup" className="hover-glow landing-signup-link" style={{ 
+          <Link to={user ? '/chat' : '/login'} className="landing-login-link" onClick={closeMobileMenu} style={{ color: 'white', textDecoration: 'none', fontSize: '0.95rem', fontWeight: '600' }}>{user ? 'Open Pluto' : 'Login'}</Link>
+          <Link to={primaryCtaTarget} className="hover-glow landing-signup-link" style={{ 
             color: 'white', 
             textDecoration: 'none', 
             fontSize: '0.95rem', 
@@ -80,7 +85,7 @@ export const LandingPage = () => {
             background: 'linear-gradient(45deg, var(--primary), #6a1b9a)',
             boxShadow: '0 10px 30px var(--primary-glow)',
             transition: 'all 0.3s ease'
-          }} onClick={closeMobileMenu}>Sign Up</Link>
+          }} onClick={closeMobileMenu}>{user ? 'Go to Chat' : 'Sign Up'}</Link>
         </div>
       </nav>
 
@@ -145,10 +150,10 @@ export const LandingPage = () => {
             textAlign: 'center',
             fontWeight: '400'
           }}>
-            Pluto is your intelligent astronaut companion. Adapting its synthesis and persona in real-time to match your unique education level—from Elementary wonder to Professional mastery.
+            Pluto is your intelligent astronaut companion. Adapting its synthesis and persona in real-time to match your unique education level, from Elementary wonder to Professional mastery.
           </p>
           <div className="landing-hero-actions" style={{ display: 'flex', gap: '24px', justifyContent: 'center' }}>
-            <Link to="/signup" className="hover-glow" style={{ 
+            <Link to={primaryCtaTarget} className="hover-glow" style={{ 
               padding: '18px 48px', 
               borderRadius: '16px', 
               background: 'var(--primary)', 
@@ -161,7 +166,7 @@ export const LandingPage = () => {
               gap: '12px',
               transition: 'all 0.3s ease'
             }}>
-              Launch Journey <ArrowRight size={22} />
+              {user ? 'Open Pluto' : 'Launch Journey'} <ArrowRight size={22} />
             </Link>
             <a href="#features" style={{ 
               padding: '18px 48px', 
@@ -251,7 +256,7 @@ export const LandingPage = () => {
                 </div>
                 <div style={{ marginTop: '16px' }}>
                   <Link
-                    to="/signup"
+                    to={pricingCtaTarget}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -267,7 +272,7 @@ export const LandingPage = () => {
                       fontSize: '0.85rem',
                     }}
                   >
-                    {plan.id === 'Free' ? 'Start Free' : `Choose ${plan.id}`}
+                    {user ? (plan.id === 'Free' ? 'Open Free Plan' : `Manage ${plan.id}`) : plan.id === 'Free' ? 'Start Free' : `Choose ${plan.id}`}
                   </Link>
                 </div>
               </div>
@@ -317,7 +322,15 @@ export const LandingPage = () => {
   );
 };
 
-const FeatureCard = ({ icon, title, description }: { icon: any, title: string, description: string }) => (
+const FeatureCard = ({
+  icon,
+  title,
+  description,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) => (
   <motion.div 
     whileHover={{ y: -10, boxShadow: '0 20px 40px rgba(0,0,0,0.6)' }}
     className="glass-card feature-card"
@@ -363,3 +376,4 @@ const footerLinkStyle: React.CSSProperties = {
   textDecoration: 'none',
   fontWeight: 600,
 };
+

@@ -1,8 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Sidebar } from './Sidebar';
-import { useApp } from '../../context/AppContext';
+import { useApp } from '../../context/useApp';
 import { Navigate } from 'react-router-dom';
 import { Menu, Rocket } from 'lucide-react';
+import { sendEmailVerification } from 'firebase/auth';
+import { auth } from '../../lib/firebase';
 
 const useIsMobileShell = () => {
   const [isMobile, setIsMobile] = useState(false);
@@ -20,14 +22,46 @@ const useIsMobileShell = () => {
 };
 
 export const MainLayout = ({ children }: { children: ReactNode }) => {
-  const { user } = useApp();
+  const { user, updateUser } = useApp();
   const isMobile = useIsMobileShell();
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const isDrawerVisible = isMobile && isMobileSidebarOpen;
+  const [verificationNotice, setVerificationNotice] = useState<string | null>(null);
+  const [isSendingVerification, setIsSendingVerification] = useState(false);
 
   if (!user) {
     return <Navigate to="/login" replace />;
   }
+
+  const handleResendVerification = async () => {
+    if (!auth?.currentUser) return;
+    setIsSendingVerification(true);
+    setVerificationNotice(null);
+    try {
+      await sendEmailVerification(auth.currentUser);
+      setVerificationNotice('Verification email sent. Check your inbox for the latest link.');
+    } catch (error) {
+      console.error(error);
+      setVerificationNotice('Unable to send verification email right now. Please try again in a moment.');
+    } finally {
+      setIsSendingVerification(false);
+    }
+  };
+
+  const handleRefreshVerification = async () => {
+    if (!auth?.currentUser) return;
+    setVerificationNotice(null);
+    try {
+      await auth.currentUser.reload();
+      updateUser({ emailVerified: auth.currentUser.emailVerified });
+      if (!auth.currentUser.emailVerified) {
+        setVerificationNotice('Still waiting for verification. Open the email link, then click refresh again.');
+      }
+    } catch (error) {
+      console.error(error);
+      setVerificationNotice('Could not refresh verification status right now.');
+    }
+  };
 
   return (
     <div
@@ -78,6 +112,59 @@ export const MainLayout = ({ children }: { children: ReactNode }) => {
         flexDirection: 'column',
         overflow: 'hidden'
       }}>
+        {!user.emailVerified && (
+          <div
+            style={{
+              padding: '12px 20px',
+              borderBottom: '1px solid rgba(255,255,255,0.08)',
+              background: 'rgba(245, 158, 11, 0.12)',
+              color: '#fcd34d',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '16px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ fontSize: '0.92rem' }}>
+              Verify your email to secure your Pluto account and keep recovery options available.
+              {verificationNotice && <span style={{ marginLeft: '10px', color: '#fde68a' }}>{verificationNotice}</span>}
+            </div>
+            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={handleResendVerification}
+                disabled={isSendingVerification}
+                style={{
+                  background: 'rgba(255,255,255,0.08)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  color: 'white',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                }}
+              >
+                {isSendingVerification ? 'Sending...' : 'Resend email'}
+              </button>
+              <button
+                type="button"
+                onClick={handleRefreshVerification}
+                style={{
+                  background: 'var(--primary)',
+                  border: 'none',
+                  color: 'white',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                }}
+              >
+                I verified
+              </button>
+            </div>
+          </div>
+        )}
         {children}
       </main>
     </div>

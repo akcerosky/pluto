@@ -1,4 +1,4 @@
-import { useApp } from '../../context/AppContext';
+import { useApp } from '../../context/useApp';
 import { 
   Plus, 
   MessageSquare, 
@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ProjectsModal } from '../Modals/ProjectsModal';
 
@@ -368,7 +369,17 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
   );
 };
 
-const SidebarLink = ({ icon, label, isCollapsed, onClick }: { icon: any, label: string, isCollapsed?: boolean, onClick?: () => void }) => (
+const SidebarLink = ({
+  icon,
+  label,
+  isCollapsed,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  isCollapsed?: boolean;
+  onClick?: () => void;
+}) => (
   <motion.button 
     whileHover={{ x: 4, background: 'var(--surface-2)' }}
     whileTap={{ scale: 0.98 }}

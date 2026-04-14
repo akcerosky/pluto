@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useApp } from '../../context/AppContext';
+import { useApp } from '../../context/useApp';
 import { X, Plus, Folder, Check } from 'lucide-react';
 
 interface ProjectsModalProps {

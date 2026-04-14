@@ -1,6 +1,6 @@
 import { BookOpen, Lightbulb, Stars, Rocket, Zap, Search } from 'lucide-react';
 import { motion } from 'framer-motion';
-import type { EducationLevel } from '../../context/AppContext';
+import type { EducationLevel } from '../../context/appContextTypes';
 
 interface ModeUIProps {
   educationLevel: EducationLevel;

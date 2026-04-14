@@ -1,4 +1,4 @@
-import type { EducationLevel, ChatMode } from '../context/AppContext';
+import type { EducationLevel, ChatMode } from '../context/appContextTypes';
 import type { SubscriptionPlan } from '../config/subscription';
 
 export interface Message {
@@ -33,6 +33,7 @@ export interface UserSession {
   id: string;
   name: string;
   email: string;
+  emailVerified?: boolean;
   educationLevel: EducationLevel;
   objective: string;
   avatar?: string;

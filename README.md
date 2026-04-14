@@ -1,297 +1,166 @@
 # Pluto
 
-Pluto is an AI-powered learning companion for students and professionals. It combines Gemini-powered tutoring, Firebase Authentication, Firestore chat persistence, learning modes, plan limits, project organization, and a polished React interface.
+Pluto is an AI-powered learning companion built with React, Firebase, and Gemini. The frontend keeps chat threads and project organization in Firestore, while paid plans, usage accounting, and AI access now route through Firebase Cloud Functions.
 
-## Features
+## What Changed
 
-- AI chat powered by Google Gemini
-- Adaptive Pluto system prompt for education-only learning support
-- Firebase Authentication with email/password and Google sign-in
-- Firestore persistence for chat history and projects under each Firebase user UID
-- Chat refresh recovery using local storage plus Firestore sync
-- Learning modes:
-  - Conversational
-  - Homework
-  - Exam Prep
-- Subscription-style plan configuration:
-  - Free: daily request limit, smaller context window
-  - Plus: higher limits and more modes
-  - Pro: unlimited daily usage and extended context
-- Project folders for organizing chats
-- Markdown rendering with math support through KaTeX
-- Profile page for learning preferences and plan selection
-- PhonePe subscription checkout integration hooks
-- Responsive dark UI with Framer Motion animations
-- Production deployment support with Vite build output and Nginx
+- Gemini API access moved off the client and into Firebase Cloud Functions
+- Billing is now Razorpay-only using Razorpay Subscriptions
+- Plan authority and daily quota enforcement are server-side
+- Firebase App Check protects callable functions from non-app clients
+- Firestore rules now block client writes to subscription and payment state
 
-## Tech Stack
+## Plans
 
-- React 19
-- TypeScript
-- Vite 8
-- Firebase Auth
-- Cloud Firestore
-- Google Gemini via `@google/generative-ai`
-- React Router
-- Framer Motion
-- React Markdown
-- Remark Math
-- Rehype KaTeX
-- Lucide React icons
-- ESLint
+- Free: 10 messages/day
+- Plus: INR 299/month, 100 messages/day
+- Pro: INR 599/month, unlimited messages/day
 
-## Requirements
+All daily limits reset at **00:00 IST** and are stored in Firestore as `usageDaily/YYYY-MM-DD-IST`.
 
-Use Node.js `20.19+` or `22.12+`.
+## Repo Layout
 
-This project uses Vite 8, which does not run correctly on older Node 20 versions such as `20.16.0`.
-
-Recommended:
-
-```bash
-node -v
-npm -v
+```text
+src/          React frontend
+functions/    Firebase Cloud Functions (2nd gen)
+firestore.rules
+firebase.json
 ```
 
-If your Node version is too old, install Node 22.
+## Frontend Setup
 
-## Local Setup
-
-Clone the repo:
-
-```bash
-git clone https://github.com/m-manish03/pluto.git
-cd pluto
-```
-
-Install dependencies:
+1. Install root dependencies:
 
 ```bash
 npm install
 ```
 
-Create a `.env` file in the project root:
+2. Create `.env` from the example:
 
 ```bash
-cp .env.example .env
+copy .env.example .env
 ```
 
-Fill in the required values:
+3. Required frontend env vars:
 
 ```env
-VITE_GEMINI_API_KEY=your_gemini_api_key
-
-VITE_FIREBASE_API_KEY=your_firebase_api_key
-VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=your-project-id
-VITE_FIREBASE_STORAGE_BUCKET=your-project.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=1234567890
-VITE_FIREBASE_APP_ID=1:1234567890:web:abc123
-
-VITE_BILLING_API_BASE_URL=http://localhost:8787/api
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_STORAGE_BUCKET=...
+VITE_FIREBASE_MESSAGING_SENDER_ID=...
+VITE_FIREBASE_APP_ID=...
+VITE_FIREBASE_APP_CHECK_SITE_KEY=...
+VITE_FIREBASE_FUNCTIONS_REGION=asia-south1
+VITE_RAZORPAY_KEY_ID=rzp_test_xxxxx
+VITE_API_BASE_URL=
+VITE_APP_ENV=development
 ```
 
-Run locally:
+4. Run the frontend:
 
 ```bash
 npm run dev
 ```
 
-Serves the production build locally for preview.
+## Functions Setup
+
+1. Install Functions dependencies:
 
 ```bash
-npm run lint
+cd functions
+npm install
 ```
 
-Runs ESLint across the project.
+2. Create `functions/.env` from `functions/.env.example`.
 
-## Firebase Setup
+3. Required Functions env vars:
 
-Create or open a Firebase project, then enable:
+```env
+GOOGLE_GEMINI_API_KEY=...
+RAZORPAY_KEY_ID=...
+RAZORPAY_KEY_SECRET=...
+RAZORPAY_WEBHOOK_SECRET=...
+RAZORPAY_PLUS_PLAN_ID=...
+RAZORPAY_PRO_PLAN_ID=...
+LOG_LEVEL=info
+```
+
+4. Build functions:
+
+```bash
+npm run build
+```
+
+## Firebase Requirements
+
+Enable:
 
 - Authentication
 - Firestore Database
+- App Check
+- Cloud Functions
+- Hosting (optional but recommended)
 
-In Firebase Authentication, enable these sign-in providers:
+Authentication providers:
 
 - Email/Password
 - Google
 
-For local development, ensure this authorized domain exists:
+## Admin Bootstrap
 
-```text
-localhost
+Grant admin access with a Firebase custom claim:
+
+```bash
+cd functions
+npx tsx src/scripts/setAdminClaims.ts --email admin@example.com
 ```
 
-For production, add:
+This sets `{ admin: true }` on the target Firebase user.
 
-```text
-pluto.akcero.ai
+## Deployment
+
+Deploy Firestore rules and Functions:
+
+```bash
+firebase deploy --only firestore:rules,functions
 ```
 
-Recommended Firestore rule shape:
-
-```js
-match /users/{userId}/{document=**} {
-  allow read, write: if request.auth != null && request.auth.uid == userId;
-}
-```
-
-Chat and project state is saved at:
-
-```text
-users/{firebaseAuth.currentUser.uid}/appState/main
-```
-
-## Gemini Setup
-
-Create a Gemini API key in Google AI Studio or your Google Cloud setup, then set:
-
-```env
-VITE_GEMINI_API_KEY=your_gemini_api_key
-```
-
-The Gemini call lives in:
-
-```text
-src/hooks/useAI.ts
-```
-
-Pluto sends:
-
-- the user's current query
-- recent chat history
-- education level
-- learning objective
-- interaction mode
-- subscription plan
-- Pluto's educational system instruction
-
-## Plan Limits
-
-Plan configuration lives in:
-
-```text
-src/config/subscription.ts
-```
-
-The Free plan daily chat limit is controlled by:
-
-```ts
-dailyMessageLimit: 15
-```
-
-The enforcement logic lives in:
-
-```text
-src/context/AppContext.tsx
-```
-
-## PhonePe Billing Integration
-
-The frontend is wired for PhonePe subscription checkout from the Profile page.
-
-Backend API base URL:
-
-```env
-VITE_BILLING_API_BASE_URL=http://localhost:8787/api
-```
-
-Expected backend endpoints:
-
-```text
-POST /billing/phonepe/subscription/create
-POST /billing/phonepe/subscription/verify
-```
-
-After payment, PhonePe should redirect back to:
-
-```text
-/profile?phonepe_return=1&plan=<Plus|Pro>&merchantOrderId=...&transactionId=...
-```
-
-## Production Build
-
-Build the app:
+Deploy Hosting too if you want Firebase Hosting to serve the Vite build:
 
 ```bash
 npm run build
+firebase deploy --only hosting,functions,firestore:rules
 ```
 
-The production output is created in:
+Recommended production region: `asia-south1`.
 
-```text
-dist
-```
+Warm instances:
 
-Deploy `dist` behind a static web server such as Nginx.
+- `aiChat`
+- billing callables
 
-For a React Router single-page app, Nginx should fall back to `index.html`:
+are configured with `minInstances = 1` to reduce cold starts on paid flows.
 
-```nginx
-location / {
-  try_files $uri $uri/ /index.html;
-}
-```
+## Firestore Security Model
 
-## EC2 Deployment Notes
+Clients can:
 
-The current deployment pattern is:
+- read/write only their own `users/{uid}/appState/**`
+- read only their own `users/{uid}/profile/**`
+- read only their own `users/{uid}/subscriptionPublic/**`
 
-```bash
-cd /var/www/pluto
-git fetch origin main
-git reset --hard origin/main
-npm ci
-npm run build
-sudo systemctl reload nginx
-```
+Clients cannot write:
 
-The production domain is:
-
-```text
-https://pluto.akcero.ai
-```
-
-Nginx serves:
-
-```text
-/var/www/pluto/dist
-```
-
-## Project Structure
-
-```text
-src/
-  components/
-    Chat/
-    Layout/
-    Modals/
-    Modes/
-    ui/
-  config/
-    billing.ts
-    subscription.ts
-  context/
-    AppContext.tsx
-  hooks/
-    useAI.ts
-  lib/
-    firebase.ts
-  pages/
-    AuthPages.tsx
-    LandingPage.tsx
-    ProfilePage.tsx
-  services/
-    phonepe.ts
-  types/
-    index.ts
-```
+- `profile/**`
+- `subscriptionPublic/**`
+- `subscriptionPrivate/**`
+- `usageDaily/**`
+- `payments/**`
+- `billingEvents/**`
 
 ## Notes
 
-- Do not commit `.env`.
-- Use `.env.example` for documenting required variables.
-- Firebase Auth must be enabled before login works.
-- Firestore rules must allow the authenticated user to access their own `users/{uid}` path.
-- Vite 8 requires a newer Node version than older Node 20 releases.
+- The old client-side Gemini API key flow has been removed.
+- Cloud Functions use the default Firebase service account automatically.
+- The previously created `backend/` and `deploy/` folders are vestigial from an interrupted migration and are not part of the active architecture.

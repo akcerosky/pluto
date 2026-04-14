@@ -1,0 +1,119 @@
+import { onRequest } from 'firebase-functions/v2/https';
+import type { Request, Response } from 'express';
+import { env } from '../config/env.js';
+import { acquireBillingEventLock, createPaymentRecord, updateSubscriptionFromRazorpay } from '../services/firestoreRepo.js';
+import { fetchRazorpaySubscription, verifyRazorpayWebhookSignature } from '../services/razorpay.js';
+import { getIstNow, toIstIsoString } from '../utils/time.js';
+
+export const healthHandler = (_request: Request, response: Response) => {
+  response.status(200).json({
+    ok: true,
+    service: 'pluto-functions',
+    region: env.region,
+    now: toIstIsoString(getIstNow()),
+  });
+};
+
+export const resolvePlanFromAmount = (amountInr: number) => {
+  if (amountInr === 299) return 'Plus';
+  if (amountInr === 599) return 'Pro';
+  return 'Free';
+};
+
+export const razorpayWebhookHandler = async (request: Request, response: Response) => {
+  const rawRequest = request as Request & { rawBody?: Buffer | string };
+  const rawBody =
+    typeof rawRequest.rawBody === 'string'
+      ? rawRequest.rawBody
+      : Buffer.isBuffer(rawRequest.rawBody)
+      ? rawRequest.rawBody.toString('utf8')
+      : JSON.stringify(request.body ?? {});
+
+  const signature = request.header('x-razorpay-signature');
+  if (!verifyRazorpayWebhookSignature(rawBody, signature)) {
+    response.status(401).json({ error: 'Invalid Razorpay webhook signature.' });
+    return;
+  }
+
+  const event = request.body?.event as string | undefined;
+  const entity = request.body?.payload?.subscription?.entity;
+  const notes = entity?.notes ?? {};
+  const uid = notes.uid as string | undefined;
+  if (!uid || !entity?.id) {
+    response.status(400).json({ error: 'Webhook payload is missing Pluto user metadata.' });
+    return;
+  }
+
+  const paymentRecordId = entity.id as string;
+  const lockAcquired = await acquireBillingEventLock(uid, `${event}:${paymentRecordId}`, {
+    provider: 'razorpay',
+    eventType: event ?? 'unknown',
+    paymentRecordId,
+  });
+
+  if (!lockAcquired) {
+    response.status(200).json({ ok: true, duplicate: true });
+    return;
+  }
+
+  const subscription = await fetchRazorpaySubscription(paymentRecordId);
+  const plan = resolvePlanFromAmount((subscription.plan_id === env.razorpayPlusPlanId ? 299 : 599) as number);
+  const currentPeriodStart =
+    typeof subscription.current_start === 'number'
+      ? toIstIsoString(new Date(subscription.current_start * 1000))
+      : null;
+  const currentPeriodEnd =
+    typeof subscription.current_end === 'number'
+      ? toIstIsoString(new Date(subscription.current_end * 1000))
+      : null;
+
+  await createPaymentRecord(uid, paymentRecordId, {
+    provider: 'razorpay',
+    plan,
+    status:
+      event === 'subscription.cancelled'
+        ? 'failed'
+        : event === 'subscription.charged'
+        ? 'captured'
+        : 'pending',
+    amountInr: plan === 'Plus' ? 299 : 599,
+    createdAt: toIstIsoString(getIstNow()),
+    updatedAt: toIstIsoString(getIstNow()),
+    subscriptionId: paymentRecordId,
+    paymentId: request.body?.payload?.payment?.entity?.id ?? null,
+  });
+
+  await updateSubscriptionFromRazorpay(uid, {
+    plan: event === 'subscription.cancelled' ? 'Free' : plan,
+    status:
+      event === 'subscription.activated' || event === 'subscription.charged'
+        ? 'active'
+        : event === 'subscription.paused'
+        ? 'paused'
+        : event === 'subscription.cancelled'
+        ? 'expired'
+        : 'pending',
+    subscriptionId: paymentRecordId,
+    paymentId: request.body?.payload?.payment?.entity?.id ?? null,
+    currentPeriodStart,
+    currentPeriodEnd,
+    cancelAtPeriodEnd: event === 'subscription.cancelled' ? false : subscription.status === 'cancelled',
+  });
+
+  response.status(200).json({ ok: true });
+};
+
+export const health = onRequest(
+  {
+    region: env.region,
+  },
+  healthHandler
+);
+
+export const razorpayWebhook = onRequest(
+  {
+    region: env.region,
+    memory: '256MiB',
+  },
+  razorpayWebhookHandler
+);

@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { useApp } from '../context/AppContext';
+import { useApp } from '../context/useApp';
 import { useNavigate, Link } from 'react-router-dom';
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
+  sendEmailVerification,
+  sendPasswordResetEmail,
   signInWithEmailAndPassword,
   signInWithPopup,
   updateProfile,
@@ -24,6 +26,7 @@ const toUserSession = (firebaseUser: FirebaseUser) => ({
   id: firebaseUser.uid,
   name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
   email: firebaseUser.email || '',
+  emailVerified: firebaseUser.emailVerified,
   avatar: firebaseUser.photoURL || undefined,
   educationLevel: 'High School' as const,
   objective: 'General Learning',
@@ -70,6 +73,7 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const openFreshChat = useCallback(() => {
     startNewChat();
@@ -78,6 +82,7 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
 
   useEffect(() => {
     setError(null);
+    setNotice(null);
   }, [mode]);
 
   useEffect(() => {
@@ -90,6 +95,7 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
     e.preventDefault();
     setIsLoading(true);
     setError(null);
+    setNotice(null);
 
     if (!auth) {
       setError('Firebase Authentication is not configured.');
@@ -118,6 +124,8 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
         await updateProfile(firebaseUser, {
           displayName: email.split('@')[0],
         });
+        await sendEmailVerification(firebaseUser);
+        setNotice('Verification email sent. Please check your inbox before relying on full account access.');
       } else {
         const credential = await signInWithEmailAndPassword(auth, email, password);
         firebaseUser = credential.user;
@@ -125,6 +133,37 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
 
       setUser(toUserSession(firebaseUser));
       openFreshChat();
+    } catch (err) {
+      console.error(err);
+      setError(getAuthErrorMessage(err));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    setError(null);
+    setNotice(null);
+
+    if (!auth) {
+      setError('Firebase Authentication is not configured.');
+      return;
+    }
+
+    if (!email.trim()) {
+      setError('Enter your email address first, then use Forgot password.');
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setNotice('Password reset email sent. Check your inbox for the reset link.');
     } catch (err) {
       console.error(err);
       setError(getAuthErrorMessage(err));
@@ -217,6 +256,23 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
             </motion.div>
           )}
 
+          {notice && (
+            <motion.div
+              style={{
+                marginBottom: '20px',
+                padding: '12px',
+                background: 'rgba(67, 211, 132, 0.1)',
+                border: '1px solid rgba(67, 211, 132, 0.25)',
+                borderRadius: '8px',
+                color: '#7ef0ab',
+                fontSize: '0.85rem',
+                textAlign: 'left',
+              }}
+            >
+              {notice}
+            </motion.div>
+          )}
+
           <button 
             onClick={handleGoogleLogin}
             disabled={isLoading}
@@ -295,6 +351,24 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                </button>
             </div>
+            {mode === 'login' && (
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                disabled={isLoading}
+                style={{
+                  alignSelf: 'flex-end',
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--primary)',
+                  cursor: 'pointer',
+                  fontSize: '0.84rem',
+                  padding: 0,
+                }}
+              >
+                Forgot password?
+              </button>
+            )}
             <button 
               type="submit" 
               disabled={isLoading}

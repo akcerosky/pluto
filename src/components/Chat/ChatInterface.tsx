@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { useApp } from '../../context/AppContext';
+import { useApp } from '../../context/useApp';
 import type { Message } from '../../types';
 import {
   Send,
@@ -39,6 +39,7 @@ export const ChatInterface = () => {
     remainingToday,
     canSendMessage,
     canUseMode,
+    applyServerSnapshot,
   } = useApp();
 
   const activeThread = threads.find((t) => t.id === activeThreadId);
@@ -161,20 +162,35 @@ export const ChatInterface = () => {
     setIsLoading(true);
 
     try {
-      const history = activeThread.messages.slice(-planConfig.historyWindow).map((m) => ({ role: m.role, content: m.content }));
-      const aiResponse = await getPlutoResponse(input, user?.educationLevel || 'High School', activeThread.mode, user?.objective || 'General Learning', history, currentPlan);
+      const history = activeThread.messages
+        .slice(-planConfig.historyWindow)
+        .map((m) => ({ role: m.role, content: m.content as string }));
+      const aiResponse = await getPlutoResponse(
+        input,
+        user?.educationLevel || 'High School',
+        activeThread.mode,
+        user?.objective || 'General Learning',
+        history
+      );
+
+      applyServerSnapshot({
+        plan: aiResponse.subscription.plan,
+        usageToday: aiResponse.usageToday,
+        dailyLimit: aiResponse.dailyLimit,
+        remainingToday: aiResponse.remainingToday,
+      });
 
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: aiResponse,
+        content: aiResponse.answer,
         mode: activeThread.mode,
         timestamp: Date.now(),
       };
       addMessageToThread(activeThread.id, assistantMsg);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('AI Error:', error);
-      const errorText = `Pluto Error: ${error.message || 'Gravity glitch detected.'}`;
+      const errorText = `Pluto Error: ${error instanceof Error ? error.message : 'Gravity glitch detected.'}`;
 
       const errorMsg: Message = {
         id: (Date.now() + 1).toString(),

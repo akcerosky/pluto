@@ -26,7 +26,7 @@ export const Card = ({
       initial={animate ? { opacity: 0, y: 20 } : undefined}
       animate={animate ? { opacity: 1, y: 0 } : undefined}
       className={`glass-morphism ${className}`}
-      style={baseStyle as any}
+      style={baseStyle}
     >
       {children}
     </Component>

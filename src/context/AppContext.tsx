@@ -1,69 +1,43 @@
-import { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { Thread, UserSession, Project, Message } from '../types';
 import { onAuthStateChanged, signOut, type User as FirebaseUser } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db, hasFirebaseConfig } from '../lib/firebase';
+import { meGet } from '../lib/plutoApi';
 import {
   DEFAULT_PLAN,
   PLAN_CONFIGS,
-  type PlanConfig,
   type PlanFeatureKey,
   type SubscriptionPlan,
 } from '../config/subscription';
-import { auth, db, hasFirebaseConfig } from '../lib/firebase';
+import type { Message, Project, Thread, UserSession } from '../types';
+import type { AppContextType, ChatMode, EducationLevel } from './appContextTypes';
+import { AppContext } from './appContextValue';
 
-export type EducationLevel = 'Elementary' | 'Middle School' | 'High School' | 'College/University' | 'Professional';
-export type ChatMode = 'Conversational' | 'Homework' | 'ExamPrep';
-
-interface AppContextType {
-  user: UserSession | null;
-  setUser: (user: UserSession | null) => void;
-  updateUser: (data: Partial<UserSession>) => void;
-
-  threads: Thread[];
-  activeThreadId: string | null;
-  setActiveThreadId: (id: string | null) => void;
-  startNewChat: () => void;
-  createThread: (mode: ChatMode, projectId?: string) => string;
-  assignThreadToProject: (threadId: string, projectId: string | null) => void;
-  updateThread: (id: string, data: Partial<Thread>) => void;
-  deleteThread: (id: string) => void;
-  addMessageToThread: (threadId: string, message: Message) => void;
-
-  projects: Project[];
-  createProject: (name: string, color: string) => { ok: boolean; reason?: string };
-
-  mode: ChatMode;
-  setMode: (mode: ChatMode) => void;
-
-  activeProjectId: string | null;
-  setActiveProjectId: (id: string | null) => void;
-
-  currentPlan: SubscriptionPlan;
-  planConfig: PlanConfig;
-  usageToday: number;
-  dailyLimit: number | null;
-  remainingToday: number | null;
-  setPlan: (plan: SubscriptionPlan) => void;
-  canUseMode: (mode: ChatMode) => boolean;
-  canUseFeature: (feature: PlanFeatureKey) => boolean;
-  canSendMessage: (message: string, mode: ChatMode) => { ok: boolean; reason?: string };
-
-  logout: () => void;
-}
-
-const STORAGE_KEY = 'pluto_v2';
+const STORAGE_KEY = 'pluto_v3';
 const CLOUD_STATE_DOC = 'main';
 const START_NEW_CHAT_KEY = `${STORAGE_KEY}_start_new_chat`;
 
-const AppContext = createContext<AppContextType | undefined>(undefined);
-
-const getTodayKey = () => new Date().toDateString();
+const normalizeEducationLevel = (value: string | undefined): EducationLevel => {
+  switch (value) {
+    case 'Elementary':
+    case 'Middle School':
+    case 'High School':
+    case 'College/University':
+    case 'Professional':
+      return value;
+    default:
+      return 'High School';
+  }
+};
 
 const normalizeUser = (user: UserSession | null): UserSession | null => {
   if (!user) return null;
   return {
     ...user,
+    educationLevel: normalizeEducationLevel(user.educationLevel),
+    objective: user.objective || 'General Learning',
+    emailVerified: user.emailVerified ?? false,
     plan: user.plan ?? DEFAULT_PLAN,
   };
 };
@@ -84,17 +58,11 @@ const stripUndefined = <T,>(value: T): T => {
   return value;
 };
 
-const getLocalStateUpdatedAt = (threads: Thread[], projects: Project[]) => {
-  return Math.max(
-    0,
-    ...threads.map((thread) => thread.updatedAt || thread.createdAt || 0),
-    ...projects.map((project) => project.createdAt || 0)
-  );
-};
+const getLocalStateUpdatedAt = (threads: Thread[], projects: Project[]) =>
+  Math.max(0, ...threads.map((thread) => thread.updatedAt || thread.createdAt || 0), ...projects.map((project) => project.createdAt || 0));
 
-const removeEmptyThreads = (threads: Thread[]) => {
-  return threads.filter((thread) => Array.isArray(thread.messages) && thread.messages.length > 0);
-};
+const removeEmptyThreads = (threads: Thread[]) =>
+  threads.filter((thread) => Array.isArray(thread.messages) && thread.messages.length > 0);
 
 const getSafeActiveThreadId = (activeThreadId: string | null | undefined, threads: Thread[]) => {
   if (!activeThreadId) return null;
@@ -105,8 +73,9 @@ const userFromFirebase = (firebaseUser: FirebaseUser): UserSession => ({
   id: firebaseUser.uid,
   name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
   email: firebaseUser.email || '',
+  emailVerified: firebaseUser.emailVerified,
   avatar: firebaseUser.photoURL || undefined,
-  educationLevel: 'High School' as EducationLevel,
+  educationLevel: 'High School',
   objective: 'General Learning',
   plan: DEFAULT_PLAN,
 });
@@ -124,51 +93,88 @@ const consumeFreshChatViewRequest = () => {
 };
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
-  // --- Auth State ---
   const [user, setUserState] = useState<UserSession | null>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_user`);
     return saved ? normalizeUser(JSON.parse(saved)) : null;
   });
-
-  // --- Thread State ---
   const [threads, setThreads] = useState<Thread[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_threads`);
     return saved ? removeEmptyThreads(JSON.parse(saved)) : [];
   });
   const [activeThreadId, setActiveThreadId] = useState<string | null>(() => {
     const savedThreads = localStorage.getItem(`${STORAGE_KEY}_threads`);
-    const activeThreadId = localStorage.getItem(`${STORAGE_KEY}_active_thread_id`);
+    const savedActiveThreadId = localStorage.getItem(`${STORAGE_KEY}_active_thread_id`);
     const cleanedThreads = savedThreads ? removeEmptyThreads(JSON.parse(savedThreads)) : [];
-    return getSafeActiveThreadId(activeThreadId, cleanedThreads);
+    return getSafeActiveThreadId(savedActiveThreadId, cleanedThreads);
   });
-
-  // --- Projects State ---
   const [projects, setProjects] = useState<Project[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_projects`);
     return saved ? JSON.parse(saved) : [];
   });
-
   const [mode, setMode] = useState<ChatMode>('Conversational');
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [isCloudHydrated, setIsCloudHydrated] = useState(false);
+  const [usageToday, setUsageToday] = useState(0);
+  const [dailyLimit, setDailyLimit] = useState<number | null>(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
+  const [remainingToday, setRemainingToday] = useState<number | null>(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
   const threadsRef = useRef(threads);
   const projectsRef = useRef(projects);
 
   const currentPlan: SubscriptionPlan = user?.plan ?? DEFAULT_PLAN;
   const planConfig = PLAN_CONFIGS[currentPlan];
 
-  const usageToday = useMemo(() => {
-    const today = getTodayKey();
-    return threads.reduce((count, thread) => {
-      const inThreadToday = thread.messages.filter(
-        (msg) => msg.role === 'user' && new Date(msg.timestamp).toDateString() === today
-      ).length;
-      return count + inThreadToday;
-    }, 0);
-  }, [threads]);
+  const applyServerSnapshot = useCallback(
+    (snapshot: {
+      plan: SubscriptionPlan;
+      usageToday: number;
+      dailyLimit: number | null;
+      remainingToday: number | null;
+      educationLevel?: string;
+      objective?: string;
+      name?: string;
+      email?: string;
+      avatar?: string;
+    }) => {
+      setUsageToday(snapshot.usageToday);
+      setDailyLimit(snapshot.dailyLimit);
+      setRemainingToday(snapshot.remainingToday);
+      setUserState((prev) =>
+        prev
+          ? normalizeUser({
+              ...prev,
+              name: snapshot.name ?? prev.name,
+              email: snapshot.email ?? prev.email,
+              avatar: snapshot.avatar ?? prev.avatar,
+              emailVerified: prev.emailVerified,
+              objective: snapshot.objective ?? prev.objective,
+              educationLevel: normalizeEducationLevel(snapshot.educationLevel ?? prev.educationLevel),
+              plan: snapshot.plan,
+            })
+          : prev
+      );
+    },
+    []
+  );
 
-  const dailyLimit = planConfig.dailyMessageLimit;
-  const remainingToday = dailyLimit === null ? null : Math.max(dailyLimit - usageToday, 0);
+  const refreshServerState = useCallback(async () => {
+    if (!auth?.currentUser) return;
+    const response = await meGet();
+    setUserState(
+      normalizeUser({
+        id: response.user.id,
+        name: response.user.name,
+        email: response.user.email,
+        emailVerified: auth.currentUser?.emailVerified ?? false,
+        avatar: response.user.avatar,
+        educationLevel: normalizeEducationLevel(response.user.educationLevel),
+        objective: response.user.objective,
+        plan: response.subscription.plan,
+      })
+    );
+    setUsageToday(response.usageToday);
+    setDailyLimit(response.dailyLimit);
+    setRemainingToday(response.remainingToday);
+  }, []);
 
   const setUser = useCallback((nextUser: UserSession | null) => {
     setUserState(normalizeUser(nextUser));
@@ -189,15 +195,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [projects]);
 
   useEffect(() => {
-    const firebaseAuth = auth;
-    if (!firebaseAuth || !hasFirebaseConfig) return;
+    if (!auth || !hasFirebaseConfig) return;
 
-    return onAuthStateChanged(firebaseAuth, (firebaseUser) => {
+    return onAuthStateChanged(auth, (firebaseUser) => {
       if (!firebaseUser) {
         setUserState(null);
         setThreads([]);
         setProjects([]);
         setActiveThreadId(null);
+        setUsageToday(0);
+        setDailyLimit(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
+        setRemainingToday(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
         setIsCloudHydrated(true);
         return;
       }
@@ -210,15 +218,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             ...prev,
             id: firebaseUser.uid,
             email: firebaseSession.email,
+            emailVerified: firebaseSession.emailVerified,
             avatar: prev.avatar || firebaseSession.avatar,
           });
         }
         return firebaseSession;
       });
-    });
-  }, []);
 
-  // Persistence
+      void refreshServerState().catch((error) => {
+        console.warn('Unable to refresh Pluto server state.', error);
+      });
+    });
+  }, [refreshServerState]);
+
   useEffect(() => {
     if (user) {
       localStorage.setItem(`${STORAGE_KEY}_user`, JSON.stringify(user));
@@ -228,14 +240,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [user]);
 
   useEffect(() => {
-    const cleanedThreads = removeEmptyThreads(threads);
-    localStorage.setItem(`${STORAGE_KEY}_threads`, JSON.stringify(cleanedThreads));
+    localStorage.setItem(`${STORAGE_KEY}_threads`, JSON.stringify(removeEmptyThreads(threads)));
   }, [threads]);
 
   useEffect(() => {
-    const safeActiveThreadId = getSafeActiveThreadId(activeThreadId, removeEmptyThreads(threads));
-    if (safeActiveThreadId) {
-      localStorage.setItem(`${STORAGE_KEY}_active_thread_id`, safeActiveThreadId);
+    const safeActive = getSafeActiveThreadId(activeThreadId, removeEmptyThreads(threads));
+    if (safeActive) {
+      localStorage.setItem(`${STORAGE_KEY}_active_thread_id`, safeActive);
     } else {
       localStorage.removeItem(`${STORAGE_KEY}_active_thread_id`);
     }
@@ -245,13 +256,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     localStorage.setItem(`${STORAGE_KEY}_projects`, JSON.stringify(projects));
   }, [projects]);
 
-  // Load cloud chat/project state once the user is available.
   useEffect(() => {
     let isCancelled = false;
 
     const loadCloudState = async () => {
-      const firestore = db;
-      if (!user || !firestore || !hasFirebaseConfig) {
+      if (!user || !db || !hasFirebaseConfig) {
         setIsCloudHydrated(true);
         return;
       }
@@ -259,7 +268,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setIsCloudHydrated(false);
       try {
         const firebaseUid = auth?.currentUser?.uid ?? user.id;
-        const stateRef = doc(firestore, 'users', firebaseUid, 'appState', CLOUD_STATE_DOC);
+        const stateRef = doc(db, 'users', firebaseUid, 'appState', CLOUD_STATE_DOC);
         const snapshot = await getDoc(stateRef);
         const shouldStartNewChat = consumeFreshChatViewRequest();
 
@@ -318,12 +327,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       isCancelled = true;
     };
-  }, [user?.id]);
+  }, [user, user?.id]);
 
-  // Save chat/project state to Firestore.
   useEffect(() => {
+    if (!user || !db || !hasFirebaseConfig || !isCloudHydrated) return;
     const firestore = db;
-    if (!user || !firestore || !hasFirebaseConfig || !isCloudHydrated) return;
 
     const timeoutId = setTimeout(() => {
       const cleanedThreads = removeEmptyThreads(threads);
@@ -345,50 +353,52 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }, 500);
 
     return () => clearTimeout(timeoutId);
-  }, [user?.id, threads, projects, activeThreadId, isCloudHydrated]);
+  }, [activeThreadId, isCloudHydrated, projects, threads, user, user?.id]);
 
-  const updateUser = (data: Partial<UserSession>) => {
+  const updateUser = useCallback((data: Partial<UserSession>) => {
     setUserState((prev) => (prev ? normalizeUser({ ...prev, ...data }) : null));
-  };
+  }, []);
 
-  const setPlan = (plan: SubscriptionPlan) => {
+  const setPlan = useCallback((plan: SubscriptionPlan) => {
     updateUser({ plan });
-  };
+  }, [updateUser]);
 
-  const canUseMode = (requestedMode: ChatMode) => {
-    return planConfig.allowedModes.includes(requestedMode);
-  };
+  const canUseMode = useCallback(
+    (requestedMode: ChatMode) => planConfig.allowedModes.includes(requestedMode),
+    [planConfig.allowedModes]
+  );
 
-  const canUseFeature = (feature: PlanFeatureKey) => {
-    return planConfig.features[feature];
-  };
+  const canUseFeature = useCallback(
+    (feature: PlanFeatureKey) => planConfig.features[feature],
+    [planConfig.features]
+  );
 
-  const canSendMessage = (message: string, requestedMode: ChatMode) => {
-    if (!canUseMode(requestedMode)) {
-      return {
-        ok: false,
-        reason: `${requestedMode} mode is available on Plus and Pro plans.`,
-      };
-    }
+  const canSendMessage = useCallback(
+    (message: string, requestedMode: ChatMode) => {
+      if (!canUseMode(requestedMode)) {
+        return { ok: false, reason: `${requestedMode} mode is available on Plus and Pro plans.` };
+      }
 
-    if (message.trim().length > planConfig.maxInputChars) {
-      return {
-        ok: false,
-        reason: `This prompt is too long for ${currentPlan}. Max ${planConfig.maxInputChars} characters.`,
-      };
-    }
+      if (message.trim().length > planConfig.maxInputChars) {
+        return {
+          ok: false,
+          reason: `This prompt is too long for ${currentPlan}. Max ${planConfig.maxInputChars} characters.`,
+        };
+      }
 
-    if (dailyLimit !== null && usageToday >= dailyLimit) {
-      return {
-        ok: false,
-        reason: `You reached the free daily limit (${dailyLimit}/${dailyLimit}). Upgrade to Plus or Pro to continue today.`,
-      };
-    }
+      if (dailyLimit !== null && remainingToday !== null && remainingToday <= 0) {
+        return {
+          ok: false,
+          reason: `You reached the ${currentPlan} daily limit for today. Upgrade or wait for the 00:00 IST reset.`,
+        };
+      }
 
-    return { ok: true };
-  };
+      return { ok: true };
+    },
+    [canUseMode, currentPlan, dailyLimit, planConfig.maxInputChars, remainingToday]
+  );
 
-  const logout = () => {
+  const logout = useCallback(() => {
     if (auth) {
       void signOut(auth).catch((error) => {
         console.warn('Firebase sign out failed.', error);
@@ -398,8 +408,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setThreads([]);
     setProjects([]);
     setActiveThreadId(null);
+    setUsageToday(0);
+    setDailyLimit(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
+    setRemainingToday(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
     localStorage.clear();
-  };
+  }, []);
 
   const createThread = useCallback(
     (initialMode: ChatMode, projectId?: string) => {
@@ -423,106 +436,130 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setActiveThreadId(newThread.id);
       return newThread.id;
     },
-    [user, currentPlan]
+    [currentPlan, user]
   );
 
-  const assignThreadToProject = (threadId: string, projectId: string | null) => {
+  const assignThreadToProject = useCallback((threadId: string, projectId: string | null) => {
     setThreads((prev) =>
-      prev.map((t) =>
-        t.id === threadId
-          ? stripUndefined({ ...t, projectId: projectId || undefined, updatedAt: Date.now() })
-          : t
+      prev.map((thread) =>
+        thread.id === threadId
+          ? stripUndefined({ ...thread, projectId: projectId || undefined, updatedAt: Date.now() })
+          : thread
       )
     );
-  };
+  }, []);
 
-  const updateThread = (id: string, data: Partial<Thread>) => {
-    setThreads((prev) => prev.map((t) => (t.id === id ? { ...t, ...data, updatedAt: Date.now() } : t)));
-  };
+  const updateThread = useCallback((id: string, data: Partial<Thread>) => {
+    setThreads((prev) => prev.map((thread) => (thread.id === id ? { ...thread, ...data, updatedAt: Date.now() } : thread)));
+  }, []);
 
-  const deleteThread = (id: string) => {
-    setThreads((prev) => prev.filter((t) => t.id !== id));
+  const deleteThread = useCallback((id: string) => {
+    setThreads((prev) => prev.filter((thread) => thread.id !== id));
     if (activeThreadId === id) {
       setActiveThreadId(null);
     }
-  };
+  }, [activeThreadId]);
 
-  const addMessageToThread = (threadId: string, message: Message) => {
+  const addMessageToThread = useCallback((threadId: string, message: Message) => {
     setThreads((prev) =>
-      prev.map((t) => {
-        if (t.id === threadId) {
-          const newMessages = [...t.messages, message];
-          // Auto-generate title from first message
-          let newTitle = t.title;
-          if (t.messages.length === 0 && message.role === 'user') {
-            newTitle = message.content.slice(0, 30) + (message.content.length > 30 ? '...' : '');
-          }
-          return { ...t, messages: newMessages, title: newTitle, updatedAt: Date.now() };
+      prev.map((thread) => {
+        if (thread.id !== threadId) return thread;
+        const newMessages = [...thread.messages, message];
+        let newTitle = thread.title;
+        if (thread.messages.length === 0 && message.role === 'user') {
+          newTitle = message.content.slice(0, 30) + (message.content.length > 30 ? '...' : '');
         }
-        return t;
+        return { ...thread, messages: newMessages, title: newTitle, updatedAt: Date.now() };
       })
     );
-  };
+  }, []);
 
-  const createProject = (name: string, color: string) => {
-    if (planConfig.maxProjects !== null && projects.length >= planConfig.maxProjects) {
-      return {
-        ok: false,
-        reason: `${currentPlan} allows up to ${planConfig.maxProjects} projects. Upgrade to create more.`,
+  const createProject = useCallback(
+    (name: string, color: string) => {
+      if (planConfig.maxProjects !== null && projects.length >= planConfig.maxProjects) {
+        return {
+          ok: false,
+          reason: `${currentPlan} allows up to ${planConfig.maxProjects} projects. Upgrade to create more.`,
+        };
+      }
+
+      const newProject: Project = {
+        id: Date.now().toString(),
+        name,
+        description: '',
+        color,
+        createdAt: Date.now(),
       };
-    }
-
-    const newProject: Project = {
-      id: Date.now().toString(),
-      name,
-      description: '',
-      color,
-      createdAt: Date.now(),
-    };
-    setProjects((prev) => [...prev, newProject]);
-    return { ok: true };
-  };
-
-  return (
-    <AppContext.Provider
-      value={{
-        user,
-        setUser,
-        updateUser,
-        threads,
-        activeThreadId,
-        setActiveThreadId,
-        startNewChat,
-        createThread,
-        assignThreadToProject,
-        updateThread,
-        deleteThread,
-        addMessageToThread,
-        projects,
-        createProject,
-        mode,
-        setMode,
-        activeProjectId,
-        setActiveProjectId,
-        currentPlan,
-        planConfig,
-        usageToday,
-        dailyLimit,
-        remainingToday,
-        setPlan,
-        canUseMode,
-        canUseFeature,
-        canSendMessage,
-        logout,
-      }}
-    >
-      {children}
-    </AppContext.Provider>
+      setProjects((prev) => [...prev, newProject]);
+      return { ok: true };
+    },
+    [currentPlan, planConfig.maxProjects, projects.length]
   );
-};
 
-export const useApp = () => {
-  const context = useContext(AppContext);
-  if (!context) throw new Error('useApp must be used within AppProvider');
-  return context;
+  const value = useMemo<AppContextType>(
+    () => ({
+      user,
+      setUser,
+      updateUser,
+      refreshServerState,
+      applyServerSnapshot,
+      threads,
+      activeThreadId,
+      setActiveThreadId,
+      startNewChat,
+      createThread,
+      assignThreadToProject,
+      updateThread,
+      deleteThread,
+      addMessageToThread,
+      projects,
+      createProject,
+      mode,
+      setMode,
+      activeProjectId,
+      setActiveProjectId,
+      currentPlan,
+      planConfig,
+      usageToday,
+      dailyLimit,
+      remainingToday,
+      setPlan,
+      canUseMode,
+      canUseFeature,
+      canSendMessage,
+      logout,
+    }),
+    [
+      activeProjectId,
+      activeThreadId,
+      addMessageToThread,
+      applyServerSnapshot,
+      assignThreadToProject,
+      canUseFeature,
+      canUseMode,
+      createProject,
+      createThread,
+      currentPlan,
+      dailyLimit,
+      deleteThread,
+      logout,
+      mode,
+      planConfig,
+      projects,
+      refreshServerState,
+      remainingToday,
+      setMode,
+      setUser,
+      startNewChat,
+      threads,
+      updateThread,
+      usageToday,
+      user,
+      updateUser,
+      canSendMessage,
+      setPlan,
+    ]
+  );
+
+  return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
 };
