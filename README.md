@@ -1,47 +1,83 @@
 # Pluto
 
-Pluto is an AI-powered learning companion built with React, Firebase, and Gemini. The frontend keeps chat threads and project organization in Firestore, while paid plans, usage accounting, and AI access now route through Firebase Cloud Functions.
+Pluto is an AI tutoring app built with React, Firebase, Gemini, and Razorpay. The frontend keeps chat threads and project organization in Firestore, while billing, usage enforcement, and AI access are handled by Firebase Cloud Functions.
 
-## What Changed
+## Architecture
 
-- Gemini API access moved off the client and into Firebase Cloud Functions
-- Billing is now Razorpay-only using Razorpay Subscriptions
-- Plan authority and daily quota enforcement are server-side
-- Firebase App Check protects callable functions from non-app clients
-- Firestore rules now block client writes to subscription and payment state
+- `src/` - Vite + React frontend
+- `functions/` - Firebase Cloud Functions (2nd gen, Node 22, TypeScript)
+- `firestore.rules` - Firestore security rules
+- `firebase.json` - Functions, Firestore, and Hosting config
+
+Core decisions in the current stack:
+
+- Razorpay is the only billing provider
+- Gemini calls are server-side only
+- plan authority and daily quota enforcement are server-side
+- callable Functions require Firebase Auth and App Check
+- webhook handling stays on HTTP Functions with Razorpay signature verification
+- all daily usage resets at `00:00 IST`
 
 ## Plans
 
-- Free: 10 messages/day
-- Plus: INR 299/month, 100 messages/day
-- Pro: INR 599/month, unlimited messages/day
+- Free - 10 AI requests/day
+- Plus - INR 299/month, 100 AI requests/day
+- Pro - INR 599/month, unlimited AI requests/day
 
-All daily limits reset at **00:00 IST** and are stored in Firestore as `usageDaily/YYYY-MM-DD-IST`.
-
-## Repo Layout
+Usage is stored in Firestore as:
 
 ```text
-src/          React frontend
-functions/    Firebase Cloud Functions (2nd gen)
-firestore.rules
-firebase.json
+users/{uid}/usageDaily/YYYY-MM-DD-IST
+```
+
+## Features Implemented
+
+- Email/password login
+- Google sign-in
+- Password reset from the login page
+- Email verification after signup
+- In-app email verification banner with resend + refresh
+- Razorpay subscription checkout
+- Razorpay webhook activation sync
+- Cancel renewal
+- Resume renewal for paused subscriptions
+- Refund request flow
+- Server-side plan enforcement for chat
+
+## Firestore Model
+
+Client-managed:
+
+```text
+users/{uid}/appState/main
+```
+
+Server-managed:
+
+```text
+users/{uid}/profile/main
+users/{uid}/subscriptionPublic/main
+users/{uid}/subscriptionPrivate/main
+users/{uid}/payments/{paymentRecordId}
+users/{uid}/billingEvents/{providerEventId}
+users/{uid}/usageDaily/{YYYY-MM-DD-IST}
 ```
 
 ## Frontend Setup
 
-1. Install root dependencies:
+1. Install dependencies:
 
 ```bash
 npm install
 ```
 
-2. Create `.env` from the example:
+2. Create a local env file:
 
 ```bash
 copy .env.example .env
 ```
 
-3. Required frontend env vars:
+3. Fill in the frontend env vars:
 
 ```env
 VITE_FIREBASE_API_KEY=...
@@ -56,6 +92,12 @@ VITE_RAZORPAY_KEY_ID=rzp_test_xxxxx
 VITE_API_BASE_URL=
 VITE_APP_ENV=development
 ```
+
+Notes:
+
+- `VITE_RAZORPAY_KEY_ID` is the public Razorpay key used by Checkout
+- `VITE_API_BASE_URL` can stay empty when using Firebase Hosting + callable Functions
+- localhost development supports Firebase App Check debug token flow
 
 4. Run the frontend:
 
@@ -72,9 +114,9 @@ cd functions
 npm install
 ```
 
-2. Create `functions/.env` from `functions/.env.example`.
+2. Create `functions/.env` from `functions/.env.example`
 
-3. Required Functions env vars:
+3. Fill in the required secrets/config:
 
 ```env
 GOOGLE_GEMINI_API_KEY=...
@@ -84,15 +126,22 @@ RAZORPAY_WEBHOOK_SECRET=...
 RAZORPAY_PLUS_PLAN_ID=...
 RAZORPAY_PRO_PLAN_ID=...
 LOG_LEVEL=info
+FIREBASE_PROJECT_ID=pluto-ef61b
 ```
 
-4. Build functions:
+4. Build Functions:
 
 ```bash
 npm run build
 ```
 
-## Firebase Requirements
+5. Run the current smoke tests:
+
+```bash
+npm run test
+```
+
+## Firebase Console Requirements
 
 Enable:
 
@@ -100,47 +149,99 @@ Enable:
 - Firestore Database
 - App Check
 - Cloud Functions
-- Hosting (optional but recommended)
+- Hosting (recommended)
 
-Authentication providers:
+Auth providers currently used:
 
 - Email/Password
 - Google
 
+App Check:
+
+- Production uses reCAPTCHA v3
+- Local development can use an App Check debug token
+
 ## Admin Bootstrap
 
-Grant admin access with a Firebase custom claim:
+Grant admin access with Firebase custom claims:
 
 ```bash
 cd functions
 npx tsx src/scripts/setAdminClaims.ts --email admin@example.com
 ```
 
-This sets `{ admin: true }` on the target Firebase user.
+This sets:
+
+```json
+{ "admin": true }
+```
+
+on the chosen Firebase user.
+
+## Local Verification Commands
+
+Frontend:
+
+```bash
+npm run lint
+npm run build
+```
+
+Functions:
+
+```bash
+cd functions
+npm run build
+npm run test
+```
+
+Emulators:
+
+```bash
+cd functions
+npm run serve
+```
 
 ## Deployment
 
-Deploy Firestore rules and Functions:
+Deploy Functions and Firestore rules:
 
 ```bash
-firebase deploy --only firestore:rules,functions
+firebase deploy --only functions,firestore:rules
 ```
 
-Deploy Hosting too if you want Firebase Hosting to serve the Vite build:
+Deploy Hosting too:
 
 ```bash
 npm run build
 firebase deploy --only hosting,functions,firestore:rules
 ```
 
-Recommended production region: `asia-south1`.
+Production/runtime notes:
 
-Warm instances:
+- region: `asia-south1`
+- `aiChat` and billing callables use `minInstances = 1`
+- webhook URL is exposed through the `razorpayWebhook` Function
+- App Check is enabled on all callable Functions
 
-- `aiChat`
-- billing callables
+## Razorpay Notes
 
-are configured with `minInstances = 1` to reduce cold starts on paid flows.
+Implemented server flows:
+
+- subscription checkout
+- checkout verification
+- webhook activation/renewal/cancellation/pause sync
+- cancel renewal
+- resume paused subscriptions
+- refund request with usage-based eligibility checks
+
+Important behavior:
+
+- cancelled subscriptions cannot be resumed through Razorpay
+- paused subscriptions can be resumed
+- refund state is mirrored into both:
+  - payment records
+  - `subscriptionPrivate/main`
 
 ## Firestore Security Model
 
@@ -159,8 +260,17 @@ Clients cannot write:
 - `payments/**`
 - `billingEvents/**`
 
+All sensitive writes happen through Firebase Admin SDK in Cloud Functions.
+
+## Current Limitations / Follow-Ups
+
+- Account deletion is not implemented yet
+- Bundle size is still large and should be code-split before a polished production launch
+- Local Node is expected to be upgraded to `20.19+` or `22.12+` for Vite parity
+- `firebase-functions` in `functions/package.json` is behind latest and should be upgraded carefully
+
 ## Notes
 
-- The old client-side Gemini API key flow has been removed.
-- Cloud Functions use the default Firebase service account automatically.
-- The previously created `backend/` and `deploy/` folders are vestigial from an interrupted migration and are not part of the active architecture.
+- The old client-side Gemini key flow is removed
+- PhonePe has been removed from the active billing architecture
+- The old `backend/` and `deploy/` folders are not part of the active runtime architecture
