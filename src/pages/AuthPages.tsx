@@ -21,7 +21,10 @@ import {
 } from 'lucide-react';
 import { DEFAULT_PLAN } from '../config/subscription';
 import { auth } from '../lib/firebase';
-import { getEmailVerificationActionCodeSettings } from '../lib/authActionCode';
+import {
+  getEmailVerificationActionCodeSettings,
+  getPasswordResetActionCodeSettings,
+} from '../lib/authActionCode';
 
 const toUserSession = (firebaseUser: FirebaseUser) => ({
   id: firebaseUser.uid,
@@ -181,7 +184,8 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
 
     setIsLoading(true);
     try {
-      await sendPasswordResetEmail(auth, email.trim());
+      const actionCodeSettings = getPasswordResetActionCodeSettings();
+      await sendPasswordResetEmail(auth, email.trim(), actionCodeSettings);
       setNotice('Password reset email sent. Check your inbox for the reset link.');
     } catch (err) {
       console.error(err);
