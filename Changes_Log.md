@@ -148,3 +148,12 @@
   - improved resume/cancel button copy and styling
   - cleaned mojibake bullet separators
 - Fixed remaining lint issues across shared UI and layout files
+
+### EC2 Deployment
+
+- Added `scripts/deploy-frontend-ec2.sh` for SSH-based frontend deployment to the EC2 host.
+- Added a local-only `.env.production` deployment environment file for the EC2 frontend build.
+- Pushed the latest `razorpay-backend` branch updates to GitHub so the server could pull the new code.
+- Uploaded the production frontend env file to `/var/www/pluto/.env.production` on EC2.
+- Deployed the latest frontend build on EC2 by pulling `razorpay-backend`, installing dependencies, building with Vite, validating Nginx config, and reloading Nginx.
+- Verified that `https://pluto.akcero.ai` returned HTTP 200 and served the new production asset bundle after deployment.
