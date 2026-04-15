@@ -209,15 +209,10 @@
 
 - Fixed project sidebar behavior so clicking the active project again clears project focus.
 - Stopped the app from briefly showing Free-plan usage for paid users during refresh by waiting for the server subscription snapshot before rendering plan-sensitive UI.
-- Improved token usage formatting to show friendlier summaries like `approx 62 messages left (250k tokens)`.
+- Improved token usage formatting.
 
 ### Validation and Deployment
 
-- Ran and passed:
-  - frontend lint
-  - frontend build
-  - Functions build
-  - Functions tests
+- Ran and passed: frontend lint, frontend build, Functions build, Functions tests
 - Deployed updated Firebase Functions to `pluto-ef61b`.
 - Deployed the latest Pluto frontend to EC2 from GitHub commit `89f95a4` on `razorpay-backend`.
-- Verified the live site returned HTTP `200` and served the updated production asset bundle after deployment.
