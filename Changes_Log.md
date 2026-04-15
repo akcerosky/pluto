@@ -189,3 +189,35 @@
   - `9038554` `Fix password reset action flow`
   - `ad1612f` `Fix EC2 repo remote during deploy`
 - Verified the live deployment was updated on EC2 by confirming the server pulled the latest `razorpay-backend` branch and rebuilt the production bundle successfully.
+
+## 2026-04-15
+
+### Token Quota Rollout
+
+- Replaced message-count quota handling with token-based quota accounting for Pluto AI requests.
+- Added preflight token estimation, reservation, reconciliation, anomaly fallback, and structured observability for token usage.
+- Updated Firestore usage tracking to store token totals, reservations, and derived usage snapshots for the frontend.
+- Refreshed plan definitions and frontend quota UI to show token-based usage and compact token formatting.
+
+### Free Mode Trial Access
+
+- Enabled Homework and Exam Prep access for Free users with a combined `3/day` limited trial.
+- Added backend enforcement for the Free premium-mode daily cap and surfaced the remaining trial count to the frontend.
+- Updated chat entry points and plan copy so Free users can see and use the limited Homework / Exam Prep access before the upgrade prompt appears.
+
+### Hydration and UX Cleanup
+
+- Fixed project sidebar behavior so clicking the active project again clears project focus.
+- Stopped the app from briefly showing Free-plan usage for paid users during refresh by waiting for the server subscription snapshot before rendering plan-sensitive UI.
+- Improved token usage formatting to show friendlier summaries like `approx 62 messages left (250k tokens)`.
+
+### Validation and Deployment
+
+- Ran and passed:
+  - frontend lint
+  - frontend build
+  - Functions build
+  - Functions tests
+- Deployed updated Firebase Functions to `pluto-ef61b`.
+- Deployed the latest Pluto frontend to EC2 from GitHub commit `89f95a4` on `razorpay-backend`.
+- Verified the live site returned HTTP `200` and served the updated production asset bundle after deployment.
