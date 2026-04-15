@@ -17,9 +17,12 @@ export interface AppContextType {
   refreshServerState: () => Promise<void>;
   applyServerSnapshot: (snapshot: {
     plan: SubscriptionPlan;
-    usageToday: number;
-    dailyLimit: number | null;
-    remainingToday: number | null;
+    usageTodayTokens: number;
+    dailyTokenLimit: number;
+    remainingTodayTokens: number;
+    estimatedMessagesLeft: number;
+    premiumModeCount?: number;
+    freePremiumModesRemainingToday?: number | null;
     educationLevel?: string;
     objective?: string;
     name?: string;
@@ -48,9 +51,13 @@ export interface AppContextType {
 
   currentPlan: SubscriptionPlan;
   planConfig: PlanConfig;
-  usageToday: number;
-  dailyLimit: number | null;
-  remainingToday: number | null;
+  isSubscriptionHydrated: boolean;
+  usageTodayTokens: number;
+  dailyTokenLimit: number;
+  remainingTodayTokens: number;
+  estimatedMessagesLeft: number;
+  premiumModeCount: number;
+  freePremiumModesRemainingToday: number | null;
   setPlan: (plan: SubscriptionPlan) => void;
   canUseMode: (mode: ChatMode) => boolean;
   canUseFeature: (feature: PlanFeatureKey) => boolean;

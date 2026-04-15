@@ -6,6 +6,7 @@ import { auth, db, hasFirebaseConfig } from '../lib/firebase';
 import { meGet } from '../lib/plutoApi';
 import {
   DEFAULT_PLAN,
+  FREE_PREMIUM_MODE_DAILY_LIMIT,
   PLAN_CONFIGS,
   type PlanFeatureKey,
   type SubscriptionPlan,
@@ -17,6 +18,7 @@ import { AppContext } from './appContextValue';
 const STORAGE_KEY = 'pluto_v3';
 const CLOUD_STATE_DOC = 'main';
 const START_NEW_CHAT_KEY = `${STORAGE_KEY}_start_new_chat`;
+const estimatePromptTokens = (value: string) => Math.max(1, Math.ceil(value.trim().length / 4));
 
 const normalizeEducationLevel = (value: string | undefined): EducationLevel => {
   switch (value) {
@@ -77,7 +79,6 @@ const userFromFirebase = (firebaseUser: FirebaseUser): UserSession => ({
   avatar: firebaseUser.photoURL || undefined,
   educationLevel: 'High School',
   objective: 'General Learning',
-  plan: DEFAULT_PLAN,
 });
 
 const requestFreshChatView = () => {
@@ -90,6 +91,68 @@ const consumeFreshChatViewRequest = () => {
     sessionStorage.removeItem(START_NEW_CHAT_KEY);
   }
   return shouldStartNew;
+};
+
+const safeNumber = (value: unknown) => {
+  const numeric = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(numeric) ? numeric : undefined;
+};
+
+const normalizeUsageSnapshot = (
+  plan: SubscriptionPlan,
+  snapshot: {
+    usageTodayTokens?: number;
+    dailyTokenLimit?: number;
+    remainingTodayTokens?: number;
+    estimatedMessagesLeft?: number;
+    premiumModeCount?: number;
+    freePremiumModesRemainingToday?: number | null;
+  }
+) => {
+  const planConfig = PLAN_CONFIGS[plan];
+  const dailyTokenLimit = Math.max(
+    0,
+    Math.floor(safeNumber(snapshot.dailyTokenLimit) ?? planConfig.dailyTokenLimit)
+  );
+  const usageTodayTokens = Math.max(
+    0,
+    Math.floor(safeNumber(snapshot.usageTodayTokens) ?? 0)
+  );
+  const derivedRemaining = Math.max(0, dailyTokenLimit - usageTodayTokens);
+  const remainingTodayTokens = Math.max(
+    0,
+    Math.floor(safeNumber(snapshot.remainingTodayTokens) ?? derivedRemaining)
+  );
+  const estimatedMessagesLeft = Math.max(
+    0,
+    Math.floor(
+      safeNumber(snapshot.estimatedMessagesLeft) ??
+        remainingTodayTokens / planConfig.averageTokensPerMessage
+    )
+  );
+  const premiumModeCount = Math.max(
+    0,
+    Math.floor(safeNumber(snapshot.premiumModeCount) ?? 0)
+  );
+  const freePremiumModesRemainingToday =
+    plan === 'Free'
+      ? Math.max(
+          0,
+          Math.floor(
+            safeNumber(snapshot.freePremiumModesRemainingToday) ??
+              (FREE_PREMIUM_MODE_DAILY_LIMIT - premiumModeCount)
+          )
+        )
+      : null;
+
+  return {
+    usageTodayTokens,
+    dailyTokenLimit,
+    remainingTodayTokens,
+    estimatedMessagesLeft,
+    premiumModeCount,
+    freePremiumModesRemainingToday,
+  };
 };
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
@@ -114,9 +177,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [mode, setMode] = useState<ChatMode>('Conversational');
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [isCloudHydrated, setIsCloudHydrated] = useState(false);
-  const [usageToday, setUsageToday] = useState(0);
-  const [dailyLimit, setDailyLimit] = useState<number | null>(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
-  const [remainingToday, setRemainingToday] = useState<number | null>(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
+  const [isSubscriptionHydrated, setIsSubscriptionHydrated] = useState(false);
+  const [usageTodayTokens, setUsageTodayTokens] = useState(0);
+  const [dailyTokenLimit, setDailyTokenLimit] = useState<number>(PLAN_CONFIGS[DEFAULT_PLAN].dailyTokenLimit);
+  const [remainingTodayTokens, setRemainingTodayTokens] = useState<number>(PLAN_CONFIGS[DEFAULT_PLAN].dailyTokenLimit);
+  const [estimatedMessagesLeft, setEstimatedMessagesLeft] = useState(
+    Math.floor(PLAN_CONFIGS[DEFAULT_PLAN].dailyTokenLimit / PLAN_CONFIGS[DEFAULT_PLAN].averageTokensPerMessage)
+  );
+  const [premiumModeCount, setPremiumModeCount] = useState(0);
+  const [freePremiumModesRemainingToday, setFreePremiumModesRemainingToday] = useState<number | null>(
+    FREE_PREMIUM_MODE_DAILY_LIMIT
+  );
   const threadsRef = useRef(threads);
   const projectsRef = useRef(projects);
 
@@ -126,18 +197,26 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const applyServerSnapshot = useCallback(
     (snapshot: {
       plan: SubscriptionPlan;
-      usageToday: number;
-      dailyLimit: number | null;
-      remainingToday: number | null;
+      usageTodayTokens: number;
+      dailyTokenLimit: number;
+      remainingTodayTokens: number;
+      estimatedMessagesLeft: number;
+      premiumModeCount?: number;
+      freePremiumModesRemainingToday?: number | null;
       educationLevel?: string;
       objective?: string;
       name?: string;
       email?: string;
       avatar?: string;
     }) => {
-      setUsageToday(snapshot.usageToday);
-      setDailyLimit(snapshot.dailyLimit);
-      setRemainingToday(snapshot.remainingToday);
+      const usageSnapshot = normalizeUsageSnapshot(snapshot.plan, snapshot);
+      setIsSubscriptionHydrated(true);
+      setUsageTodayTokens(usageSnapshot.usageTodayTokens);
+      setDailyTokenLimit(usageSnapshot.dailyTokenLimit);
+      setRemainingTodayTokens(usageSnapshot.remainingTodayTokens);
+      setEstimatedMessagesLeft(usageSnapshot.estimatedMessagesLeft);
+      setPremiumModeCount(usageSnapshot.premiumModeCount);
+      setFreePremiumModesRemainingToday(usageSnapshot.freePremiumModesRemainingToday);
       setUserState((prev) =>
         prev
           ? normalizeUser({
@@ -158,22 +237,31 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const refreshServerState = useCallback(async () => {
     if (!auth?.currentUser) return;
-    const response = await meGet();
-    setUserState(
-      normalizeUser({
-        id: response.user.id,
-        name: response.user.name,
-        email: response.user.email,
-        emailVerified: auth.currentUser?.emailVerified ?? false,
-        avatar: response.user.avatar,
-        educationLevel: normalizeEducationLevel(response.user.educationLevel),
-        objective: response.user.objective,
-        plan: response.subscription.plan,
-      })
-    );
-    setUsageToday(response.usageToday);
-    setDailyLimit(response.dailyLimit);
-    setRemainingToday(response.remainingToday);
+    setIsSubscriptionHydrated(false);
+    try {
+      const response = await meGet();
+      const usageSnapshot = normalizeUsageSnapshot(response.subscription.plan, response);
+      setUserState(
+        normalizeUser({
+          id: response.user.id,
+          name: response.user.name,
+          email: response.user.email,
+          emailVerified: auth.currentUser?.emailVerified ?? false,
+          avatar: response.user.avatar,
+          educationLevel: normalizeEducationLevel(response.user.educationLevel),
+          objective: response.user.objective,
+          plan: response.subscription.plan,
+        })
+      );
+      setUsageTodayTokens(usageSnapshot.usageTodayTokens);
+      setDailyTokenLimit(usageSnapshot.dailyTokenLimit);
+      setRemainingTodayTokens(usageSnapshot.remainingTodayTokens);
+      setEstimatedMessagesLeft(usageSnapshot.estimatedMessagesLeft);
+      setPremiumModeCount(usageSnapshot.premiumModeCount);
+      setFreePremiumModesRemainingToday(usageSnapshot.freePremiumModesRemainingToday);
+    } finally {
+      setIsSubscriptionHydrated(true);
+    }
   }, []);
 
   const setUser = useCallback((nextUser: UserSession | null) => {
@@ -205,9 +293,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           setThreads([]);
           setProjects([]);
           setActiveThreadId(null);
-          setUsageToday(0);
-          setDailyLimit(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
-          setRemainingToday(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
+          setIsSubscriptionHydrated(true);
+          setUsageTodayTokens(0);
+          setDailyTokenLimit(PLAN_CONFIGS[DEFAULT_PLAN].dailyTokenLimit);
+          setRemainingTodayTokens(PLAN_CONFIGS[DEFAULT_PLAN].dailyTokenLimit);
+          setEstimatedMessagesLeft(
+            Math.floor(
+              PLAN_CONFIGS[DEFAULT_PLAN].dailyTokenLimit /
+                PLAN_CONFIGS[DEFAULT_PLAN].averageTokensPerMessage
+            )
+          );
+          setPremiumModeCount(0);
+          setFreePremiumModesRemainingToday(FREE_PREMIUM_MODE_DAILY_LIMIT);
           setIsCloudHydrated(true);
           return;
         }
@@ -219,6 +316,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }
 
         const freshUser = firebaseAuth.currentUser ?? firebaseUser;
+        setIsSubscriptionHydrated(false);
 
         setUserState((prev) => {
           const firebaseSession = userFromFirebase(freshUser);
@@ -375,8 +473,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [updateUser]);
 
   const canUseMode = useCallback(
-    (requestedMode: ChatMode) => planConfig.allowedModes.includes(requestedMode),
-    [planConfig.allowedModes]
+    (requestedMode: ChatMode) => {
+      if (requestedMode === 'Conversational') return true;
+      if (currentPlan !== 'Free') return planConfig.allowedModes.includes(requestedMode);
+      return (freePremiumModesRemainingToday ?? 0) > 0;
+    },
+    [currentPlan, freePremiumModesRemainingToday, planConfig.allowedModes]
   );
 
   const canUseFeature = useCallback(
@@ -386,8 +488,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const canSendMessage = useCallback(
     (message: string, requestedMode: ChatMode) => {
+      if (!isSubscriptionHydrated) {
+        return {
+          ok: false,
+          reason: 'Loading your Pluto plan and usage. Please try again in a moment.',
+        };
+      }
+
       if (!canUseMode(requestedMode)) {
-        return { ok: false, reason: `${requestedMode} mode is available on Plus and Pro plans.` };
+        return {
+          ok: false,
+          reason:
+            currentPlan === 'Free'
+              ? 'Upgrade required. Free plan includes 3 Homework / Exam Prep uses per day.'
+              : `${requestedMode} mode is available on Plus and Pro plans.`,
+        };
       }
 
       if (message.trim().length > planConfig.maxInputChars) {
@@ -397,16 +512,41 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         };
       }
 
-      if (dailyLimit !== null && remainingToday !== null && remainingToday <= 0) {
+      if (estimatePromptTokens(message) > planConfig.maxInputTokensPerRequest) {
         return {
           ok: false,
-          reason: `You reached the ${currentPlan} daily limit for today. Upgrade or wait for the 00:00 IST reset.`,
+          reason: `This request is too large for ${currentPlan}. Reduce the prompt and try again.`,
+        };
+      }
+
+      if (
+        estimatePromptTokens(message) + planConfig.maxOutputTokensPerRequest >
+        remainingTodayTokens
+      ) {
+        return {
+          ok: false,
+          reason: 'You do not have enough tokens remaining for this request today.',
+        };
+      }
+
+      if (remainingTodayTokens <= 0) {
+        return {
+          ok: false,
+          reason: `You reached the ${currentPlan} daily token limit for today. Upgrade or wait for the 00:00 IST reset.`,
         };
       }
 
       return { ok: true };
     },
-    [canUseMode, currentPlan, dailyLimit, planConfig.maxInputChars, remainingToday]
+    [
+      canUseMode,
+      currentPlan,
+      isSubscriptionHydrated,
+      planConfig.maxInputChars,
+      planConfig.maxInputTokensPerRequest,
+      planConfig.maxOutputTokensPerRequest,
+      remainingTodayTokens,
+    ]
   );
 
   const logout = useCallback(() => {
@@ -419,9 +559,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setThreads([]);
     setProjects([]);
     setActiveThreadId(null);
-    setUsageToday(0);
-    setDailyLimit(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
-    setRemainingToday(PLAN_CONFIGS[DEFAULT_PLAN].dailyMessageLimit);
+    setIsSubscriptionHydrated(true);
+    setUsageTodayTokens(0);
+    setDailyTokenLimit(PLAN_CONFIGS[DEFAULT_PLAN].dailyTokenLimit);
+    setRemainingTodayTokens(PLAN_CONFIGS[DEFAULT_PLAN].dailyTokenLimit);
+    setEstimatedMessagesLeft(
+      Math.floor(
+        PLAN_CONFIGS[DEFAULT_PLAN].dailyTokenLimit /
+          PLAN_CONFIGS[DEFAULT_PLAN].averageTokensPerMessage
+      )
+    );
+    setPremiumModeCount(0);
+    setFreePremiumModesRemainingToday(FREE_PREMIUM_MODE_DAILY_LIMIT);
     localStorage.clear();
   }, []);
 
@@ -531,9 +680,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setActiveProjectId,
       currentPlan,
       planConfig,
-      usageToday,
-      dailyLimit,
-      remainingToday,
+      isSubscriptionHydrated,
+      usageTodayTokens,
+      dailyTokenLimit,
+      remainingTodayTokens,
+      estimatedMessagesLeft,
+      premiumModeCount,
+      freePremiumModesRemainingToday,
       setPlan,
       canUseMode,
       canUseFeature,
@@ -551,20 +704,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       createProject,
       createThread,
       currentPlan,
-      dailyLimit,
+      dailyTokenLimit,
+      estimatedMessagesLeft,
+      freePremiumModesRemainingToday,
+      isSubscriptionHydrated,
       deleteThread,
       logout,
       mode,
       planConfig,
+      premiumModeCount,
       projects,
       refreshServerState,
-      remainingToday,
+      remainingTodayTokens,
       setMode,
       setUser,
       startNewChat,
       threads,
       updateThread,
-      usageToday,
+      usageTodayTokens,
       user,
       updateUser,
       canSendMessage,

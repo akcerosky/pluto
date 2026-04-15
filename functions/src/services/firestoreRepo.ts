@@ -1,6 +1,12 @@
-import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../lib/firebaseAdmin.js';
-import { DEFAULT_PLAN, PLAN_DEFINITIONS, PRO_REFUND_DAILY_LIMIT, type SubscriptionPlan } from '../config/plans.js';
+import {
+  DEFAULT_PLAN,
+  FREE_PREMIUM_MODE_DAILY_LIMIT,
+  PLAN_DEFINITIONS,
+  PRO_REFUND_DAILY_LIMIT,
+  type SubscriptionPlan,
+} from '../config/plans.js';
+import { ABSOLUTE_MAX_DAILY_TOKEN_CEILING, estimateMessagesLeft } from './tokenUsage.js';
 import {
   countIstCalendarDaysInclusive,
   getIstDayKey,
@@ -10,6 +16,7 @@ import {
   toIstIsoString,
 } from '../utils/time.js';
 import type {
+  TokenUsage,
   PaymentRecord,
   ProfileDoc,
   SubscriptionPrivateDoc,
@@ -101,16 +108,28 @@ export const getMeSnapshot = async (uid: string, identity?: UserBootstrapIdentit
   const subscription = subscriptionSnap.data() as SubscriptionPublicDoc;
   const usage = usageSnap.exists ? (usageSnap.data() as UsageDailyDoc) : null;
   const planDef = PLAN_DEFINITIONS[subscription.plan];
-  const usageToday = usage?.count ?? 0;
-  const dailyLimit = planDef.dailyLimit;
-  const remainingToday = dailyLimit === null ? null : Math.max(dailyLimit - usageToday, 0);
+  const usageTodayTokens = usage?.totalTokensUsed ?? 0;
+  const premiumModeCount = usage?.premiumModeCount ?? 0;
+  const dailyTokenLimit = planDef.dailyTokenLimit;
+  const remainingTodayTokens = Math.max(
+    dailyTokenLimit - (usageTodayTokens + (usage?.reservedTokens ?? 0)),
+    0
+  );
+  const estimatedMessagesLeft = estimateMessagesLeft(subscription.plan, remainingTodayTokens);
+  const freePremiumModesRemainingToday =
+    subscription.plan === 'Free'
+      ? Math.max(FREE_PREMIUM_MODE_DAILY_LIMIT - premiumModeCount, 0)
+      : null;
 
   return {
     profile,
     subscription,
-    usageToday,
-    dailyLimit,
-    remainingToday,
+    usageTodayTokens,
+    premiumModeCount,
+    freePremiumModesRemainingToday,
+    dailyTokenLimit,
+    remainingTodayTokens,
+    estimatedMessagesLeft,
     dayKey: todayKey,
     planDefinition: planDef,
   };
@@ -135,17 +154,97 @@ export const updateProfile = async (
   return profileSnap.data() as ProfileDoc;
 };
 
-export const incrementUsage = async (uid: string, plan: SubscriptionPlan) => {
+export const reserveUsageTokens = async (
+  uid: string,
+  plan: SubscriptionPlan,
+  reservedTokens: number
+) => {
   const usageRef = userRoot(uid).collection('usageDaily').doc(getIstDayKey(getIstNow()));
-  await usageRef.set(
-    {
-      count: FieldValue.increment(1),
-      planSnapshot: plan,
-      lastMessageAt: toIstIsoString(getIstNow()),
-      updatedAt: toIstIsoString(getIstNow()),
-    },
-    { merge: true }
-  );
+  const now = toIstIsoString(getIstNow());
+  const planDef = PLAN_DEFINITIONS[plan];
+
+  await adminDb.runTransaction(async (transaction) => {
+    const snap = await transaction.get(usageRef);
+    const data = snap.exists ? (snap.data() as Partial<UsageDailyDoc>) : null;
+    const totalTokensUsed = data?.totalTokensUsed ?? 0;
+    const existingReserved = data?.reservedTokens ?? 0;
+    const effectiveUsed = totalTokensUsed + existingReserved;
+
+    const effectiveDailyLimit = Math.min(planDef.dailyTokenLimit, ABSOLUTE_MAX_DAILY_TOKEN_CEILING);
+
+    if (effectiveUsed + reservedTokens > effectiveDailyLimit) {
+      throw new Error('TOKEN_QUOTA_EXCEEDED');
+    }
+
+    transaction.set(
+      usageRef,
+      {
+        count: data?.count ?? 0,
+        premiumModeCount: data?.premiumModeCount ?? 0,
+        inputTokensUsed: data?.inputTokensUsed ?? 0,
+        outputTokensUsed: data?.outputTokensUsed ?? 0,
+        totalTokensUsed,
+        reservedTokens: existingReserved + reservedTokens,
+        planSnapshot: plan,
+        lastMessageAt: data?.lastMessageAt ?? now,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  });
+};
+
+export const releaseReservedUsageTokens = async (uid: string, reservedTokens: number) => {
+  const usageRef = userRoot(uid).collection('usageDaily').doc(getIstDayKey(getIstNow()));
+  const now = toIstIsoString(getIstNow());
+
+  await adminDb.runTransaction(async (transaction) => {
+    const snap = await transaction.get(usageRef);
+    const data = snap.exists ? (snap.data() as Partial<UsageDailyDoc>) : null;
+    const existingReserved = data?.reservedTokens ?? 0;
+
+    transaction.set(
+      usageRef,
+      {
+        reservedTokens: Math.max(existingReserved - reservedTokens, 0),
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  });
+};
+
+export const reconcileUsageTokens = async (
+  uid: string,
+  plan: SubscriptionPlan,
+  reservedTokens: number,
+  usage: TokenUsage,
+  options?: { countsTowardPremiumModeLimit?: boolean }
+) => {
+  const usageRef = userRoot(uid).collection('usageDaily').doc(getIstDayKey(getIstNow()));
+  const now = toIstIsoString(getIstNow());
+
+  await adminDb.runTransaction(async (transaction) => {
+    const snap = await transaction.get(usageRef);
+    const data = snap.exists ? (snap.data() as Partial<UsageDailyDoc>) : null;
+    const existingReserved = data?.reservedTokens ?? 0;
+    transaction.set(
+      usageRef,
+      {
+        count: (data?.count ?? 0) + 1,
+        premiumModeCount:
+          (data?.premiumModeCount ?? 0) + (options?.countsTowardPremiumModeLimit ? 1 : 0),
+        inputTokensUsed: (data?.inputTokensUsed ?? 0) + usage.inputTokens,
+        outputTokensUsed: (data?.outputTokensUsed ?? 0) + usage.outputTokens,
+        totalTokensUsed: (data?.totalTokensUsed ?? 0) + usage.totalTokens,
+        reservedTokens: Math.max(existingReserved - reservedTokens, 0),
+        planSnapshot: plan,
+        lastMessageAt: now,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  });
 };
 
 export const getUsageHistory = async (uid: string) => {
@@ -157,6 +256,10 @@ export const getUsageHistory = async (uid: string) => {
     return {
       dateKey,
       count: data?.count ?? 0,
+      premiumModeCount: data?.premiumModeCount ?? 0,
+      inputTokensUsed: data?.inputTokensUsed ?? 0,
+      outputTokensUsed: data?.outputTokensUsed ?? 0,
+      totalTokensUsed: data?.totalTokensUsed ?? 0,
       planSnapshot: data?.planSnapshot ?? null,
     };
   });
@@ -284,13 +387,15 @@ export const calculateRefundEligibility = async (
   const now = getIstNow();
   const dayKeys = getIstDateRangeInclusive(activationDate, now);
   const docs = await Promise.all(dayKeys.map((key) => userRoot(uid).collection('usageDaily').doc(key).get()));
-  const messagesUsed = docs.reduce((sum, doc) => {
+  const tokensUsed = docs.reduce((sum, doc) => {
     if (!doc.exists) return sum;
-    return sum + ((doc.data() as UsageDailyDoc).count ?? 0);
+    const data = doc.data() as UsageDailyDoc;
+    if (typeof data.totalTokensUsed === 'number') return sum + data.totalTokensUsed;
+    return sum + ((data.count ?? 0) * PLAN_DEFINITIONS[plan].averageTokensPerMessage);
   }, 0);
   const daysElapsed = countIstCalendarDaysInclusive(activationDate, now);
-  const planDailyLimit = PLAN_DEFINITIONS[plan].dailyLimit ?? PRO_REFUND_DAILY_LIMIT;
+  const planDailyLimit = PLAN_DEFINITIONS[plan].dailyTokenLimit ?? PRO_REFUND_DAILY_LIMIT;
   const eligibleUsageCapacity = daysElapsed * planDailyLimit;
-  const usageRatio = eligibleUsageCapacity === 0 ? 0 : messagesUsed / eligibleUsageCapacity;
-  return { messagesUsed, daysElapsed, eligibleUsageCapacity, usageRatio };
+  const usageRatio = eligibleUsageCapacity === 0 ? 0 : tokensUsed / eligibleUsageCapacity;
+  return { messagesUsed: tokensUsed, daysElapsed, eligibleUsageCapacity, usageRatio };
 };

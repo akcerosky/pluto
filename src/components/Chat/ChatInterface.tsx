@@ -22,6 +22,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { getPlutoResponse } from '../../hooks/useAI';
+import { formatTokenCount, formatTokenUsageSummary } from '../../lib/tokenQuota';
 
 export const ChatInterface = () => {
   const {
@@ -35,8 +36,10 @@ export const ChatInterface = () => {
     setActiveProjectId,
     currentPlan,
     planConfig,
-    dailyLimit,
-    remainingToday,
+    isSubscriptionHydrated,
+    freePremiumModesRemainingToday,
+    remainingTodayTokens,
+    estimatedMessagesLeft,
     canSendMessage,
     canUseMode,
     applyServerSnapshot,
@@ -101,19 +104,47 @@ export const ChatInterface = () => {
             </motion.button>
             <motion.button
               whileHover={{ y: -5, background: 'rgba(0, 210, 255, 0.1)' }}
-              onClick={() => (canUseMode('Homework') ? createThread('Homework', activeProjectId || undefined) : setPlanNotice('Homework mode is available on Plus and Pro plans.'))}
+              onClick={() =>
+                canUseMode('Homework')
+                  ? createThread('Homework', activeProjectId || undefined)
+                  : setPlanNotice(
+                      currentPlan === 'Free'
+                        ? 'Upgrade required. Free plan includes 3 Homework / Exam Prep uses per day.'
+                        : 'Homework mode is available on Plus and Pro plans.'
+                    )
+              }
               style={{ ...modeCardStyle, borderColor: 'rgba(0, 210, 255, 0.3)', color: 'var(--secondary)' }}
             >
               <FileEdit size={28} />
-              <span>{canUseMode('Homework') ? 'Homework' : 'Homework (Plus)'}</span>
+              <span>
+                {currentPlan === 'Free'
+                  ? `Homework (${freePremiumModesRemainingToday ?? 0} left)`
+                  : canUseMode('Homework')
+                  ? 'Homework'
+                  : 'Homework (Plus)'}
+              </span>
             </motion.button>
             <motion.button
               whileHover={{ y: -5, background: 'rgba(255, 0, 193, 0.1)' }}
-              onClick={() => (canUseMode('ExamPrep') ? createThread('ExamPrep', activeProjectId || undefined) : setPlanNotice('Exam Prep mode is available on Plus and Pro plans.'))}
+              onClick={() =>
+                canUseMode('ExamPrep')
+                  ? createThread('ExamPrep', activeProjectId || undefined)
+                  : setPlanNotice(
+                      currentPlan === 'Free'
+                        ? 'Upgrade required. Free plan includes 3 Homework / Exam Prep uses per day.'
+                        : 'Exam Prep mode is available on Plus and Pro plans.'
+                    )
+              }
               style={{ ...modeCardStyle, borderColor: 'rgba(255, 0, 193, 0.3)', color: 'var(--accent)' }}
             >
               <Award size={28} />
-              <span>{canUseMode('ExamPrep') ? 'Exam Prep' : 'Exam Prep (Plus)'}</span>
+              <span>
+                {currentPlan === 'Free'
+                  ? `Exam Prep (${freePremiumModesRemainingToday ?? 0} left)`
+                  : canUseMode('ExamPrep')
+                  ? 'Exam Prep'
+                  : 'Exam Prep (Plus)'}
+              </span>
             </motion.button>
           </div>
           {planNotice && <p style={{ marginTop: '18px', color: '#fbbf24', fontSize: '0.9rem' }}>{planNotice}</p>}
@@ -175,9 +206,12 @@ export const ChatInterface = () => {
 
       applyServerSnapshot({
         plan: aiResponse.subscription.plan,
-        usageToday: aiResponse.usageToday,
-        dailyLimit: aiResponse.dailyLimit,
-        remainingToday: aiResponse.remainingToday,
+        usageTodayTokens: aiResponse.usageTodayTokens,
+        dailyTokenLimit: aiResponse.dailyTokenLimit,
+        remainingTodayTokens: aiResponse.remainingTodayTokens,
+        estimatedMessagesLeft: aiResponse.estimatedMessagesLeft,
+        premiumModeCount: aiResponse.premiumModeCount,
+        freePremiumModesRemainingToday: aiResponse.freePremiumModesRemainingToday,
       });
 
       const assistantMsg: Message = {
@@ -264,10 +298,10 @@ export const ChatInterface = () => {
 
         <div className="chat-status-pills" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: '#f59e0b', fontWeight: '700', letterSpacing: '0.5px' }}>
-            {currentPlan.toUpperCase()}
+            {isSubscriptionHydrated ? currentPlan.toUpperCase() : 'LOADING'}
           </div>
           <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontWeight: '700', letterSpacing: '0.5px' }}>
-            {dailyLimit === null ? 'UNLIMITED DAILY' : `${remainingToday} LEFT TODAY`}
+            {isSubscriptionHydrated ? `${formatTokenCount(remainingTodayTokens)} TOKENS LEFT` : 'SYNCING TOKENS'}
           </div>
           <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontWeight: '700', letterSpacing: '0.5px' }}>
             {activeThread.mode.toUpperCase()}
@@ -412,14 +446,16 @@ export const ChatInterface = () => {
               <Send size={20} />
             </motion.button>
           </div>
-          {!canUseMode(activeThread.mode) && (
+          {isSubscriptionHydrated && !canUseMode(activeThread.mode) && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#fbbf24', fontSize: '0.8rem' }}>
               <Lock size={14} />
               <span>This mode is locked on {currentPlan}. Upgrade to Plus or Pro.</span>
             </div>
           )}
           <p style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-secondary)', opacity: 0.85 }}>
-            {dailyLimit === null ? `Pro plan active. Extended context window: ${planConfig.historyWindow} messages.` : `${currentPlan} plan: ${remainingToday}/${dailyLimit} requests remaining today.`}
+            {isSubscriptionHydrated
+              ? `${currentPlan} plan: ${formatTokenUsageSummary(remainingTodayTokens, estimatedMessagesLeft)}.`
+              : 'Syncing your Pluto plan and usage...'}
           </p>
           <p style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-secondary)', opacity: 0.6 }}>
             Pluto Intelligence may be wrong. Verification recommended.

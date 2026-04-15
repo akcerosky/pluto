@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { requireEnv } from '../config/env.js';
+import { buildEstimatedUsage, estimateAiInputTokens, normalizeTokenUsage } from './tokenUsage.js';
 const buildSystemInstruction = (educationLevel, mode, objective, plan) => `<identity>
 You are Pluto, an advanced AI learning companion designed exclusively for educational support. Your sole purpose is to help students learn effectively.
 </identity>
@@ -44,11 +45,21 @@ export const normalizeHistory = (history) => {
 export const generatePlutoResponse = async (payload) => {
     const genAI = new GoogleGenerativeAI(requireEnv('geminiApiKey').trim());
     const history = normalizeHistory(payload.history);
+    const estimatedInputTokens = estimateAiInputTokens({
+        prompt: payload.prompt,
+        educationLevel: payload.educationLevel,
+        mode: payload.mode,
+        objective: payload.objective,
+        history: payload.history,
+    });
     const backoffs = [0, 1000, 3000, 9000];
     let lastError;
     const model = genAI.getGenerativeModel({
         model: PRIMARY_MODEL,
         systemInstruction: buildSystemInstruction(payload.educationLevel, payload.mode, payload.objective, payload.plan),
+        generationConfig: {
+            maxOutputTokens: payload.maxOutputTokens,
+        },
     });
     const chat = model.startChat({ history });
     for (let attempt = 0; attempt < backoffs.length; attempt += 1) {
@@ -59,7 +70,38 @@ export const generatePlutoResponse = async (payload) => {
         try {
             const result = await chat.sendMessage(payload.prompt);
             const response = await result.response;
-            return response.text();
+            const text = response.text();
+            const metadata = response.usageMetadata;
+            const estimatedUsage = buildEstimatedUsage({
+                prompt: payload.prompt,
+                educationLevel: payload.educationLevel,
+                mode: payload.mode,
+                objective: payload.objective,
+                history: payload.history,
+                answer: text,
+            });
+            const providerUsage = metadata &&
+                typeof metadata.promptTokenCount === 'number' &&
+                typeof metadata.candidatesTokenCount === 'number' &&
+                typeof metadata.totalTokenCount === 'number'
+                ? {
+                    inputTokens: metadata.promptTokenCount,
+                    outputTokens: metadata.candidatesTokenCount,
+                    totalTokens: metadata.totalTokenCount,
+                    usageSource: 'provider',
+                }
+                : null;
+            const normalizedUsage = normalizeTokenUsage({
+                providerUsage,
+                estimatedUsage,
+                estimatedInputTokens,
+                maxOutputTokens: payload.maxOutputTokens,
+            });
+            return {
+                text,
+                usage: normalizedUsage.usage,
+                usageAnomaly: normalizedUsage.anomalyReason,
+            };
         }
         catch (error) {
             lastError = error;

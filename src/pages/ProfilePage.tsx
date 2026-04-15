@@ -14,6 +14,7 @@ import {
   meUpdateProfile,
 } from '../lib/plutoApi';
 import { RAZORPAY_KEY_ID } from '../config/billing';
+import { formatTokenCount, formatTokenUsageSummary } from '../lib/tokenQuota';
 
 declare global {
   interface Window {
@@ -54,9 +55,11 @@ export const ProfilePage = () => {
     updateUser,
     refreshServerState,
     currentPlan,
-    usageToday,
-    dailyLimit,
-    remainingToday,
+    isSubscriptionHydrated,
+    usageTodayTokens,
+    dailyTokenLimit,
+    remainingTodayTokens,
+    estimatedMessagesLeft,
     logout,
   } = useApp();
   const [name, setName] = useState(user?.name || '');
@@ -87,9 +90,12 @@ export const ProfilePage = () => {
         setHistory(paymentHistory.history);
         applyServerSnapshot({
           plan: subscription.subscription.plan,
-          usageToday: subscription.usageToday,
-          dailyLimit: subscription.dailyLimit,
-          remainingToday: subscription.remainingToday,
+          usageTodayTokens: subscription.usageTodayTokens,
+          dailyTokenLimit: subscription.dailyTokenLimit,
+          remainingTodayTokens: subscription.remainingTodayTokens,
+          estimatedMessagesLeft: subscription.estimatedMessagesLeft,
+          premiumModeCount: subscription.premiumModeCount,
+          freePremiumModesRemainingToday: subscription.freePremiumModesRemainingToday,
         });
       } catch (error) {
         console.warn('Unable to load Pluto billing state.', error);
@@ -116,9 +122,12 @@ export const ProfilePage = () => {
       });
       applyServerSnapshot({
         plan: response.subscription.plan,
-        usageToday: response.usageToday,
-        dailyLimit: response.dailyLimit,
-        remainingToday: response.remainingToday,
+        usageTodayTokens: response.usageTodayTokens,
+        dailyTokenLimit: response.dailyTokenLimit,
+        remainingTodayTokens: response.remainingTodayTokens,
+        estimatedMessagesLeft: response.estimatedMessagesLeft,
+        premiumModeCount: response.premiumModeCount,
+        freePremiumModesRemainingToday: response.freePremiumModesRemainingToday,
         name: response.user.name,
         objective: response.user.objective,
         educationLevel: response.user.educationLevel,
@@ -188,9 +197,12 @@ export const ProfilePage = () => {
           setEndDate(subscription.subscription.endDate);
           applyServerSnapshot({
             plan: subscription.subscription.plan,
-            usageToday: subscription.usageToday,
-            dailyLimit: subscription.dailyLimit,
-            remainingToday: subscription.remainingToday,
+            usageTodayTokens: subscription.usageTodayTokens,
+            dailyTokenLimit: subscription.dailyTokenLimit,
+            remainingTodayTokens: subscription.remainingTodayTokens,
+            estimatedMessagesLeft: subscription.estimatedMessagesLeft,
+            premiumModeCount: subscription.premiumModeCount,
+            freePremiumModesRemainingToday: subscription.freePremiumModesRemainingToday,
           });
         },
         prefill: checkout.prefill,
@@ -264,8 +276,14 @@ export const ProfilePage = () => {
           <section className="profile-section" style={sectionStyle}>
             <h3 style={sectionTitleStyle}>Subscription</h3>
             <div style={{ marginBottom: '18px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-              <strong style={{ color: 'white' }}>{currentPlan}</strong> plan active
-              {dailyLimit === null ? ' • Unlimited daily usage' : ` • ${usageToday}/${dailyLimit} used today (${remainingToday} left)`}
+              {isSubscriptionHydrated ? (
+                <>
+                  <strong style={{ color: 'white' }}>{currentPlan}</strong> plan active
+                  {` • ${formatTokenCount(usageTodayTokens)}/${formatTokenCount(dailyTokenLimit)} tokens used today (${formatTokenUsageSummary(remainingTodayTokens, estimatedMessagesLeft)})`}
+                </>
+              ) : (
+                'Syncing your subscription and usage...'
+              )}
             </div>
             <p style={{ marginBottom: '10px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
               Status: <strong style={{ color: 'white' }}>{subscriptionStatus}</strong>

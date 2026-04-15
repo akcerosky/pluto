@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { requireEnv } from '../config/env.js';
+import { buildEstimatedUsage, estimateAiInputTokens, normalizeTokenUsage } from './tokenUsage.js';
+import type { TokenUsage } from '../types/index.js';
 
 const buildSystemInstruction = (
   educationLevel: string,
@@ -60,9 +62,17 @@ export const generatePlutoResponse = async (payload: {
   objective: string;
   plan: string;
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  maxOutputTokens: number;
 }) => {
   const genAI = new GoogleGenerativeAI(requireEnv('geminiApiKey').trim());
   const history = normalizeHistory(payload.history);
+  const estimatedInputTokens = estimateAiInputTokens({
+    prompt: payload.prompt,
+    educationLevel: payload.educationLevel,
+    mode: payload.mode,
+    objective: payload.objective,
+    history: payload.history,
+  });
   const backoffs = [0, 1000, 3000, 9000];
   let lastError: unknown;
 
@@ -74,6 +84,9 @@ export const generatePlutoResponse = async (payload: {
       payload.objective,
       payload.plan
     ),
+    generationConfig: {
+      maxOutputTokens: payload.maxOutputTokens,
+    },
   });
 
   const chat = model.startChat({ history });
@@ -87,7 +100,40 @@ export const generatePlutoResponse = async (payload: {
     try {
       const result = await chat.sendMessage(payload.prompt);
       const response = await result.response;
-      return response.text();
+      const text = response.text();
+      const metadata = response.usageMetadata;
+      const estimatedUsage = buildEstimatedUsage({
+        prompt: payload.prompt,
+        educationLevel: payload.educationLevel,
+        mode: payload.mode,
+        objective: payload.objective,
+        history: payload.history,
+        answer: text,
+      });
+      const providerUsage: TokenUsage | null =
+        metadata &&
+        typeof metadata.promptTokenCount === 'number' &&
+        typeof metadata.candidatesTokenCount === 'number' &&
+        typeof metadata.totalTokenCount === 'number'
+          ? {
+              inputTokens: metadata.promptTokenCount,
+              outputTokens: metadata.candidatesTokenCount,
+              totalTokens: metadata.totalTokenCount,
+              usageSource: 'provider',
+            }
+          : null;
+      const normalizedUsage = normalizeTokenUsage({
+        providerUsage,
+        estimatedUsage,
+        estimatedInputTokens,
+        maxOutputTokens: payload.maxOutputTokens,
+      });
+
+      return {
+        text,
+        usage: normalizedUsage.usage,
+        usageAnomaly: normalizedUsage.anomalyReason,
+      };
     } catch (error) {
       lastError = error;
       const status =

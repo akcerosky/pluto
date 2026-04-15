@@ -126,9 +126,12 @@ export const billingSubscriptionGetHandler = async (request) => {
     const snapshot = await getMeSnapshot(uid, getBootstrapIdentity(request));
     return {
         subscription: snapshot.subscription,
-        usageToday: snapshot.usageToday,
-        dailyLimit: snapshot.dailyLimit,
-        remainingToday: snapshot.remainingToday,
+        usageTodayTokens: snapshot.usageTodayTokens,
+        dailyTokenLimit: snapshot.dailyTokenLimit,
+        remainingTodayTokens: snapshot.remainingTodayTokens,
+        estimatedMessagesLeft: snapshot.estimatedMessagesLeft,
+        premiumModeCount: snapshot.premiumModeCount,
+        freePremiumModesRemainingToday: snapshot.freePremiumModesRemainingToday,
     };
 };
 export const billingSubscriptionCancelHandler = async (request) => {
@@ -208,7 +211,7 @@ export const billingRequestRefundHandler = async (request) => {
     if (ageMs > 7 * 24 * 60 * 60 * 1000) {
         throw new HttpsError('failed-precondition', 'Refunds are only allowed within 7 days of payment.');
     }
-    const planLimit = PLAN_DEFINITIONS[payment.plan].dailyLimit ?? PRO_REFUND_DAILY_LIMIT;
+    const planLimit = PLAN_DEFINITIONS[payment.plan].dailyTokenLimit ?? PRO_REFUND_DAILY_LIMIT;
     const refundCheck = await calculateRefundEligibility(uid, payment.plan, createdAt);
     if (refundCheck.eligibleUsageCapacity > 0 && refundCheck.usageRatio > 0.5) {
         throw new HttpsError('failed-precondition', 'Refunds are unavailable after more than 50% plan usage.');

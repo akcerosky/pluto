@@ -165,9 +165,12 @@ export const billingSubscriptionGetHandler = async (request: CallableRequest<unk
   const snapshot = await getMeSnapshot(uid, getBootstrapIdentity(request));
   return {
     subscription: snapshot.subscription,
-    usageToday: snapshot.usageToday,
-    dailyLimit: snapshot.dailyLimit,
-    remainingToday: snapshot.remainingToday,
+    usageTodayTokens: snapshot.usageTodayTokens,
+    dailyTokenLimit: snapshot.dailyTokenLimit,
+    remainingTodayTokens: snapshot.remainingTodayTokens,
+    estimatedMessagesLeft: snapshot.estimatedMessagesLeft,
+    premiumModeCount: snapshot.premiumModeCount,
+    freePremiumModesRemainingToday: snapshot.freePremiumModesRemainingToday,
   };
 };
 
@@ -268,7 +271,7 @@ export const billingRequestRefundHandler = async (request: CallableRequest<unkno
   }
 
   const planLimit =
-    PLAN_DEFINITIONS[payment.plan as SubscriptionPlan].dailyLimit ?? PRO_REFUND_DAILY_LIMIT;
+    PLAN_DEFINITIONS[payment.plan as SubscriptionPlan].dailyTokenLimit ?? PRO_REFUND_DAILY_LIMIT;
   const refundCheck = await calculateRefundEligibility(uid, payment.plan as SubscriptionPlan, createdAt);
   if (refundCheck.eligibleUsageCapacity > 0 && refundCheck.usageRatio > 0.5) {
     throw new HttpsError('failed-precondition', 'Refunds are unavailable after more than 50% plan usage.');

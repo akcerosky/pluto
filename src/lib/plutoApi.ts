@@ -27,15 +27,21 @@ export interface MeResponse {
     cancelAtPeriodEnd: boolean;
     updatedAt: string;
   };
-  usageToday: number;
-  dailyLimit: number | null;
-  remainingToday: number | null;
+  usageTodayTokens: number;
+  dailyTokenLimit: number;
+  remainingTodayTokens: number;
+  estimatedMessagesLeft: number;
+  premiumModeCount: number;
+  freePremiumModesRemainingToday: number | null;
   planConfig: {
     id: SubscriptionPlan;
     price: string;
     priceInrMonthly: number;
     tagLine: string;
-    dailyLimit: number | null;
+    dailyTokenLimit: number;
+    maxInputTokensPerRequest: number;
+    maxOutputTokensPerRequest: number;
+    averageTokensPerMessage: number;
     maxInputChars: number;
     allowedModes: Array<'Conversational' | 'Homework' | 'ExamPrep'>;
   };
@@ -58,9 +64,23 @@ export const meUpdateProfile = async (payload: {
 };
 
 export const meUsageHistory = async (): Promise<{
-  history: Array<{ dateKey: string; count: number; planSnapshot: SubscriptionPlan | null }>;
+  history: Array<{
+    dateKey: string;
+    count: number;
+    inputTokensUsed: number;
+    outputTokensUsed: number;
+    totalTokensUsed: number;
+    planSnapshot: SubscriptionPlan | null;
+  }>;
 }> => {
-  const call = httpsCallable<undefined, { history: Array<{ dateKey: string; count: number; planSnapshot: SubscriptionPlan | null }> }>(
+  const call = httpsCallable<undefined, { history: Array<{
+    dateKey: string;
+    count: number;
+    inputTokensUsed: number;
+    outputTokensUsed: number;
+    totalTokensUsed: number;
+    planSnapshot: SubscriptionPlan | null;
+  }> }>(
     requireFunctions(),
     'meUsageHistory'
   );
@@ -80,10 +100,19 @@ export const aiChat = async (payload: {
     answer: string;
     usagePendingSync: boolean;
     subscription: MeResponse['subscription'];
-    usageToday: number;
-    dailyLimit: number | null;
-    remainingToday: number | null;
+    usageTodayTokens: number;
+    dailyTokenLimit: number;
+    remainingTodayTokens: number;
+    estimatedMessagesLeft: number;
+    premiumModeCount: number;
+    freePremiumModesRemainingToday: number | null;
     planConfig: MeResponse['planConfig'];
+    usage?: {
+      inputTokens: number;
+      outputTokens: number;
+      totalTokens: number;
+      usageSource: 'provider' | 'estimated';
+    };
   }>(requireFunctions(), 'aiChat');
   const result = await call(payload);
   return result.data;
@@ -135,9 +164,12 @@ export const billingRequestRefund = async (payload: { paymentRecordId: string })
 export const billingSubscriptionGet = async () => {
   const call = httpsCallable<undefined, {
     subscription: MeResponse['subscription'];
-    usageToday: number;
-    dailyLimit: number | null;
-    remainingToday: number | null;
+    usageTodayTokens: number;
+    dailyTokenLimit: number;
+    remainingTodayTokens: number;
+    estimatedMessagesLeft: number;
+    premiumModeCount: number;
+    freePremiumModesRemainingToday: number | null;
   }>(requireFunctions(), 'billingSubscriptionGet');
   const result = await call();
   return result.data;

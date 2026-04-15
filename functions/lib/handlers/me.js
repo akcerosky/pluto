@@ -18,9 +18,12 @@ export const meGetHandler = async (request) => {
             plan: snapshot.subscription.plan,
         },
         subscription: snapshot.subscription,
-        usageToday: snapshot.usageToday,
-        dailyLimit: snapshot.dailyLimit,
-        remainingToday: snapshot.remainingToday,
+        usageTodayTokens: snapshot.usageTodayTokens,
+        dailyTokenLimit: snapshot.dailyTokenLimit,
+        remainingTodayTokens: snapshot.remainingTodayTokens,
+        estimatedMessagesLeft: snapshot.estimatedMessagesLeft,
+        premiumModeCount: snapshot.premiumModeCount,
+        freePremiumModesRemainingToday: snapshot.freePremiumModesRemainingToday,
         planConfig: PLAN_DEFINITIONS[snapshot.subscription.plan],
     };
 };
@@ -40,9 +43,12 @@ export const meUpdateProfileHandler = async (request) => {
             plan: snapshot.subscription.plan,
         },
         subscription: snapshot.subscription,
-        usageToday: snapshot.usageToday,
-        dailyLimit: snapshot.dailyLimit,
-        remainingToday: snapshot.remainingToday,
+        usageTodayTokens: snapshot.usageTodayTokens,
+        dailyTokenLimit: snapshot.dailyTokenLimit,
+        remainingTodayTokens: snapshot.remainingTodayTokens,
+        estimatedMessagesLeft: snapshot.estimatedMessagesLeft,
+        premiumModeCount: snapshot.premiumModeCount,
+        freePremiumModesRemainingToday: snapshot.freePremiumModesRemainingToday,
         planConfig: PLAN_DEFINITIONS[snapshot.subscription.plan],
     };
 };

@@ -5,6 +5,7 @@ import { Rocket, Sparkles, BookOpen, Brain, Globe, Shield, ArrowRight, CheckCirc
 import { PLAN_CONFIGS } from '../config/subscription';
 import { Link } from 'react-router-dom';
 import { useApp } from '../context/useApp';
+import { formatTokenCount } from '../lib/tokenQuota';
 
 export const LandingPage = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -221,7 +222,7 @@ export const LandingPage = () => {
         <div className="landing-section-inner" style={{ maxWidth: '1200px', margin: '0 auto' }}>
           <h2 style={{ fontSize: '2.2rem', fontWeight: 900, marginBottom: '14px', textAlign: 'center' }}>Plans For Every Learner</h2>
           <p style={{ color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '28px' }}>
-            Start free each day, then upgrade to Plus or Pro for more usage and advanced learning modes.
+            Start free each day, then upgrade to Plus or Pro for larger token budgets and advanced learning modes.
           </p>
           <div
             style={{
@@ -236,7 +237,7 @@ export const LandingPage = () => {
               textAlign: 'center',
             }}
           >
-            Freemium rule: Free includes daily usage. Once your daily limit is reached, upgrade to Plus or Pro to keep learning the same day.
+            Freemium rule: Free includes a daily token quota. Once you run out of tokens, upgrade to Plus or Pro to keep learning the same day.
           </div>
           <div className="landing-pricing-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
             {Object.values(PLAN_CONFIGS).map((plan) => (
@@ -293,7 +294,12 @@ export const LandingPage = () => {
                 <span>Plus</span>
                 <span>Pro</span>
               </div>
-              <PricingRow label="Daily AI requests" free={String(PLAN_CONFIGS.Free.dailyMessageLimit)} plus={String(PLAN_CONFIGS.Plus.dailyMessageLimit)} pro="Unlimited" />
+              <PricingRow
+                label="Daily token quota"
+                free={formatTokenCount(PLAN_CONFIGS.Free.dailyTokenLimit)}
+                plus={formatTokenCount(PLAN_CONFIGS.Plus.dailyTokenLimit)}
+                pro={formatTokenCount(PLAN_CONFIGS.Pro.dailyTokenLimit)}
+              />
               <PricingRow label="Input length per prompt" free={`${PLAN_CONFIGS.Free.maxInputChars} chars`} plus={`${PLAN_CONFIGS.Plus.maxInputChars} chars`} pro={`${PLAN_CONFIGS.Pro.maxInputChars} chars`} />
               <PricingRow label="Learning modes" free="Conversational" plus="All modes" pro="All modes" />
               <PricingRow label="Projects" free={`${PLAN_CONFIGS.Free.maxProjects}`} plus={`${PLAN_CONFIGS.Plus.maxProjects}`} pro="Unlimited" />

@@ -10,7 +10,7 @@ interface ProjectsModalProps {
 }
 
 export const ProjectsModal = ({ isOpen, onClose, activeThreadId }: ProjectsModalProps) => {
-  const { projects, createProject, threads, assignThreadToProject, currentPlan, planConfig } = useApp();
+  const { projects, createProject, threads, assignThreadToProject, currentPlan, planConfig, isSubscriptionHydrated } = useApp();
   const [newProjectName, setNewProjectName] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -82,9 +82,11 @@ export const ProjectsModal = ({ isOpen, onClose, activeThreadId }: ProjectsModal
             {activeThreadId ? `Organize "${activeThread?.title}" into a project.` : 'Manage your learning spaces.'}
           </p>
           <p style={{ color: '#f59e0b', fontSize: '0.8rem', marginTop: '8px' }}>
-            {planConfig.maxProjects === null
-              ? `${currentPlan} plan: unlimited projects`
-              : `${currentPlan} plan: ${projects.length}/${planConfig.maxProjects} projects used`}
+            {isSubscriptionHydrated
+              ? planConfig.maxProjects === null
+                ? `${currentPlan} plan: unlimited projects`
+                : `${currentPlan} plan: ${projects.length}/${planConfig.maxProjects} projects used`
+              : 'Syncing plan limits...'}
           </p>
         </div>
 

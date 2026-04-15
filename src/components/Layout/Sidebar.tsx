@@ -15,6 +15,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ProjectsModal } from '../Modals/ProjectsModal';
+import { formatTokenUsageSummary } from '../../lib/tokenQuota';
 
 interface SidebarProps {
   isMobile?: boolean;
@@ -33,8 +34,9 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
     setActiveProjectId,
     user,
     currentPlan,
-    dailyLimit,
-    remainingToday,
+    isSubscriptionHydrated,
+    remainingTodayTokens,
+    estimatedMessagesLeft,
     logout 
   } = useApp();
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -140,7 +142,8 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
               key={p.id} 
               whileHover={{ background: 'rgba(255,255,255,0.05)' }}
               onClick={() => {
-                setActiveProjectId(p.id);
+                const nextProjectId = activeProjectId === p.id ? null : p.id;
+                setActiveProjectId(nextProjectId);
                 setActiveThreadId(null);
                 navigate('/chat');
                 closeMobile();
@@ -288,10 +291,14 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
               <div style={{ fontSize: '0.85rem', fontWeight: '600' }}>{user?.name}</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4CAF50' }}></div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{currentPlan} Plan</div>
+                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                  {isSubscriptionHydrated ? `${currentPlan} Plan` : 'Loading plan...'}
+                </div>
               </div>
               <div style={{ fontSize: '0.65rem', color: '#f59e0b', marginTop: '3px' }}>
-                {dailyLimit === null ? 'Unlimited daily usage' : `${remainingToday}/${dailyLimit} requests left today`}
+                {isSubscriptionHydrated
+                  ? formatTokenUsageSummary(remainingTodayTokens, estimatedMessagesLeft)
+                  : 'Syncing subscription...'}
               </div>
             </div>
           )}

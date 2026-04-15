@@ -11,7 +11,10 @@ export interface PlanConfig {
   price: string;
   priceInrMonthly: number;
   tagLine: string;
-  dailyMessageLimit: number | null;
+  dailyTokenLimit: number;
+  maxInputTokensPerRequest: number;
+  maxOutputTokensPerRequest: number;
+  averageTokensPerMessage: number;
   maxInputChars: number;
   maxProjects: number | null;
   historyWindow: number;
@@ -20,17 +23,22 @@ export interface PlanConfig {
   bullets: string[];
 }
 
+export const FREE_PREMIUM_MODE_DAILY_LIMIT = 3;
+
 export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
   Free: {
     id: 'Free',
     price: 'INR 0',
     priceInrMonthly: 0,
     tagLine: 'Great for daily learning bursts',
-    dailyMessageLimit: 10,
+    dailyTokenLimit: 25_000,
+    maxInputTokensPerRequest: 1_000,
+    maxOutputTokensPerRequest: 1_500,
+    averageTokensPerMessage: 2_000,
     maxInputChars: 500,
     maxProjects: 2,
     historyWindow: 8,
-    allowedModes: ['Conversational'],
+    allowedModes: ['Conversational', 'Homework', 'ExamPrep'],
     features: {
       homeworkMode: false,
       examPrepMode: false,
@@ -39,9 +47,10 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
       extendedContext: false,
     },
     bullets: [
-      '10 AI requests per day',
-      'Conversational mode',
+      '25,000 tokens per day',
+      'Conversational mode + 3 Homework / Exam Prep uses per day',
       'Up to 2 projects',
+      '1,000 input / 1,500 output tokens per request',
       '500 characters per prompt',
     ],
   },
@@ -50,7 +59,10 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
     price: 'INR 299/mo',
     priceInrMonthly: 299,
     tagLine: 'For serious students and regular practice',
-    dailyMessageLimit: 100,
+    dailyTokenLimit: 250_000,
+    maxInputTokensPerRequest: 4_000,
+    maxOutputTokensPerRequest: 4_000,
+    averageTokensPerMessage: 4_000,
     maxInputChars: 2000,
     maxProjects: 12,
     historyWindow: 24,
@@ -63,9 +75,10 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
       extendedContext: true,
     },
     bullets: [
-      '100 AI requests per day',
+      '250,000 tokens per day',
       'Conversational + Homework + Exam Prep',
       'Up to 12 projects',
+      '4,000 input / 4,000 output tokens per request',
       '2,000 characters per prompt',
     ],
   },
@@ -74,7 +87,10 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
     price: 'INR 599/mo',
     priceInrMonthly: 599,
     tagLine: 'Power tier for heavy daily usage',
-    dailyMessageLimit: null,
+    dailyTokenLimit: 1_000_000,
+    maxInputTokensPerRequest: 8_000,
+    maxOutputTokensPerRequest: 8_000,
+    averageTokensPerMessage: 6_000,
     maxInputChars: 6000,
     maxProjects: null,
     historyWindow: 80,
@@ -87,9 +103,10 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
       extendedContext: true,
     },
     bullets: [
-      'Unlimited daily AI requests',
+      '1,000,000 tokens per day',
       'All learning modes',
       'Unlimited projects',
+      '8,000 input / 8,000 output tokens per request',
       '6,000 characters per prompt',
     ],
   },

@@ -31,6 +31,11 @@ export interface SubscriptionPrivateDoc {
 
 export interface UsageDailyDoc {
   count: number;
+  premiumModeCount: number;
+  inputTokensUsed: number;
+  outputTokensUsed: number;
+  totalTokensUsed: number;
+  reservedTokens: number;
   planSnapshot: SubscriptionPlan;
   lastMessageAt: string;
   updatedAt: string;
@@ -68,4 +73,11 @@ export interface AiChatPayload {
   objective: string;
   history: AiHistoryMessage[];
   requestId: string;
+}
+
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  usageSource: 'provider' | 'estimated';
 }
