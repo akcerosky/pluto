@@ -1,7 +1,20 @@
 import { onRequest } from 'firebase-functions/v2/https';
 import type { Request, Response } from 'express';
 import { env } from '../config/env.js';
-import { acquireBillingEventLock, createPaymentRecord, updateSubscriptionFromRazorpay } from '../services/firestoreRepo.js';
+import {
+  acquireBillingEventLock,
+  createPaymentRecord,
+  getPaymentRecord,
+  getUserEmailContact,
+  updateSubscriptionFromRazorpay,
+} from '../services/firestoreRepo.js';
+import { sendEmail } from '../services/email.js';
+import {
+  subscriptionActivated,
+  subscriptionCancelled,
+  subscriptionCharged,
+  subscriptionPaused,
+} from '../services/emailTemplates.js';
 import { fetchRazorpaySubscription, verifyRazorpayWebhookSignature } from '../services/razorpay.js';
 import { getIstNow, toIstIsoString } from '../utils/time.js';
 
@@ -99,6 +112,73 @@ export const razorpayWebhookHandler = async (request: Request, response: Respons
     currentPeriodEnd,
     cancelAtPeriodEnd: event === 'subscription.cancelled' ? false : subscription.status === 'cancelled',
   });
+
+  const paymentRecord = await getPaymentRecord(uid, paymentRecordId);
+
+  const contact = await getUserEmailContact(uid);
+  if (!contact.email) {
+    console.warn('Skipping Razorpay webhook email because no email address was found.', {
+      uid,
+      event,
+    });
+  } else {
+    const amount = plan === 'Plus' ? 299 : 599;
+    let emailPayload: { subject: string; html: string } | null = null;
+
+    switch (event) {
+      case 'subscription.activated':
+        if (paymentRecord?.metadata?.activationEmailSent !== true) {
+          emailPayload = {
+            subject: `Your Pluto ${plan} subscription is active`,
+            html: subscriptionActivated(contact.name, plan, currentPeriodEnd),
+          };
+        }
+        break;
+      case 'subscription.charged':
+        emailPayload = {
+          subject: `Pluto ${plan} renewal confirmed`,
+          html: subscriptionCharged(contact.name, plan, amount, currentPeriodEnd),
+        };
+        break;
+      case 'subscription.cancelled':
+        emailPayload = {
+          subject: `Your Pluto ${plan} subscription was cancelled`,
+          html: subscriptionCancelled(contact.name, plan, currentPeriodEnd),
+        };
+        break;
+      case 'subscription.paused':
+        emailPayload = {
+          subject: `Your Pluto ${plan} subscription is paused`,
+          html: subscriptionPaused(contact.name, plan),
+        };
+        break;
+      default:
+        break;
+    }
+
+    if (emailPayload) {
+      const emailSent = await sendEmail(contact.email, emailPayload.subject, emailPayload.html);
+
+      if (event === 'subscription.activated' && emailSent) {
+        await createPaymentRecord(uid, paymentRecordId, {
+          ...(paymentRecord ?? {
+            provider: 'razorpay',
+            plan,
+            status: 'captured',
+            amountInr: amount,
+            createdAt: toIstIsoString(getIstNow()),
+            updatedAt: toIstIsoString(getIstNow()),
+            subscriptionId: paymentRecordId,
+          }),
+          metadata: {
+            ...(paymentRecord?.metadata ?? {}),
+            activationEmailSent: true,
+          },
+          updatedAt: toIstIsoString(getIstNow()),
+        });
+      }
+    }
+  }
 
   response.status(200).json({ ok: true });
 };

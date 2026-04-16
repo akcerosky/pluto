@@ -125,17 +125,33 @@ RAZORPAY_KEY_SECRET=...
 RAZORPAY_WEBHOOK_SECRET=...
 RAZORPAY_PLUS_PLAN_ID=...
 RAZORPAY_PRO_PLAN_ID=...
+RESEND_API_KEY=...
+RESEND_FROM_EMAIL="Pluto <hello@yourdomain.com>"
 LOG_LEVEL=info
 FIREBASE_PROJECT_ID=pluto-ef61b
 ```
 
-4. Build Functions:
+4. Configure Resend for transactional billing emails:
+
+- `RESEND_API_KEY` is the Resend API key used by Cloud Functions
+- `RESEND_FROM_EMAIL` is the verified sender used for subscription and refund notifications
+
+5. Add the Firebase Functions secrets for transactional email:
+
+```bash
+firebase functions:secrets:set RESEND_API_KEY
+firebase functions:secrets:set RESEND_FROM_EMAIL
+```
+
+These secrets are bound to the callable Functions and Razorpay webhook at deploy time, and local development can still read the same keys from `functions/.env`.
+
+6. Build Functions:
 
 ```bash
 npm run build
 ```
 
-5. Run the current smoke tests:
+7. Run the current smoke tests:
 
 ```bash
 npm run test

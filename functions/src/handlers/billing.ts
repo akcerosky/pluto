@@ -8,10 +8,13 @@ import {
   getMeSnapshot,
   getPaymentRecord,
   getSubscriptionPrivate,
+  getUserEmailContact,
   listPaymentHistory,
   markRefundState,
   updateSubscriptionFromRazorpay,
 } from '../services/firestoreRepo.js';
+import { sendEmail } from '../services/email.js';
+import { refundRequested, subscriptionActivated } from '../services/emailTemplates.js';
 import {
   cancelRazorpaySubscription,
   createRefund,
@@ -131,6 +134,7 @@ export const billingVerifyPaymentHandler = async (request: CallableRequest<unkno
     status: payment.status === 'captured' ? 'captured' : existingPayment.status,
     paymentId: payment.id,
     subscriptionId: subscription.id,
+    metadata: existingPayment.metadata ?? {},
     updatedAt: toIstIsoString(getIstNow()),
   });
 
@@ -143,6 +147,36 @@ export const billingVerifyPaymentHandler = async (request: CallableRequest<unkno
     currentPeriodEnd: toIstIsoString(periodEnd),
     cancelAtPeriodEnd: false,
   });
+
+  const activationEmailSent = existingPayment.metadata?.activationEmailSent === true;
+  if (!activationEmailSent) {
+    const contact = await getUserEmailContact(uid);
+    if (!contact.email) {
+      console.warn('Skipping activation email after payment verification because no email address was found.', {
+        uid,
+        paymentRecordId,
+      });
+    } else {
+      const emailSent = await sendEmail(
+        contact.email,
+        `Your Pluto ${existingPayment.plan} subscription is active`,
+        subscriptionActivated(contact.name, existingPayment.plan, toIstIsoString(periodEnd))
+      );
+      if (emailSent) {
+        await createPaymentRecord(uid, paymentRecordId, {
+          ...existingPayment,
+          status: payment.status === 'captured' ? 'captured' : existingPayment.status,
+          paymentId: payment.id,
+          subscriptionId: subscription.id,
+          metadata: {
+            ...(existingPayment.metadata ?? {}),
+            activationEmailSent: true,
+          },
+          updatedAt: toIstIsoString(getIstNow()),
+        });
+      }
+    }
+  }
 
   const snapshot = await getMeSnapshot(uid);
   return {
@@ -287,6 +321,20 @@ export const billingRequestRefundHandler = async (request: CallableRequest<unkno
     plan: payment.plan,
     dailyLimitReference: String(planLimit),
   });
+
+  const contact = await getUserEmailContact(uid);
+  if (!contact.email) {
+    console.warn('Skipping refund email because no email address was found.', {
+      uid,
+      paymentRecordId: payload.paymentRecordId,
+    });
+  } else {
+    await sendEmail(
+      contact.email,
+      'We received your Pluto refund request',
+      refundRequested(contact.name, payment.plan, payment.amountInr)
+    );
+  }
 
   await markRefundState(uid, payload.paymentRecordId, {
     status: 'refunded',

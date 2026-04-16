@@ -374,6 +374,27 @@ export const getSubscriptionPrivate = async (uid: string) => {
   return snap.data() as SubscriptionPrivateDoc;
 };
 
+export const getUserEmailContact = async (uid: string) => {
+  await ensureUserDocuments(uid);
+  const [profileSnap, privateSnap] = await Promise.all([
+    userRoot(uid).collection('profile').doc('main').get(),
+    userRoot(uid).collection('subscriptionPrivate').doc('main').get(),
+  ]);
+
+  const profile = profileSnap.exists ? (profileSnap.data() as ProfileDoc) : null;
+  const privateData = privateSnap.exists
+    ? (privateSnap.data() as SubscriptionPrivateDoc & { email?: string | null; name?: string | null })
+    : null;
+
+  const email = privateData?.email?.trim() || profile?.email?.trim() || '';
+  const name = privateData?.name?.trim() || profile?.name?.trim() || email.split('@')[0] || 'there';
+
+  return {
+    email,
+    name,
+  };
+};
+
 export const getPaymentRecord = async (uid: string, paymentRecordId: string) => {
   const snap = await userRoot(uid).collection('payments').doc(paymentRecordId).get();
   return snap.exists ? ({ id: snap.id, ...(snap.data() as PaymentRecord) }) : null;

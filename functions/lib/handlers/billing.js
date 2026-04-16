@@ -2,7 +2,9 @@ import { HttpsError } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 import { assertAdmin, assertAuth, getBootstrapIdentity } from '../lib/http.js';
 import { DEFAULT_PLAN, PLAN_DEFINITIONS, PRO_REFUND_DAILY_LIMIT } from '../config/plans.js';
-import { calculateRefundEligibility, createPaymentRecord, getMeSnapshot, getPaymentRecord, getSubscriptionPrivate, listPaymentHistory, markRefundState, updateSubscriptionFromRazorpay, } from '../services/firestoreRepo.js';
+import { calculateRefundEligibility, createPaymentRecord, getMeSnapshot, getPaymentRecord, getSubscriptionPrivate, getUserEmailContact, listPaymentHistory, markRefundState, updateSubscriptionFromRazorpay, } from '../services/firestoreRepo.js';
+import { sendEmail } from '../services/email.js';
+import { refundRequested, subscriptionActivated } from '../services/emailTemplates.js';
 import { cancelRazorpaySubscription, createRefund, createRazorpaySubscription, fetchRazorpayPayment, fetchRazorpaySubscription, resumeRazorpaySubscription, verifyCheckoutSignature, } from '../services/razorpay.js';
 import { getIstNow, toIstIsoString } from '../utils/time.js';
 const paidPlanSchema = z.enum(['Plus', 'Pro']);
@@ -96,6 +98,7 @@ export const billingVerifyPaymentHandler = async (request) => {
         status: payment.status === 'captured' ? 'captured' : existingPayment.status,
         paymentId: payment.id,
         subscriptionId: subscription.id,
+        metadata: existingPayment.metadata ?? {},
         updatedAt: toIstIsoString(getIstNow()),
     });
     await updateSubscriptionFromRazorpay(uid, {
@@ -107,6 +110,32 @@ export const billingVerifyPaymentHandler = async (request) => {
         currentPeriodEnd: toIstIsoString(periodEnd),
         cancelAtPeriodEnd: false,
     });
+    const activationEmailSent = existingPayment.metadata?.activationEmailSent === true;
+    if (!activationEmailSent) {
+        const contact = await getUserEmailContact(uid);
+        if (!contact.email) {
+            console.warn('Skipping activation email after payment verification because no email address was found.', {
+                uid,
+                paymentRecordId,
+            });
+        }
+        else {
+            const emailSent = await sendEmail(contact.email, `Your Pluto ${existingPayment.plan} subscription is active`, subscriptionActivated(contact.name, existingPayment.plan, toIstIsoString(periodEnd)));
+            if (emailSent) {
+                await createPaymentRecord(uid, paymentRecordId, {
+                    ...existingPayment,
+                    status: payment.status === 'captured' ? 'captured' : existingPayment.status,
+                    paymentId: payment.id,
+                    subscriptionId: subscription.id,
+                    metadata: {
+                        ...(existingPayment.metadata ?? {}),
+                        activationEmailSent: true,
+                    },
+                    updatedAt: toIstIsoString(getIstNow()),
+                });
+            }
+        }
+    }
     const snapshot = await getMeSnapshot(uid);
     return {
         provider: 'razorpay',
@@ -225,6 +254,16 @@ export const billingRequestRefundHandler = async (request) => {
         plan: payment.plan,
         dailyLimitReference: String(planLimit),
     });
+    const contact = await getUserEmailContact(uid);
+    if (!contact.email) {
+        console.warn('Skipping refund email because no email address was found.', {
+            uid,
+            paymentRecordId: payload.paymentRecordId,
+        });
+    }
+    else {
+        await sendEmail(contact.email, 'We received your Pluto refund request', refundRequested(contact.name, payment.plan, payment.amountInr));
+    }
     await markRefundState(uid, payload.paymentRecordId, {
         status: 'refunded',
         refundRequested: true,

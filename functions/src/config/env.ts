@@ -10,6 +10,8 @@ const envReaders = {
   razorpayWebhookSecret: () => getOptional('RAZORPAY_WEBHOOK_SECRET'),
   razorpayPlusPlanId: () => getOptional('RAZORPAY_PLUS_PLAN_ID'),
   razorpayProPlanId: () => getOptional('RAZORPAY_PRO_PLAN_ID'),
+  resendApiKey: () => getOptional('RESEND_API_KEY'),
+  resendFromEmail: () => getOptional('RESEND_FROM_EMAIL'),
 };
 
 export const env = {
@@ -39,6 +41,12 @@ export const env = {
   },
   get razorpayProPlanId() {
     return envReaders.razorpayProPlanId();
+  },
+  get resendApiKey() {
+    return envReaders.resendApiKey();
+  },
+  get resendFromEmail() {
+    return envReaders.resendFromEmail();
   },
 };
 

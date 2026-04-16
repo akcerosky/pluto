@@ -14,6 +14,7 @@ const firebaseConfig = {
 };
 
 const appCheckSiteKey = import.meta.env.VITE_FIREBASE_APP_CHECK_SITE_KEY;
+const appCheckDebugToken = import.meta.env.VITE_FIREBASE_APP_CHECK_DEBUG_TOKEN;
 const functionsRegion = import.meta.env.VITE_FIREBASE_FUNCTIONS_REGION || 'asia-south1';
 const isDevelopment = import.meta.env.VITE_APP_ENV === 'development';
 type AppCheckDebugGlobal = typeof globalThis & {
@@ -28,7 +29,8 @@ const app = hasFirebaseConfig ? getApps()[0] ?? initializeApp(firebaseConfig) : 
 
 if (app && appCheckSiteKey) {
   if (isDevelopment && typeof self !== 'undefined') {
-    (self as AppCheckDebugGlobal).FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    (self as AppCheckDebugGlobal).FIREBASE_APPCHECK_DEBUG_TOKEN =
+      appCheckDebugToken || true;
   }
 
   initializeAppCheck(app, {
