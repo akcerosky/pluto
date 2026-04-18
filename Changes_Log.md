@@ -181,15 +181,6 @@
 - Updated the in-app verification resend banner to use the same runtime-origin action code settings as signup and verify-email resend flows.
 - Added temporary console diagnostics around verification email sending and verification polling to confirm runtime environment and refreshed verification state during debugging.
 
-### EC2 Deployment Reliability
-
-- Fixed the EC2 deployment flow so the server repo remote is reset to the correct GitHub origin before each deploy.
-- Redeployed the frontend from the corrected remote after pushing:
-  - `08d6a9e` `Fix email verification action flow`
-  - `9038554` `Fix password reset action flow`
-  - `ad1612f` `Fix EC2 repo remote during deploy`
-- Verified the live deployment was updated on EC2 by confirming the server pulled the latest `razorpay-backend` branch and rebuilt the production bundle successfully.
-
 ## 2026-04-15
 
 ### Token Quota Rollout
@@ -216,3 +207,50 @@
 - Ran and passed: frontend lint, frontend build, Functions build, Functions tests
 - Deployed updated Firebase Functions to `pluto-ef61b`.
 - Deployed the latest Pluto frontend to EC2 from GitHub commit `89f95a4` on `razorpay-backend`.
+
+## 2026-04-16
+
+### Transactional Billing Email Delivery
+
+- Added Resend-based transactional email support to Firebase Functions.
+- Extended Functions env/config setup to include:
+  - `RESEND_API_KEY`
+  - `RESEND_FROM_EMAIL`
+- Added a shared email sender helper in `functions/src/services/email.ts` that:
+  - initializes the Resend client lazily
+  - logs failures without crashing the caller
+  - returns delivery success/failure so callers can avoid false-positive state updates
+- Added reusable HTML billing email templates in `functions/src/services/emailTemplates.ts` for:
+  - subscription activation
+  - renewal charge confirmation
+  - cancellation confirmation
+  - pause notification
+  - subscription expiry
+  - refund request confirmation
+- Wired Razorpay webhook-driven emails into `functions/src/handlers/http.ts` for:
+  - `subscription.activated`
+  - `subscription.charged`
+  - `subscription.cancelled`
+  - `subscription.paused`
+- Wired refund confirmation email sending into `billingRequestRefund` in `functions/src/handlers/billing.ts`.
+- Added contact lookup fallback in `functions/src/services/firestoreRepo.ts` so billing emails try `subscriptionPrivate/main` first and then `profile/main`.
+- Documented Resend setup and transactional email env requirements in `README.md`.
+
+### Activation Email Reliability
+
+- Added a checkout-verification fallback in `billingVerifyPayment` so successful first-time subscription activation can send the Pluto activation email immediately, instead of depending only on webhook timing.
+- Added payment-record metadata tracking for `activationEmailSent` to avoid duplicate activation emails between checkout verification and later webhook processing.
+- Updated the webhook path to honor the activation-email flag before sending `subscription.activated` emails.
+
+## 2026-04-18
+
+### Localhost App Check Stability
+
+- Updated `src/lib/firebase.ts` so local development can use a fixed App Check debug token from env instead of generating a new token repeatedly.
+- Added `VITE_FIREBASE_APP_CHECK_DEBUG_TOKEN` to the local `.env` flow and switched the localhost debug token to a fixed UUID value for easier Firebase App Check registration.
+
+### Live Razorpay Rollout
+
+- Updated local production env values to use the live Razorpay public key in: `.env.production`, `.env`
+- Updated `functions/.env` to use live Razorpay backend values: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_PLUS_PLAN_ID`, `RAZORPAY_PRO_PLAN_ID`, `RAZORPAY_WEBHOOK_SECRET`
+- Deployed Firebase Functions to `pluto-ef61b` with the live Razorpay backend configuration.
