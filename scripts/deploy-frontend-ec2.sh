@@ -5,7 +5,7 @@ HOST_NAME="${HOST_NAME:-65.1.22.81}"
 SSH_USER="${SSH_USER:-ubuntu}"
 KEY_PATH="${KEY_PATH:-$HOME/.ssh/manish-pluto.pem}"
 REPO_URL="${REPO_URL:-https://github.com/akcerosky/pluto.git}"
-BRANCH="${BRANCH:-razorpay-backend}"
+BRANCH="${BRANCH:-main}"
 APP_DIR="${APP_DIR:-/var/www/pluto}"
 LOCAL_ENV_FILE="${LOCAL_ENV_FILE:-.env.production}"
 
