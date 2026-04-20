@@ -522,9 +522,22 @@ export const ChatInterface = () => {
 
   const handleQuickAction = (action: string) => {
     let prompt = action;
-    if (action.includes('Story')) prompt = "Tell me a fun story about what we're learning!";
-    else if (action.includes('Why?')) prompt = 'Why is this important to know?';
-    else if (action.includes('Riddle')) prompt = 'Give me a learning riddle!';
+    if (action.includes('story')) prompt = "Tell me a fun story about what we're learning!";
+    else if (action.includes('why')) prompt = 'Why is this important to know?';
+    else if (action.includes('riddle')) prompt = 'Give me a learning riddle!';
+    else if (action.includes('Guide me step by step')) prompt = 'Guide me step by step instead of giving the final answer.';
+    else if (action.includes('Socratic walkthrough')) prompt = 'Use a Socratic walkthrough to help me reason this out.';
+    else if (action.includes('Give an analogy')) prompt = 'Explain this with an analogy for my level.';
+    else if (action.includes('Real-world example')) prompt = 'Give me a real-world example that makes this concept easier to understand.';
+    else if (action.includes('Connect ideas')) prompt = 'Connect this concept to related ideas I should know.';
+    else if (action.includes('Identify the approach')) prompt = 'Do not solve it fully. Identify the approach I should use first.';
+    else if (action.includes('Check my next step')) prompt = 'Check whether my next step is correct and guide me forward.';
+    else if (action.includes('Hint only')) prompt = 'Give me one short hint only. Do not give the final answer.';
+    else if (action.includes('Quick quiz')) prompt = 'Give me a short quiz on this topic with answers after I try.';
+    else if (action.includes('Flashcard drill')) prompt = 'Quiz me in flashcard style on the key ideas.';
+    else if (action.includes('Mock test strategy')) prompt = 'Give me mock test strategy and common mistakes to avoid.';
+    else if (action.includes('Mock exam')) prompt = 'Generate a mock exam-style practice set for this topic.';
+    else if (action.includes('Common traps')) prompt = 'Show me the most common traps and mistakes for this topic.';
     setInput(prompt);
   };
 
