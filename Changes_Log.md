@@ -281,3 +281,21 @@
 - Added a Pluto-adapted off-topic refusal rule for clearly non-educational requests.
 - Added lightweight response cleanup to normalize empty outputs, trim filler openers, collapse spacing, and clean common math/LaTeX artifacts.
 - Updated mode helper panels and quick-action prompts in the chat UI so the frontend reflects the new backend tutoring behavior.
+
+### Retry UX and Mobile Chat Polish
+
+- Added richer `aiChat` request logging in the browser with request IDs, retry attempts, retry success, and exhausted-retry reporting to make transient provider failures easier to trace.
+- Added automatic client retries for retryable `aiChat` callable failures, while keeping final error bubbles hidden until all retries are exhausted.
+- Increased backend Gemini retry spacing to give transient `503` and `429` provider failures more time to recover.
+- Added inline retry status in chat so active user prompts can show `Sending...` or `Retrying X/Y...` directly under the message.
+- Added a retry action on failed user prompts and changed retry behavior so retrying removes the old assistant error bubble instead of stacking duplicate failure messages.
+- Refined chat footer behavior on mobile by improving the helper panel layering, moving the composer slightly lower while the helper panel is open, and keeping the prompt area easier to read.
+- Tuned the mobile composer placeholder styling so its text scales down on smaller screens while staying normal on wider layouts.
+
+### Verification and Deployment
+
+- Ran and passed the frontend build locally.
+- Ran and passed the Functions test suite and Functions TypeScript build locally.
+- Committed and pushed the latest Pluto changes to GitHub on `main` as commit `4facac9`.
+- Confirmed Firebase Functions deployment to `pluto-ef61b`; Functions were already current so Firebase skipped unchanged backend services.
+- Deployed the latest Pluto frontend to EC2 using the repo deployment script and verified the live site responded with `HTTP 200` at `https://pluto.akcero.ai`.
