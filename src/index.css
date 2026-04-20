@@ -165,6 +165,12 @@ textarea {
   word-break: break-word;
 }
 
+.chat-textarea::placeholder {
+  color: rgba(255, 255, 255, 0.42);
+  letter-spacing: -0.01em;
+  font-size: 0.96rem;
+}
+
 .landing-nav {
   min-width: 0;
 }
@@ -272,7 +278,9 @@ textarea {
   }
 
   .chat-status-pills {
-    justify-content: flex-start !important;
+    margin-left: auto !important;
+    justify-content: flex-end !important;
+    min-width: 0;
   }
 
   .chat-status-pill {
@@ -490,11 +498,21 @@ textarea {
 
   .chat-status-pills {
     width: 100%;
+    margin-left: 0 !important;
+    justify-content: flex-start !important;
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
 
   .chat-status-pill {
     font-size: 0.64rem !important;
-    padding: 4px 8px !important;
+    padding: 4px 7px !important;
+    flex: 0 0 auto;
+  }
+
+  .chat-status-pills::-webkit-scrollbar {
+    display: none;
   }
 
   .chat-messages {
@@ -534,7 +552,13 @@ textarea {
   }
 
   .chat-textarea {
-    padding: 10px 8px !important;
+    padding: 11px 8px !important;
+    font-size: 0.93rem !important;
+    line-height: 1.35 !important;
+  }
+
+  .chat-textarea::placeholder {
+    font-size: 0.84rem;
   }
 
   .chat-send-button {

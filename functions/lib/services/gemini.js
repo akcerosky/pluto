@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { logger } from 'firebase-functions';
 import { requireEnv } from '../config/env.js';
 import { buildEstimatedUsage, estimateAiInputTokens, normalizeTokenUsage } from './tokenUsage.js';
 const OFF_TOPIC_REFUSAL = "I can't help with that. Ask me something related to your studies or learning goals.";
@@ -59,6 +60,29 @@ const getHistoryText = (message) => message.parts
     .map((part) => part.text.trim())
     .filter(Boolean)
     .join('\n\n');
+const getProviderErrorDetails = (error) => {
+    if (!(typeof error === 'object' && error !== null)) {
+        return {
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            status: null,
+            code: null,
+            details: undefined,
+        };
+    }
+    const record = error;
+    return {
+        message: typeof record.message === 'string'
+            ? record.message
+            : error instanceof Error
+                ? error.message
+                : 'Unknown provider error',
+        stack: typeof record.stack === 'string' ? record.stack : error instanceof Error ? error.stack : undefined,
+        status: typeof record.status === 'number' ? record.status : null,
+        code: typeof record.code === 'string' ? record.code : null,
+        details: record.details,
+    };
+};
 export const normalizeHistory = (history) => {
     const sanitized = history
         .map((message) => ({
@@ -137,7 +161,7 @@ export const generatePlutoResponse = async (payload) => {
         objective: payload.objective,
         history: payload.history,
     });
-    const backoffs = [0, 1000, 3000, 9000];
+    const backoffs = [0, 1500, 4500, 12000];
     let lastError;
     const currentTurn = {
         role: 'user',
@@ -200,7 +224,33 @@ export const generatePlutoResponse = async (payload) => {
         }
         catch (error) {
             lastError = error;
-            const status = typeof error === 'object' && error && 'status' in error ? Number(error.status) : null;
+            const providerError = getProviderErrorDetails(error);
+            logger.error('gemini_generate_content_attempt_failed', {
+                eventType: 'gemini_generate_content_attempt_failed',
+                requestId: payload.requestId ?? null,
+                model: PRIMARY_MODEL,
+                attempt: attempt + 1,
+                maxAttempts: backoffs.length,
+                mode: payload.mode,
+                plan: payload.plan,
+                promptLength: payload.prompt.length,
+                historyMessageCount: payload.history.length,
+                attachmentCount: payload.attachments.length,
+                attachmentSummary: payload.attachments.map((attachment) => ({
+                    name: attachment.name,
+                    mimeType: attachment.mimeType,
+                    sizeBytes: attachment.sizeBytes,
+                })),
+                providerStatus: providerError.status,
+                providerCode: providerError.code,
+                nextRetryDelayMs: providerError.status && RETRYABLE_STATUS_CODES.has(providerError.status)
+                    ? backoffs[attempt + 1] ?? null
+                    : null,
+                errorMessage: providerError.message,
+                errorDetails: providerError.details,
+                stack: providerError.stack,
+            });
+            const status = providerError.status;
             if (!status || !RETRYABLE_STATUS_CODES.has(status)) {
                 break;
             }

@@ -11,6 +11,40 @@ const requireFunctions = () => {
   return functions;
 };
 
+const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+const AI_CHAT_CLIENT_RETRY_DELAYS_MS = [1800, 4200];
+
+const getCallableErrorStatus = (error: unknown) => {
+  if (!(typeof error === 'object' && error !== null)) {
+    return { code: null as string | null, status: null as string | null };
+  }
+
+  const record = error as Record<string, unknown>;
+  const code = typeof record.code === 'string' ? record.code : null;
+  const details =
+    typeof record.details === 'object' && record.details !== null
+      ? (record.details as Record<string, unknown>)
+      : null;
+  const status =
+    typeof details?.status === 'string'
+      ? details.status
+      : typeof record.status === 'string'
+        ? record.status
+        : null;
+
+  return { code, status };
+};
+
+const isRetryableAiChatError = (error: unknown) => {
+  const { code, status } = getCallableErrorStatus(error);
+  return (
+    code === 'functions/unavailable' ||
+    code === 'functions/resource-exhausted' ||
+    status === 'UNAVAILABLE' ||
+    status === 'RESOURCE_EXHAUSTED'
+  );
+};
+
 export interface MeResponse {
   user: {
     id: string;
@@ -102,8 +136,10 @@ export const aiChat = async (payload: {
   history: Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>;
   attachments: InlineAttachmentInput[];
   requestId: string;
+  onRetrying?: (state: { attempt: number; delayMs: number; totalRetries: number }) => void;
 }) => {
-  const call = httpsCallable<typeof payload, {
+  const { onRetrying, ...requestPayload } = payload;
+  const call = httpsCallable<typeof requestPayload, {
     answer: string;
     usagePendingSync: boolean;
     subscription: MeResponse['subscription'];
@@ -121,8 +157,71 @@ export const aiChat = async (payload: {
       usageSource: 'provider' | 'estimated';
     };
   }>(requireFunctions(), 'aiChat');
-  const result = await call(payload);
-  return result.data;
+
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= AI_CHAT_CLIENT_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      if (attempt === 0) {
+        console.info('[Pluto][aiChat] Sending request', {
+          requestId: requestPayload.requestId,
+          mode: requestPayload.mode,
+          historyCount: requestPayload.history.length,
+          attachmentCount: requestPayload.attachments.length,
+        });
+      } else {
+        console.info('[Pluto][aiChat] Retry attempt started', {
+          requestId: requestPayload.requestId,
+          attempt,
+          totalRetries: AI_CHAT_CLIENT_RETRY_DELAYS_MS.length,
+        });
+      }
+
+      const result = await call(requestPayload);
+      if (attempt > 0) {
+        console.info('[Pluto][aiChat] Retry succeeded', {
+          requestId: requestPayload.requestId,
+          attempt,
+          totalRetries: AI_CHAT_CLIENT_RETRY_DELAYS_MS.length,
+        });
+      }
+      return result.data;
+    } catch (error) {
+      lastError = error;
+      const { code, status } = getCallableErrorStatus(error);
+      console.warn('[Pluto][aiChat] Request failed', {
+        requestId: requestPayload.requestId,
+        attempt,
+        totalRetries: AI_CHAT_CLIENT_RETRY_DELAYS_MS.length,
+        code,
+        status,
+        message: error instanceof Error ? error.message : String(error),
+      });
+
+      if (
+        !isRetryableAiChatError(error) ||
+        attempt >= AI_CHAT_CLIENT_RETRY_DELAYS_MS.length
+      ) {
+        break;
+      }
+
+      const retryDelayMs = AI_CHAT_CLIENT_RETRY_DELAYS_MS[attempt] ?? 0;
+      onRetrying?.({
+        attempt: attempt + 1,
+        delayMs: retryDelayMs,
+        totalRetries: AI_CHAT_CLIENT_RETRY_DELAYS_MS.length,
+      });
+      await wait(retryDelayMs);
+    }
+  }
+
+  console.error('[Pluto][aiChat] Exhausted retries', {
+    requestId: requestPayload.requestId,
+    totalRetries: AI_CHAT_CLIENT_RETRY_DELAYS_MS.length,
+    message: lastError instanceof Error ? lastError.message : String(lastError),
+  });
+
+  throw lastError;
 };
 
 export const billingCheckout = async (payload: { plan: 'Plus' | 'Pro'; returnUrl: string }) => {

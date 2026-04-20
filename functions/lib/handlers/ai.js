@@ -1,4 +1,5 @@
 import { HttpsError } from 'firebase-functions/v2/https';
+import { logger } from 'firebase-functions';
 import { z } from 'zod';
 import { FREE_PREMIUM_MODE_DAILY_LIMIT, PLAN_DEFINITIONS, INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES, } from '../config/plans.js';
 import { assertAuth, getBootstrapIdentity, getRequestId } from '../lib/http.js';
@@ -55,6 +56,28 @@ const aiChatSchema = z.object({
     requestId: z.string().trim().min(8).max(200),
 });
 const isRecord = (value) => typeof value === 'object' && value !== null;
+const getErrorDetails = (error) => {
+    if (!isRecord(error)) {
+        return {
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            status: null,
+            code: null,
+            details: undefined,
+        };
+    }
+    return {
+        message: typeof error.message === 'string'
+            ? error.message
+            : error instanceof Error
+                ? error.message
+                : 'Unknown error',
+        stack: typeof error.stack === 'string' ? error.stack : error instanceof Error ? error.stack : undefined,
+        status: typeof error.status === 'number' ? error.status : null,
+        code: typeof error.code === 'string' ? error.code : null,
+        details: 'details' in error ? error.details : undefined,
+    };
+};
 const normalizeHistoryParts = (parts) => Array.isArray(parts)
     ? parts.flatMap((part) => {
         if (!isRecord(part) || typeof part.type !== 'string') {
@@ -247,6 +270,7 @@ export const aiChatHandler = async (request) => {
             mode: payload.mode,
             objective: payload.objective,
             plan,
+            requestId,
             history: payload.history.slice(-planConfig.allowedModes.length * 20),
             attachments: decodedAttachments.map(({ data: _data, ...attachment }) => attachment),
             maxOutputTokens: planConfig.maxOutputTokensPerRequest,
@@ -254,6 +278,33 @@ export const aiChatHandler = async (request) => {
     }
     catch (error) {
         await releaseReservedUsageTokens(uid, reservationEstimate.reservedTokens).catch(() => undefined);
+        const errorDetails = getErrorDetails(error);
+        logger.error('ai_model_request_failed', {
+            eventType: 'ai_model_request_failed',
+            uid,
+            requestId,
+            plan,
+            mode: payload.mode,
+            objective: payload.objective,
+            educationLevel: payload.educationLevel,
+            promptLength: payload.prompt.length,
+            historyMessageCount: payload.history.length,
+            attachmentCount: payload.attachments.length,
+            attachmentSummary: payload.attachments.map((attachment) => ({
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+                sizeBytes: attachment.sizeBytes,
+            })),
+            inlinePayloadBytes,
+            estimatedInputTokens: reservationEstimate.inputTokens,
+            reservedTokens: reservationEstimate.reservedTokens,
+            remainingBefore: snapshot.remainingTodayTokens,
+            providerStatus: errorDetails.status,
+            providerCode: errorDetails.code,
+            errorMessage: errorDetails.message,
+            errorDetails: errorDetails.details,
+            stack: errorDetails.stack,
+        });
         logAiQuotaEvent({
             uid,
             requestId,

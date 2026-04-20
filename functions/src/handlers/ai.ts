@@ -1,4 +1,5 @@
 import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
+import { logger } from 'firebase-functions';
 import { z } from 'zod';
 import {
   FREE_PREMIUM_MODE_DAILY_LIMIT,
@@ -84,6 +85,31 @@ const aiChatSchema = z.object({
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
+
+const getErrorDetails = (error: unknown) => {
+  if (!isRecord(error)) {
+    return {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      status: null as number | null,
+      code: null as string | null,
+      details: undefined as unknown,
+    };
+  }
+
+  return {
+    message:
+      typeof error.message === 'string'
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : 'Unknown error',
+    stack: typeof error.stack === 'string' ? error.stack : error instanceof Error ? error.stack : undefined,
+    status: typeof error.status === 'number' ? error.status : null,
+    code: typeof error.code === 'string' ? error.code : null,
+    details: 'details' in error ? error.details : undefined,
+  };
+};
 
 const normalizeHistoryParts = (parts: unknown): AiMessagePart[] =>
   Array.isArray(parts)
@@ -358,12 +384,40 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
       mode: payload.mode,
       objective: payload.objective,
       plan,
+      requestId,
       history: payload.history.slice(-planConfig.allowedModes.length * 20),
       attachments: decodedAttachments.map(({ data: _data, ...attachment }) => attachment),
       maxOutputTokens: planConfig.maxOutputTokensPerRequest,
     });
   } catch (error) {
     await releaseReservedUsageTokens(uid, reservationEstimate.reservedTokens).catch(() => undefined);
+    const errorDetails = getErrorDetails(error);
+    logger.error('ai_model_request_failed', {
+      eventType: 'ai_model_request_failed',
+      uid,
+      requestId,
+      plan,
+      mode: payload.mode,
+      objective: payload.objective,
+      educationLevel: payload.educationLevel,
+      promptLength: payload.prompt.length,
+      historyMessageCount: payload.history.length,
+      attachmentCount: payload.attachments.length,
+      attachmentSummary: payload.attachments.map((attachment) => ({
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+      })),
+      inlinePayloadBytes,
+      estimatedInputTokens: reservationEstimate.inputTokens,
+      reservedTokens: reservationEstimate.reservedTokens,
+      remainingBefore: snapshot.remainingTodayTokens,
+      providerStatus: errorDetails.status,
+      providerCode: errorDetails.code,
+      errorMessage: errorDetails.message,
+      errorDetails: errorDetails.details,
+      stack: errorDetails.stack,
+    });
     logAiQuotaEvent({
       uid,
       requestId,

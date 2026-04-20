@@ -26,6 +26,7 @@ import {
   Camera,
   Image as ImageIcon,
   FileText,
+  RotateCcw,
 } from 'lucide-react';
 import { ProjectsModal } from '../Modals/ProjectsModal';
 import { ConversationalModeUI, HomeworkModeUI, ExamPrepUI } from '../Modes/ModeSpecializations';
@@ -35,7 +36,7 @@ import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import { getPlutoResponse } from '../../hooks/useAI';
 import { estimateInlineRequestBytes, fileToBase64, type InlineAttachmentInput } from '../../lib/attachments';
-import { formatTokenCount, formatTokenUsageSummary } from '../../lib/tokenQuota';
+import { formatTokenCount } from '../../lib/tokenQuota';
 
 interface ComposerAttachment {
   id: string;
@@ -45,6 +46,26 @@ interface ComposerAttachment {
   sizeBytes: number;
   kind: 'image' | 'file';
   previewUrl: string | null;
+}
+
+interface RetryState {
+  attempt: number;
+  totalRetries: number;
+}
+
+interface FailedRequestState {
+  threadId: string;
+  userMessageId: string;
+  errorMessageId: string | null;
+  prompt: string;
+  mode: 'Conversational' | 'Homework' | 'ExamPrep';
+  history: Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>;
+  attachments: InlineAttachmentInput[];
+}
+
+interface ActiveRequestState {
+  threadId: string;
+  userMessageId: string;
 }
 
 const formatBytes = (value: number) => {
@@ -144,10 +165,10 @@ export const ChatInterface = () => {
     isSubscriptionHydrated,
     freePremiumModesRemainingToday,
     remainingTodayTokens,
-    estimatedMessagesLeft,
     canSendMessage,
     canUseMode,
     applyServerSnapshot,
+    updateThread,
   } = useApp();
 
   const activeThread = threads.find((t) => t.id === activeThreadId);
@@ -156,10 +177,21 @@ export const ChatInterface = () => {
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isProjectsOpen, setIsProjectsOpen] = useState(false);
+  const [isComposerActive, setIsComposerActive] = useState(false);
   const [planNotice, setPlanNotice] = useState<string | null>(null);
+  const [isCompactViewport, setIsCompactViewport] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= 640 : false
+  );
+  const [retryState, setRetryState] = useState<RetryState | null>(null);
+  const [retryDotCount, setRetryDotCount] = useState(1);
+  const [failedRequest, setFailedRequest] = useState<FailedRequestState | null>(null);
+  const [activeRequest, setActiveRequest] = useState<ActiveRequestState | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const footerInteractiveRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
 
   const composerHasContent = input.trim().length > 0 || attachments.length > 0;
@@ -174,6 +206,45 @@ export const ChatInterface = () => {
     attachmentsRef.current = attachments;
   }, [attachments]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const updateViewportMode = () => {
+      setIsCompactViewport(window.innerWidth <= 640);
+    };
+
+    updateViewportMode();
+    window.addEventListener('resize', updateViewportMode);
+    return () => window.removeEventListener('resize', updateViewportMode);
+  }, []);
+
+  useEffect(() => {
+    if (!planNotice) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setPlanNotice((current) => (current === planNotice ? null : current));
+    }, 5000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [planNotice]);
+
+  useEffect(() => {
+    if (retryState === null) {
+      setRetryDotCount(1);
+      return undefined;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setRetryDotCount((current) => (current >= 3 ? 1 : current + 1));
+    }, 420);
+
+    return () => window.clearInterval(intervalId);
+  }, [retryState]);
+
   useEffect(
     () => () => {
       attachmentsRef.current.forEach((attachment) => releaseAttachmentPreview(attachment));
@@ -186,6 +257,30 @@ export const ChatInterface = () => {
   };
 
   useEffect(scrollToBottom, [activeThread?.messages, isLoading]);
+
+  useEffect(() => {
+    const hidePanel = () => setIsComposerActive(false);
+    const currentMessagesContainer = messagesContainerRef.current;
+
+    window.addEventListener('scroll', hidePanel, { passive: true });
+    currentMessagesContainer?.addEventListener('scroll', hidePanel, { passive: true });
+
+    return () => {
+      window.removeEventListener('scroll', hidePanel);
+      currentMessagesContainer?.removeEventListener('scroll', hidePanel);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!footerInteractiveRef.current?.contains(event.target as Node)) {
+        setIsComposerActive(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
 
   const removeAttachment = (attachmentId: string) => {
     setAttachments((current) => {
@@ -299,6 +394,25 @@ export const ChatInterface = () => {
     [attachments]
   );
 
+  const requestRetryLabel =
+    retryState !== null
+      ? `Retrying ${retryState.attempt}/${retryState.totalRetries}${'.'.repeat(retryDotCount)}`
+      : null;
+
+  const updateThreadMessages = (
+    threadId: string,
+    updater: (messages: Message[]) => Message[]
+  ) => {
+    const targetThread = threads.find((thread) => thread.id === threadId);
+    if (!targetThread) {
+      return;
+    }
+
+    updateThread(threadId, {
+      messages: updater(targetThread.messages),
+    });
+  };
+
   if (!activeThread) {
     return (
       <div className="chat-empty-state" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px', textAlign: 'center' }}>
@@ -401,6 +515,117 @@ export const ChatInterface = () => {
     );
   }
 
+  const submitAiRequest = async ({
+    threadId,
+    userMessageId,
+    existingErrorMessageId,
+    prompt,
+    mode,
+    history,
+    inlineAttachments,
+  }: {
+    threadId: string;
+    userMessageId: string;
+    existingErrorMessageId?: string | null;
+    prompt: string;
+    mode: 'Conversational' | 'Homework' | 'ExamPrep';
+    history: Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>;
+    inlineAttachments: InlineAttachmentInput[];
+  }) => {
+    setIsLoading(true);
+    setRetryState(null);
+    setActiveRequest({ threadId, userMessageId });
+    setFailedRequest((current) =>
+      current?.userMessageId === userMessageId ? null : current
+    );
+
+    if (existingErrorMessageId) {
+      updateThreadMessages(threadId, (messages) =>
+        messages.filter((message) => message.id !== existingErrorMessageId)
+      );
+    }
+
+    try {
+      const aiResponse = await getPlutoResponse(
+        prompt,
+        user?.educationLevel || 'High School',
+        mode,
+        user?.objective || 'General Learning',
+        history,
+        inlineAttachments,
+        {
+          onRetrying: ({ attempt, totalRetries }) => {
+            setRetryState({ attempt, totalRetries });
+          },
+        }
+      );
+
+      setRetryState(null);
+
+      applyServerSnapshot({
+        plan: aiResponse.subscription.plan,
+        usageTodayTokens: aiResponse.usageTodayTokens,
+        dailyTokenLimit: aiResponse.dailyTokenLimit,
+        remainingTodayTokens: aiResponse.remainingTodayTokens,
+        estimatedMessagesLeft: aiResponse.estimatedMessagesLeft,
+        premiumModeCount: aiResponse.premiumModeCount,
+        freePremiumModesRemainingToday: aiResponse.freePremiumModesRemainingToday,
+      });
+
+      const assistantMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'assistant',
+        parts: [createTextPart(aiResponse.answer)],
+        mode,
+        timestamp: Date.now(),
+      };
+      addMessageToThread(threadId, assistantMsg);
+    } catch (error: unknown) {
+      setRetryState(null);
+      console.error('AI Error:', error);
+      const errorMessageId = (Date.now() + 1).toString();
+      setFailedRequest({
+        threadId,
+        userMessageId,
+        errorMessageId,
+        prompt,
+        mode,
+        history,
+        attachments: inlineAttachments,
+      });
+      const errorText = `Pluto Error: ${error instanceof Error ? error.message : 'Gravity glitch detected.'}`;
+
+      const errorMsg: Message = {
+        id: errorMessageId,
+        role: 'assistant',
+        parts: [createTextPart(errorText)],
+        mode,
+        timestamp: Date.now(),
+      };
+      addMessageToThread(threadId, errorMsg);
+    } finally {
+      setRetryState(null);
+      setActiveRequest(null);
+      setIsLoading(false);
+    }
+  };
+
+  const handleRetryFailedRequest = async () => {
+    if (!failedRequest || isLoading) {
+      return;
+    }
+
+    await submitAiRequest({
+      threadId: failedRequest.threadId,
+      userMessageId: failedRequest.userMessageId,
+      existingErrorMessageId: failedRequest.errorMessageId,
+      prompt: failedRequest.prompt,
+      mode: failedRequest.mode,
+      history: failedRequest.history,
+      inlineAttachments: failedRequest.attachments,
+    });
+  };
+
   const handleSend = async () => {
     if (!composerHasContent || isLoading) return;
 
@@ -425,93 +650,56 @@ export const ChatInterface = () => {
       return;
     }
 
-    setIsLoading(true);
+    const inlineAttachments: InlineAttachmentInput[] = await Promise.all(
+      attachments.map(async (attachment) => ({
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        base64Data: await fileToBase64(attachment.file),
+      }))
+    );
 
-    try {
-      const inlineAttachments: InlineAttachmentInput[] = await Promise.all(
-        attachments.map(async (attachment) => ({
-          name: attachment.name,
-          mimeType: attachment.mimeType,
-          sizeBytes: attachment.sizeBytes,
-          base64Data: await fileToBase64(attachment.file),
-        }))
+    const inlinePayloadBytes = estimateInlineRequestBytes({
+      prompt: trimmedInput,
+      attachments: inlineAttachments,
+    });
+
+    if (inlinePayloadBytes > planConfig.maxTotalAttachmentPayloadBytes) {
+      setPlanNotice(
+        'Attachments are too large to send inline. Reduce the number or size of files so the total request stays under 8 MB.'
       );
-
-      const inlinePayloadBytes = estimateInlineRequestBytes({
-        prompt: trimmedInput,
-        attachments: inlineAttachments,
-      });
-
-      if (inlinePayloadBytes > planConfig.maxTotalAttachmentPayloadBytes) {
-        setPlanNotice(
-          'Attachments are too large to send inline. Reduce the number or size of files so the total request stays under 8 MB.'
-        );
-        return;
-      }
-
-      setPlanNotice(null);
-
-      const userMsg: Message = {
-        id: Date.now().toString(),
-        role: 'user',
-        parts: [
-          ...(trimmedInput ? [createTextPart(trimmedInput)] : []),
-          ...attachmentParts,
-        ],
-        mode: activeThread.mode,
-        timestamp: Date.now(),
-      };
-
-      addMessageToThread(activeThread.id, userMsg);
-      setInput('');
-      clearAttachments();
-
-      const history = activeThread.messages
-        .slice(-planConfig.historyWindow)
-        .map((message) => ({ role: message.role, parts: message.parts }));
-
-      const aiResponse = await getPlutoResponse(
-        trimmedInput,
-        user?.educationLevel || 'High School',
-        activeThread.mode,
-        user?.objective || 'General Learning',
-        history,
-        inlineAttachments
-      );
-
-      applyServerSnapshot({
-        plan: aiResponse.subscription.plan,
-        usageTodayTokens: aiResponse.usageTodayTokens,
-        dailyTokenLimit: aiResponse.dailyTokenLimit,
-        remainingTodayTokens: aiResponse.remainingTodayTokens,
-        estimatedMessagesLeft: aiResponse.estimatedMessagesLeft,
-        premiumModeCount: aiResponse.premiumModeCount,
-        freePremiumModesRemainingToday: aiResponse.freePremiumModesRemainingToday,
-      });
-
-      const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        parts: [createTextPart(aiResponse.answer)],
-        mode: activeThread.mode,
-        timestamp: Date.now(),
-      };
-      addMessageToThread(activeThread.id, assistantMsg);
-    } catch (error: unknown) {
-      console.error('AI Error:', error);
-      const errorText = `Pluto Error: ${error instanceof Error ? error.message : 'Gravity glitch detected.'}`;
-
-      const errorMsg: Message = {
-        id: (Date.now() + 1).toString(),
-        role: 'assistant',
-        parts: [createTextPart(errorText)],
-        mode: activeThread.mode,
-        timestamp: Date.now(),
-      };
-      addMessageToThread(activeThread.id, errorMsg);
-    } finally {
-      setIsLoading(false);
+      return;
     }
+
+    setPlanNotice(null);
+
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      parts: [
+        ...(trimmedInput ? [createTextPart(trimmedInput)] : []),
+        ...attachmentParts,
+      ],
+      mode: activeThread.mode,
+      timestamp: Date.now(),
+    };
+
+    addMessageToThread(activeThread.id, userMsg);
+    setInput('');
+    clearAttachments();
+
+    const history = activeThread.messages
+      .slice(-planConfig.historyWindow)
+      .map((message) => ({ role: message.role, parts: message.parts }));
+
+    await submitAiRequest({
+      threadId: activeThread.id,
+      userMessageId: userMsg.id,
+      prompt: trimmedInput,
+      mode: activeThread.mode,
+      history,
+      inlineAttachments,
+    });
   };
 
   const modeIcons = {
@@ -539,6 +727,8 @@ export const ChatInterface = () => {
     else if (action.includes('Mock exam')) prompt = 'Generate a mock exam-style practice set for this topic.';
     else if (action.includes('Common traps')) prompt = 'Show me the most common traps and mistakes for this topic.';
     setInput(prompt);
+    setIsComposerActive(true);
+    textareaRef.current?.focus();
   };
 
   return (
@@ -555,7 +745,7 @@ export const ChatInterface = () => {
           backdropFilter: 'blur(10px)',
         }}
       >
-        <div className="chat-header-main" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <div className="chat-header-main" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', width: '100%' }}>
           <div className="chat-thread-title" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ color: 'var(--primary)' }}>{modeIcons[activeThread.mode]}</div>
             <h3 style={{ fontSize: '1.1rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{activeThread.title}</h3>
@@ -582,22 +772,32 @@ export const ChatInterface = () => {
             <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>{assignedProject?.name || 'No Project'}</span>
             <ChevronDown size={14} opacity={0.5} />
           </motion.button>
-        </div>
-
-        <div className="chat-status-pills" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: '#f59e0b', fontWeight: '700', letterSpacing: '0.5px' }}>
-            {isSubscriptionHydrated ? currentPlan.toUpperCase() : 'LOADING'}
-          </div>
-          <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontWeight: '700', letterSpacing: '0.5px' }}>
-            {isSubscriptionHydrated ? `${formatTokenCount(remainingTodayTokens)} TOKENS LEFT` : 'SYNCING TOKENS'}
-          </div>
-          <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontWeight: '700', letterSpacing: '0.5px' }}>
-            {activeThread.mode.toUpperCase()}
+          <div
+            className="chat-status-pills"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              flexWrap: 'wrap',
+              marginLeft: 'auto',
+              justifyContent: 'flex-end',
+              flexShrink: 0,
+            }}
+          >
+            <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: '#f59e0b', fontWeight: '700', letterSpacing: '0.5px' }}>
+              {isSubscriptionHydrated ? currentPlan.toUpperCase() : 'LOADING'}
+            </div>
+            <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontWeight: '700', letterSpacing: '0.5px' }}>
+              {isSubscriptionHydrated ? `${formatTokenCount(remainingTodayTokens)} TOKENS LEFT` : 'SYNCING TOKENS'}
+            </div>
+            <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontWeight: '700', letterSpacing: '0.5px' }}>
+              {activeThread.mode.toUpperCase()}
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="chat-messages" style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '32px' }}>
+      <div ref={messagesContainerRef} className="chat-messages" style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '32px' }}>
         {activeThread.messages.length === 0 && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', opacity: 0.5 }}>
             <Sparkles size={48} color="var(--primary)" />
@@ -636,35 +836,91 @@ export const ChatInterface = () => {
                 {msg.role === 'user' ? <User size={18} color="white" /> : <Rocket size={18} color="var(--secondary)" />}
               </div>
 
-              <div
-                className="markdown-content chat-bubble"
-                style={{
-                  maxWidth: '75%',
-                  padding: '18px 24px',
-                  borderRadius: msg.role === 'user' ? '24px 4px 24px 24px' : '4px 24px 24px 24px',
-                  background: msg.role === 'user' ? 'linear-gradient(135deg, var(--primary), #4a148c)' : 'var(--surface-1)',
-                  backdropFilter: msg.role === 'assistant' ? 'blur(10px)' : 'none',
-                  color: 'white',
-                  border: '1px solid var(--card-border)',
-                  lineHeight: 1.7,
-                  fontSize: '1rem',
-                  boxShadow: '0 8px 30px rgba(0,0,0,0.2)',
-                  position: 'relative',
-                }}
-              >
-                {textContent ? (
-                  <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                    {textContent}
-                  </ReactMarkdown>
+              <div style={{ maxWidth: '75%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div
+                  className="markdown-content chat-bubble"
+                  style={{
+                    padding: '18px 24px',
+                    borderRadius: msg.role === 'user' ? '24px 4px 24px 24px' : '4px 24px 24px 24px',
+                    background: msg.role === 'user' ? 'linear-gradient(135deg, var(--primary), #4a148c)' : 'var(--surface-1)',
+                    backdropFilter: msg.role === 'assistant' ? 'blur(10px)' : 'none',
+                    color: 'white',
+                    border: '1px solid var(--card-border)',
+                    lineHeight: 1.7,
+                    fontSize: '1rem',
+                    boxShadow: '0 8px 30px rgba(0,0,0,0.2)',
+                    position: 'relative',
+                  }}
+                >
+                  {textContent ? (
+                    <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                      {textContent}
+                    </ReactMarkdown>
+                  ) : null}
+                  {fileParts.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: textContent ? '16px' : 0 }}>
+                      {fileParts.map((part, index) => (
+                        <AttachmentChip
+                          key={`${part.name}-${part.sizeBytes}-${index}`}
+                          part={part}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                {msg.role === 'user' && failedRequest?.userMessageId === msg.id ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'flex-end',
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => void handleRetryFailedRequest()}
+                      disabled={isLoading}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '6px 12px',
+                        borderRadius: '999px',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        background: 'rgba(255,255,255,0.05)',
+                        color: 'var(--text-secondary)',
+                        fontSize: '0.78rem',
+                        fontWeight: 600,
+                        cursor: isLoading ? 'default' : 'pointer',
+                        opacity: isLoading ? 0.5 : 1,
+                      }}
+                    >
+                      <RotateCcw size={14} />
+                      Retry Request
+                    </button>
+                  </div>
                 ) : null}
-                {fileParts.length > 0 ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: textContent ? '16px' : 0 }}>
-                    {fileParts.map((part, index) => (
-                      <AttachmentChip
-                        key={`${part.name}-${part.sizeBytes}-${index}`}
-                        part={part}
-                      />
-                    ))}
+                {msg.role === 'user' && activeRequest?.userMessageId === msg.id ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'flex-end',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '4px 2px',
+                        color: 'var(--text-secondary)',
+                        fontSize: '0.76rem',
+                        fontWeight: 600,
+                        opacity: 0.85,
+                      }}
+                    >
+                      <RotateCcw size={13} />
+                      <span>{requestRetryLabel ?? 'Sending...'}</span>
+                    </div>
                   </div>
                 ) : null}
               </div>
@@ -676,19 +932,32 @@ export const ChatInterface = () => {
             <div className="animate-thinking" style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--card-border)' }}>
               <Sparkles size={18} color="var(--primary)" />
             </div>
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '500', letterSpacing: '0.5px' }}>PLUTO IS COMPOSING...</div>
+            <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '500', letterSpacing: '0.5px' }}>
+              {requestRetryLabel ?? 'PLUTO IS COMPOSING...'}
+            </div>
           </motion.div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
       <footer className="chat-footer" style={{ padding: '24px 20px', width: '100%', maxWidth: '850px', margin: '0 auto', zIndex: 10 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <motion.div className="chat-mode-panel" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} style={{ padding: '0 12px' }}>
-            {activeThread.mode === 'Conversational' && <ConversationalModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
-            {activeThread.mode === 'Homework' && <HomeworkModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
-            {activeThread.mode === 'ExamPrep' && <ExamPrepUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
-          </motion.div>
+        <div
+          ref={footerInteractiveRef}
+          style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+          onMouseLeave={() => setIsComposerActive(false)}
+        >
+          {isComposerActive ? (
+            <motion.div
+              className="chat-mode-panel"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              style={{ padding: '0 12px', opacity: 0.92 }}
+            >
+              {activeThread.mode === 'Conversational' && <ConversationalModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
+              {activeThread.mode === 'Homework' && <HomeworkModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
+              {activeThread.mode === 'ExamPrep' && <ExamPrepUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
+            </motion.div>
+          ) : null}
 
           {attachments.length > 0 ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', padding: '0 12px' }}>
@@ -714,7 +983,9 @@ export const ChatInterface = () => {
               borderRadius: '20px',
               boxShadow: '0 20px 50px rgba(0,0,0,0.5), var(--glass-inner-glow)',
               alignItems: 'flex-end',
+              marginTop: isComposerActive ? '8px' : 0,
             }}
+            onMouseEnter={() => setIsComposerActive(true)}
           >
             <input
               ref={fileInputRef}
@@ -756,24 +1027,30 @@ export const ChatInterface = () => {
             </motion.button>
 
             <textarea
+              ref={textareaRef}
               className="chat-textarea"
               rows={1}
               value={input}
               onChange={(event) => setInput(event.target.value)}
+              onFocus={() => setIsComposerActive(true)}
+              onClick={() => setIsComposerActive(true)}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
                   void handleSend();
                 }
               }}
-              placeholder={`Ask anything in ${activeThread.mode}...`}
+              placeholder={isCompactViewport ? `Ask in ${activeThread.mode}...` : `Ask anything in ${activeThread.mode}...`}
               style={{
                 flex: 1,
+                minWidth: 0,
+                minHeight: '44px',
                 background: 'none',
                 border: 'none',
                 color: 'white',
                 padding: '14px',
                 fontSize: '1rem',
+                lineHeight: 1.45,
                 outline: 'none',
                 resize: 'none',
                 fontFamily: 'inherit',
@@ -815,12 +1092,7 @@ export const ChatInterface = () => {
               <span>This mode is locked on {currentPlan}. Upgrade to Plus or Pro.</span>
             </div>
           )}
-          <p style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--text-secondary)', opacity: 0.85 }}>
-            {isSubscriptionHydrated
-              ? `${currentPlan} plan: ${formatTokenUsageSummary(remainingTodayTokens, estimatedMessagesLeft)}.`
-              : 'Syncing your Pluto plan and usage...'}
-          </p>
-          <p style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-secondary)', opacity: 0.6 }}>
+          <p style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-secondary)', opacity: 0.6, marginTop: '8px', paddingBottom: '10px' }}>
             Pluto Intelligence may be wrong. Verification recommended.
           </p>
         </div>

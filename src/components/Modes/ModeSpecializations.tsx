@@ -26,10 +26,10 @@ export const ConversationalModeUI = ({ educationLevel, onActionClick }: ModeUIPr
           display: 'flex',
           gap: '12px',
           padding: '10px 16px',
-          background: 'rgba(138, 43, 226, 0.08)',
+          background: 'rgba(10, 16, 42, 0.72)',
           borderRadius: '14px',
-          border: '1px solid rgba(138, 43, 226, 0.2)',
-          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(138, 43, 226, 0.16)',
+          backdropFilter: 'blur(14px)',
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
@@ -100,10 +100,10 @@ export const HomeworkModeUI = ({ educationLevel, onActionClick }: ModeUIProps) =
         animate={{ opacity: 1, height: 'auto' }}
         style={{
           padding: '10px 16px',
-          background: 'rgba(0, 210, 255, 0.08)',
+          background: 'rgba(9, 19, 38, 0.72)',
           borderRadius: '14px',
-          border: '1px solid rgba(0, 210, 255, 0.2)',
-          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(0, 210, 255, 0.16)',
+          backdropFilter: 'blur(14px)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '0.9rem', marginBottom: '8px' }}>
@@ -164,10 +164,10 @@ export const ExamPrepUI = ({ educationLevel, onActionClick }: ModeUIProps) => {
         animate={{ opacity: 1, height: 'auto' }}
         style={{
           padding: '10px 16px',
-          background: 'rgba(255, 0, 193, 0.08)',
+          background: 'rgba(22, 10, 34, 0.72)',
           borderRadius: '14px',
-          border: '1px solid rgba(255, 0, 193, 0.2)',
-          backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(255, 0, 193, 0.16)',
+          backdropFilter: 'blur(14px)',
         }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>

@@ -8,7 +8,10 @@ export async function getPlutoResponse(
   mode: 'Conversational' | 'Homework' | 'ExamPrep',
   objective: string,
   history: { role: 'user' | 'assistant'; parts: MessagePart[] }[] = [],
-  attachments: InlineAttachmentInput[] = []
+  attachments: InlineAttachmentInput[] = [],
+  options?: {
+    onRetrying?: (state: { attempt: number; delayMs: number; totalRetries: number }) => void;
+  }
 ) {
   const requestId = crypto.randomUUID();
 
@@ -20,5 +23,6 @@ export async function getPlutoResponse(
     history,
     attachments,
     requestId,
+    onRetrying: options?.onRetrying,
   });
 }
