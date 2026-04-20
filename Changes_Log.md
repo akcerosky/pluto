@@ -254,3 +254,34 @@
 - Updated local production env values to use the live Razorpay public key in: `.env.production`, `.env`
 - Updated `functions/.env` to use live Razorpay backend values: `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_PLUS_PLAN_ID`, `RAZORPAY_PRO_PLAN_ID`, `RAZORPAY_WEBHOOK_SECRET`
 - Deployed Firebase Functions to `pluto-ef61b` with the live Razorpay backend configuration.
+
+## 2026-04-20
+
+### Multimodal Attachments
+
+- Migrated Pluto's Gemini integration from `@google/generative-ai` to `@google/genai` in both the app and Functions packages.
+- Added inline multimodal attachment support to chat with plan-based limits:
+  - `Free`: no attachments
+  - `Plus`: images only, up to 5 MB per file
+  - `Pro`: images and PDFs, up to 20 MB per file
+- Updated Pluto's message model from plain `content` strings to structured `parts`, while preserving backward compatibility for existing saved chats.
+- Added composer attachment UX in the chat interface with:
+  - file picker support
+  - mobile camera capture support
+  - attachment preview chips before send
+  - metadata chips persisted in chat history after send
+- Implemented inline base64 attachment sending for the current turn only, without storing file contents in thread state, `appState/main`, or Firestore.
+- Added frontend and backend request-size guards so prompt + attachment payloads stay under the 8 MB callable safety limit.
+- Added backend MIME-type, size, and base64 validation before sending multimodal parts to Gemini.
+- Verified attachment-aware chat behavior with successful local app and Functions builds plus Functions tests.
+- Deployed the updated Firebase Functions to `pluto-ef61b` and rolled the latest frontend to EC2 from GitHub before the later mode-behavior refinement work.
+
+### Mode Behavior Refinement
+
+- Updated Pluto mode behavior in `functions/src/services/gemini.ts` using the AlphaBuddy `useAI.py` prompt contract as reference.
+- Strengthened `Conversational` mode to guide students with more Socratic, step-by-step reasoning instead of jumping straight to answers.
+- Tightened `Homework` mode so responses focus on approach, next-step scaffolding, and short hints instead of full solutions.
+- Refocused `ExamPrep` mode toward quizzes, mock-test style practice, revision prompts, and exam strategy.
+- Added a Pluto-adapted off-topic refusal rule for clearly non-educational requests.
+- Added lightweight response cleanup to normalize empty outputs, trim filler openers, collapse spacing, and clean common math/LaTeX artifacts.
+- Updated mode helper panels and quick-action prompts in the chat UI so the frontend reflects the new backend tutoring behavior.
