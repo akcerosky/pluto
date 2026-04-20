@@ -1,6 +1,7 @@
 export type SubscriptionPlan = 'Free' | 'Plus' | 'Pro';
 export type SubscriptionStatus = 'pending' | 'active' | 'cancelled' | 'paused' | 'expired';
 export type ChatMode = 'Conversational' | 'Homework' | 'ExamPrep';
+export type AttachmentKind = 'image' | 'pdf';
 
 export interface PlanDefinition {
   id: SubscriptionPlan;
@@ -12,11 +13,16 @@ export interface PlanDefinition {
   averageTokensPerMessage: number;
   maxInputChars: number;
   allowedModes: ChatMode[];
+  attachmentsEnabled: boolean;
+  allowedAttachmentKinds: AttachmentKind[];
+  maxAttachmentBytes: number;
+  maxTotalAttachmentPayloadBytes: number;
 }
 
 export const IST_TIME_ZONE = 'Asia/Kolkata';
 export const PRO_REFUND_DAILY_LIMIT = 100;
 export const FREE_PREMIUM_MODE_DAILY_LIMIT = 3;
+export const INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES = 8 * 1024 * 1024;
 
 export const PLAN_DEFINITIONS: Record<SubscriptionPlan, PlanDefinition> = {
   Free: {
@@ -29,6 +35,10 @@ export const PLAN_DEFINITIONS: Record<SubscriptionPlan, PlanDefinition> = {
     averageTokensPerMessage: 2_000,
     maxInputChars: 500,
     allowedModes: ['Conversational'],
+    attachmentsEnabled: false,
+    allowedAttachmentKinds: [],
+    maxAttachmentBytes: 0,
+    maxTotalAttachmentPayloadBytes: INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
   },
   Plus: {
     id: 'Plus',
@@ -40,6 +50,10 @@ export const PLAN_DEFINITIONS: Record<SubscriptionPlan, PlanDefinition> = {
     averageTokensPerMessage: 4_000,
     maxInputChars: 2000,
     allowedModes: ['Conversational', 'Homework', 'ExamPrep'],
+    attachmentsEnabled: true,
+    allowedAttachmentKinds: ['image'],
+    maxAttachmentBytes: 5 * 1024 * 1024,
+    maxTotalAttachmentPayloadBytes: INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
   },
   Pro: {
     id: 'Pro',
@@ -51,6 +65,10 @@ export const PLAN_DEFINITIONS: Record<SubscriptionPlan, PlanDefinition> = {
     averageTokensPerMessage: 6_000,
     maxInputChars: 6000,
     allowedModes: ['Conversational', 'Homework', 'ExamPrep'],
+    attachmentsEnabled: true,
+    allowedAttachmentKinds: ['image', 'pdf'],
+    maxAttachmentBytes: 20 * 1024 * 1024,
+    maxTotalAttachmentPayloadBytes: INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
   },
 };
 

@@ -5,7 +5,9 @@ const MESSAGE_OVERHEAD_TOKENS = 12;
 export const ABSOLUTE_MAX_DAILY_TOKEN_CEILING = 1_000_000;
 const PROVIDER_TOKEN_SANITY_MULTIPLIER = 2;
 const estimateTextTokens = (value) => Math.max(1, Math.ceil(value.trim().length / CHARS_PER_TOKEN));
-export const estimateHistoryTokens = (history) => history.reduce((sum, message) => sum + estimateTextTokens(message.content) + MESSAGE_OVERHEAD_TOKENS, 0);
+export const estimateHistoryTokens = (history) => history.reduce((sum, message) => sum +
+    message.parts.reduce((partSum, part) => part.type === 'text' ? partSum + estimateTextTokens(part.text) : partSum, 0) +
+    MESSAGE_OVERHEAD_TOKENS, 0);
 export const estimateAiInputTokens = (payload) => {
     const systemContext = payload.educationLevel.trim().length +
         payload.mode.trim().length +

@@ -1,7 +1,7 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { requireEnv } from '../config/env.js';
 import { buildEstimatedUsage, estimateAiInputTokens, normalizeTokenUsage } from './tokenUsage.js';
-import type { TokenUsage } from '../types/index.js';
+import type { AiHistoryMessage, AiInlineAttachment, TokenUsage } from '../types/index.js';
 
 const buildSystemInstruction = (
   educationLevel: string,
@@ -29,11 +29,18 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 503]);
 const PRIMARY_MODEL = 'gemini-2.5-flash';
 
-export const normalizeHistory = (history: Array<{ role: 'user' | 'assistant'; content: string }>) => {
+const getHistoryText = (message: AiHistoryMessage) =>
+  message.parts
+    .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join('\n\n');
+
+export const normalizeHistory = (history: AiHistoryMessage[]) => {
   const sanitized: Array<{ role: 'user' | 'model'; content: string }> = history
     .map((message) => ({
       role: (message.role === 'assistant' ? 'model' : 'user') as 'user' | 'model',
-      content: message.content.trim(),
+      content: getHistoryText(message),
     }))
     .filter((message) => message.content.length > 0);
 
@@ -61,10 +68,11 @@ export const generatePlutoResponse = async (payload: {
   mode: string;
   objective: string;
   plan: string;
-  history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  history: AiHistoryMessage[];
+  attachments: AiInlineAttachment[];
   maxOutputTokens: number;
 }) => {
-  const genAI = new GoogleGenerativeAI(requireEnv('geminiApiKey').trim());
+  const genAI = new GoogleGenAI({ apiKey: requireEnv('geminiApiKey').trim() });
   const history = normalizeHistory(payload.history);
   const estimatedInputTokens = estimateAiInputTokens({
     prompt: payload.prompt,
@@ -76,20 +84,18 @@ export const generatePlutoResponse = async (payload: {
   const backoffs = [0, 1000, 3000, 9000];
   let lastError: unknown;
 
-  const model = genAI.getGenerativeModel({
-    model: PRIMARY_MODEL,
-    systemInstruction: buildSystemInstruction(
-      payload.educationLevel,
-      payload.mode,
-      payload.objective,
-      payload.plan
-    ),
-    generationConfig: {
-      maxOutputTokens: payload.maxOutputTokens,
-    },
-  });
-
-  const chat = model.startChat({ history });
+  const currentTurn = {
+    role: 'user' as const,
+    parts: [
+      ...(payload.prompt.trim() ? [{ text: payload.prompt }] : []),
+      ...payload.attachments.map((attachment) => ({
+        inlineData: {
+          mimeType: attachment.mimeType,
+          data: attachment.base64Data,
+        },
+      })),
+    ],
+  };
 
   for (let attempt = 0; attempt < backoffs.length; attempt += 1) {
     if (attempt > 0) {
@@ -98,9 +104,20 @@ export const generatePlutoResponse = async (payload: {
     }
 
     try {
-      const result = await chat.sendMessage(payload.prompt);
-      const response = await result.response;
-      const text = response.text();
+      const response = await genAI.models.generateContent({
+        model: PRIMARY_MODEL,
+        contents: [...history, currentTurn],
+        config: {
+          systemInstruction: buildSystemInstruction(
+            payload.educationLevel,
+            payload.mode,
+            payload.objective,
+            payload.plan
+          ),
+          maxOutputTokens: payload.maxOutputTokens,
+        },
+      });
+      const text = response.text ?? '';
       const metadata = response.usageMetadata;
       const estimatedUsage = buildEstimatedUsage({
         prompt: payload.prompt,

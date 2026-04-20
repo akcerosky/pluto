@@ -61,9 +61,37 @@ export interface UserBootstrapIdentity {
   avatar?: string | null;
 }
 
+export interface AiTextPart {
+  type: 'text';
+  text: string;
+}
+
+export interface AiImagePart {
+  type: 'image';
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export interface AiFilePart {
+  type: 'file';
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
+export type AiMessagePart = AiTextPart | AiImagePart | AiFilePart;
+
 export interface AiHistoryMessage {
   role: 'user' | 'assistant';
-  content: string;
+  parts: AiMessagePart[];
+}
+
+export interface AiInlineAttachment {
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  base64Data: string;
 }
 
 export interface AiChatPayload {
@@ -72,6 +100,7 @@ export interface AiChatPayload {
   educationLevel: string;
   objective: string;
   history: AiHistoryMessage[];
+  attachments: AiInlineAttachment[];
   requestId: string;
 }
 

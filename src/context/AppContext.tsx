@@ -11,7 +11,14 @@ import {
   type PlanFeatureKey,
   type SubscriptionPlan,
 } from '../config/subscription';
-import type { Message, Project, Thread, UserSession } from '../types';
+import {
+  getMessageText,
+  normalizeMessage,
+  type Message,
+  type Project,
+  type Thread,
+  type UserSession,
+} from '../types';
 import type { AppContextType, ChatMode, EducationLevel } from './appContextTypes';
 import { AppContext } from './appContextValue';
 
@@ -65,6 +72,15 @@ const getLocalStateUpdatedAt = (threads: Thread[], projects: Project[]) =>
 
 const removeEmptyThreads = (threads: Thread[]) =>
   threads.filter((thread) => Array.isArray(thread.messages) && thread.messages.length > 0);
+
+const normalizeThread = (thread: Thread): Thread => ({
+  ...thread,
+  messages: Array.isArray(thread.messages)
+    ? thread.messages.map((message) => normalizeMessage(message))
+    : [],
+});
+
+const normalizeThreads = (threads: Thread[]) => threads.map((thread) => normalizeThread(thread));
 
 const getSafeActiveThreadId = (activeThreadId: string | null | undefined, threads: Thread[]) => {
   if (!activeThreadId) return null;
@@ -162,12 +178,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   });
   const [threads, setThreads] = useState<Thread[]>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_threads`);
-    return saved ? removeEmptyThreads(JSON.parse(saved)) : [];
+    return saved ? removeEmptyThreads(normalizeThreads(JSON.parse(saved))) : [];
   });
   const [activeThreadId, setActiveThreadId] = useState<string | null>(() => {
     const savedThreads = localStorage.getItem(`${STORAGE_KEY}_threads`);
     const savedActiveThreadId = localStorage.getItem(`${STORAGE_KEY}_active_thread_id`);
-    const cleanedThreads = savedThreads ? removeEmptyThreads(JSON.parse(savedThreads)) : [];
+    const cleanedThreads = savedThreads
+      ? removeEmptyThreads(normalizeThreads(JSON.parse(savedThreads)))
+      : [];
     return getSafeActiveThreadId(savedActiveThreadId, cleanedThreads);
   });
   const [projects, setProjects] = useState<Project[]>(() => {
@@ -410,7 +428,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
 
-        const cleanedCloudThreads = Array.isArray(data.threads) ? removeEmptyThreads(data.threads) : null;
+        const cleanedCloudThreads = Array.isArray(data.threads)
+          ? removeEmptyThreads(normalizeThreads(data.threads))
+          : null;
         if (cleanedCloudThreads) {
           setThreads(cleanedCloudThreads);
         }
@@ -487,7 +507,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const canSendMessage = useCallback(
-    (message: string, requestedMode: ChatMode) => {
+    (
+      message: string,
+      requestedMode: ChatMode,
+      options?: { hasAttachments?: boolean }
+    ) => {
       if (!isSubscriptionHydrated) {
         return {
           ok: false,
@@ -505,14 +529,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         };
       }
 
-      if (message.trim().length > planConfig.maxInputChars) {
+      const trimmedMessage = message.trim();
+
+      if (!trimmedMessage && !options?.hasAttachments) {
+        return {
+          ok: false,
+          reason: 'Write a message or attach a file before sending.',
+        };
+      }
+
+      if (trimmedMessage.length > planConfig.maxInputChars) {
         return {
           ok: false,
           reason: `This prompt is too long for ${currentPlan}. Max ${planConfig.maxInputChars} characters.`,
         };
       }
 
-      if (estimatePromptTokens(message) > planConfig.maxInputTokensPerRequest) {
+      if (trimmedMessage && estimatePromptTokens(trimmedMessage) > planConfig.maxInputTokensPerRequest) {
         return {
           ok: false,
           reason: `This request is too large for ${currentPlan}. Reduce the prompt and try again.`,
@@ -520,7 +553,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }
 
       if (
-        estimatePromptTokens(message) + planConfig.maxOutputTokensPerRequest >
+        estimatePromptTokens(trimmedMessage || ' ') + planConfig.maxOutputTokensPerRequest >
         remainingTodayTokens
       ) {
         return {
@@ -627,7 +660,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const newMessages = [...thread.messages, message];
         let newTitle = thread.title;
         if (thread.messages.length === 0 && message.role === 'user') {
-          newTitle = message.content.slice(0, 30) + (message.content.length > 30 ? '...' : '');
+          const messageText = getMessageText(message);
+          newTitle = messageText
+            ? messageText.slice(0, 30) + (messageText.length > 30 ? '...' : '')
+            : 'New Chat';
         }
         return { ...thread, messages: newMessages, title: newTitle, updatedAt: Date.now() };
       })

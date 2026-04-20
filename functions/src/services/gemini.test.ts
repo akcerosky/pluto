@@ -4,12 +4,12 @@ import { normalizeHistory } from './gemini.js';
 
 test('normalizeHistory drops leading assistant turns and preserves alternating sequence', () => {
   const normalized = normalizeHistory([
-    { role: 'assistant', content: 'Old summary' },
-    { role: 'assistant', content: 'Another model turn' },
-    { role: 'user', content: 'Explain ionic bonding' },
-    { role: 'assistant', content: 'Sure' },
-    { role: 'assistant', content: 'Duplicate model turn' },
-    { role: 'user', content: 'Give a summary' },
+    { role: 'assistant', parts: [{ type: 'text', text: 'Old summary' }] },
+    { role: 'assistant', parts: [{ type: 'text', text: 'Another model turn' }] },
+    { role: 'user', parts: [{ type: 'text', text: 'Explain ionic bonding' }] },
+    { role: 'assistant', parts: [{ type: 'text', text: 'Sure' }] },
+    { role: 'assistant', parts: [{ type: 'text', text: 'Duplicate model turn' }] },
+    { role: 'user', parts: [{ type: 'text', text: 'Give a summary' }] },
   ]);
 
   assert.deepEqual(normalized, [
@@ -21,8 +21,8 @@ test('normalizeHistory drops leading assistant turns and preserves alternating s
 
 test('normalizeHistory trims empty entries', () => {
   const normalized = normalizeHistory([
-    { role: 'user', content: '   ' },
-    { role: 'user', content: 'Actual prompt' },
+    { role: 'user', parts: [{ type: 'text', text: '   ' }] },
+    { role: 'user', parts: [{ type: 'text', text: 'Actual prompt' }] },
   ]);
 
   assert.deepEqual(normalized, [{ role: 'user', parts: [{ text: 'Actual prompt' }] }]);

@@ -1,6 +1,8 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from './firebase';
 import type { SubscriptionPlan } from '../config/subscription';
+import type { MessagePart } from '../types';
+import type { InlineAttachmentInput } from './attachments';
 
 const requireFunctions = () => {
   if (!functions) {
@@ -44,6 +46,10 @@ export interface MeResponse {
     averageTokensPerMessage: number;
     maxInputChars: number;
     allowedModes: Array<'Conversational' | 'Homework' | 'ExamPrep'>;
+    attachmentsEnabled: boolean;
+    allowedAttachmentKinds: Array<'image' | 'pdf'>;
+    maxAttachmentBytes: number;
+    maxTotalAttachmentPayloadBytes: number;
   };
 }
 
@@ -93,7 +99,8 @@ export const aiChat = async (payload: {
   mode: 'Conversational' | 'Homework' | 'ExamPrep';
   educationLevel: string;
   objective: string;
-  history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  history: Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>;
+  attachments: InlineAttachmentInput[];
   requestId: string;
 }) => {
   const call = httpsCallable<typeof payload, {

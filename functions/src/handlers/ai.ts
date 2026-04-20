@@ -1,6 +1,10 @@
 import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { z } from 'zod';
-import { FREE_PREMIUM_MODE_DAILY_LIMIT, PLAN_DEFINITIONS } from '../config/plans.js';
+import {
+  FREE_PREMIUM_MODE_DAILY_LIMIT,
+  PLAN_DEFINITIONS,
+  INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
+} from '../config/plans.js';
 import { assertAuth, getBootstrapIdentity, getRequestId } from '../lib/http.js';
 import { logAiQuotaEvent, logAiQuotaMetric } from '../lib/observability.js';
 import { getCachedValue, setCachedValue } from '../services/cache.js';
@@ -12,6 +16,7 @@ import {
 } from '../services/firestoreRepo.js';
 import { generatePlutoResponse } from '../services/gemini.js';
 import { estimateReservedTokens } from '../services/tokenUsage.js';
+import type { AiHistoryMessage, AiInlineAttachment, AiMessagePart } from '../types/index.js';
 
 const mapAiErrorToHttpsError = (error: unknown) => {
   const status =
@@ -41,8 +46,27 @@ const mapAiErrorToHttpsError = (error: unknown) => {
   );
 };
 
+const textPartSchema = z.object({
+  type: z.literal('text'),
+  text: z.string().trim().min(1).max(6000),
+});
+
+const attachmentPartSchema = z.object({
+  type: z.union([z.literal('image'), z.literal('file')]),
+  name: z.string().trim().min(1).max(260),
+  mimeType: z.string().trim().min(1).max(120),
+  sizeBytes: z.number().int().min(0).max(20 * 1024 * 1024),
+});
+
+const attachmentSchema = z.object({
+  name: z.string().trim().min(1).max(260),
+  mimeType: z.string().trim().min(1).max(120),
+  sizeBytes: z.number().int().min(1).max(20 * 1024 * 1024),
+  base64Data: z.string().trim().min(1),
+});
+
 const aiChatSchema = z.object({
-  prompt: z.string().trim().min(1).max(6000),
+  prompt: z.string().trim().max(6000),
   mode: z.enum(['Conversational', 'Homework', 'ExamPrep']),
   educationLevel: z.string().trim().min(1).max(80),
   objective: z.string().trim().min(1).max(200),
@@ -50,20 +74,102 @@ const aiChatSchema = z.object({
     .array(
       z.object({
         role: z.enum(['user', 'assistant']),
-        content: z.string().trim().min(1).max(6000),
+        parts: z.array(z.union([textPartSchema, attachmentPartSchema])).max(16),
       })
     )
     .max(80),
+  attachments: z.array(attachmentSchema).max(8),
   requestId: z.string().trim().min(8).max(200),
 });
 
-const clampHistoryForValidation = (
-  history: Array<{ role: 'user' | 'assistant'; content: string }>
-) =>
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+const normalizeHistoryParts = (parts: unknown): AiMessagePart[] =>
+  Array.isArray(parts)
+    ? parts.flatMap<AiMessagePart>((part) => {
+        if (!isRecord(part) || typeof part.type !== 'string') {
+          return [];
+        }
+
+        if (part.type === 'text' && typeof part.text === 'string') {
+          const text = part.text.trim().slice(0, 6000);
+          return text ? [{ type: 'text', text }] : [];
+        }
+
+        if (
+          (part.type === 'image' || part.type === 'file') &&
+          typeof part.name === 'string' &&
+          typeof part.mimeType === 'string'
+        ) {
+          return [
+            {
+              type: part.type,
+              name: part.name.trim().slice(0, 260),
+              mimeType: part.mimeType.trim().slice(0, 120),
+              sizeBytes: Math.max(0, Math.floor(Number(part.sizeBytes) || 0)),
+            },
+          ];
+        }
+
+        return [];
+      })
+    : [];
+
+const clampHistoryForValidation = (history: AiHistoryMessage[]) =>
   history.map((message) => ({
     role: message.role,
-    content: message.content.trim().slice(0, 6000),
+    parts: normalizeHistoryParts(message.parts),
   }));
+
+const clampAttachmentsForValidation = (attachments: AiInlineAttachment[]) =>
+  attachments.map((attachment) => ({
+    name: attachment.name.trim().slice(0, 260),
+    mimeType: attachment.mimeType.trim().slice(0, 120),
+    sizeBytes: Math.max(0, Math.floor(attachment.sizeBytes)),
+    base64Data: attachment.base64Data.trim(),
+  }));
+
+const getInlinePayloadBytes = (prompt: string, attachments: AiInlineAttachment[]) =>
+  Buffer.byteLength(
+    JSON.stringify({
+      prompt,
+      attachments: attachments.map((attachment) => ({
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+        base64Data: attachment.base64Data,
+      })),
+    }),
+    'utf8'
+  );
+
+const isMimeAllowed = (
+  allowedKinds: Array<'image' | 'pdf'>,
+  mimeType: string
+) =>
+  (allowedKinds.includes('image') && mimeType.startsWith('image/')) ||
+  (allowedKinds.includes('pdf') && mimeType === 'application/pdf');
+
+const decodeAttachment = (attachment: AiInlineAttachment) => {
+  if (!/^[A-Za-z0-9+/=\s]+$/.test(attachment.base64Data)) {
+    throw new HttpsError('invalid-argument', `Attachment "${attachment.name}" is not valid base64.`);
+  }
+
+  const buffer = Buffer.from(attachment.base64Data, 'base64');
+  if (!buffer.length) {
+    throw new HttpsError('invalid-argument', `Attachment "${attachment.name}" is empty.`);
+  }
+
+  if (buffer.byteLength !== attachment.sizeBytes) {
+    throw new HttpsError(
+      'invalid-argument',
+      `Attachment "${attachment.name}" size metadata does not match the uploaded content.`
+    );
+  }
+
+  return buffer;
+};
 
 export const aiChatHandler = async (request: CallableRequest<unknown>) => {
   const uid = assertAuth(request);
@@ -73,12 +179,22 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
     history: Array.isArray(rawPayload.history)
       ? clampHistoryForValidation(
           rawPayload.history.filter(
-            (message): message is { role: 'user' | 'assistant'; content: string } =>
-              typeof message === 'object' &&
-              message !== null &&
-              ((message as { role?: unknown }).role === 'user' ||
-                (message as { role?: unknown }).role === 'assistant') &&
-              typeof (message as { content?: unknown }).content === 'string'
+            (message): message is AiHistoryMessage =>
+              isRecord(message) &&
+              (message.role === 'user' || message.role === 'assistant') &&
+              Array.isArray(message.parts)
+          )
+        )
+      : [],
+    attachments: Array.isArray(rawPayload.attachments)
+      ? clampAttachmentsForValidation(
+          rawPayload.attachments.filter(
+            (attachment): attachment is AiInlineAttachment =>
+              isRecord(attachment) &&
+              typeof attachment.name === 'string' &&
+              typeof attachment.mimeType === 'string' &&
+              typeof attachment.sizeBytes === 'number' &&
+              typeof attachment.base64Data === 'string'
           )
         )
       : [],
@@ -100,6 +216,10 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
   const plan = snapshot.subscription.plan;
   const planConfig = PLAN_DEFINITIONS[plan];
   const isPremiumMode = payload.mode === 'Homework' || payload.mode === 'ExamPrep';
+
+  if (!payload.prompt.trim() && payload.attachments.length === 0) {
+    throw new HttpsError('invalid-argument', 'Write a message or attach a file before sending.');
+  }
 
   if (
     !planConfig.allowedModes.includes(payload.mode) &&
@@ -131,6 +251,42 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
       `This prompt exceeds the ${plan} limit of ${planConfig.maxInputChars} characters.`
     );
   }
+
+  if (!planConfig.attachmentsEnabled && payload.attachments.length > 0) {
+    throw new HttpsError(
+      'permission-denied',
+      `${plan} does not include attachment support. Upgrade to continue.`
+    );
+  }
+
+  const inlinePayloadBytes = getInlinePayloadBytes(payload.prompt, payload.attachments);
+  if (inlinePayloadBytes > INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES) {
+    throw new HttpsError(
+      'invalid-argument',
+      'Attachments are too large to send inline. Reduce the number or size of files so the total request stays under 8 MB.'
+    );
+  }
+
+  const decodedAttachments = payload.attachments.map((attachment) => {
+    if (!isMimeAllowed(planConfig.allowedAttachmentKinds, attachment.mimeType)) {
+      throw new HttpsError(
+        'permission-denied',
+        `Attachment type "${attachment.mimeType}" is not available on ${plan}.`
+      );
+    }
+
+    if (attachment.sizeBytes > planConfig.maxAttachmentBytes) {
+      throw new HttpsError(
+        'invalid-argument',
+        `Attachment "${attachment.name}" exceeds the ${plan} per-file limit.`
+      );
+    }
+
+    return {
+      ...attachment,
+      data: decodeAttachment(attachment),
+    };
+  });
 
   const reservationEstimate = estimateReservedTokens({
     prompt: payload.prompt,
@@ -203,6 +359,7 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
       objective: payload.objective,
       plan,
       history: payload.history.slice(-planConfig.allowedModes.length * 20),
+      attachments: decodedAttachments.map(({ data: _data, ...attachment }) => attachment),
       maxOutputTokens: planConfig.maxOutputTokensPerRequest,
     });
   } catch (error) {

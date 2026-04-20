@@ -61,7 +61,11 @@ export interface AppContextType {
   setPlan: (plan: SubscriptionPlan) => void;
   canUseMode: (mode: ChatMode) => boolean;
   canUseFeature: (feature: PlanFeatureKey) => boolean;
-  canSendMessage: (message: string, mode: ChatMode) => { ok: boolean; reason?: string };
+  canSendMessage: (
+    message: string,
+    mode: ChatMode,
+    options?: { hasAttachments?: boolean }
+  ) => { ok: boolean; reason?: string };
 
   logout: () => void;
 }

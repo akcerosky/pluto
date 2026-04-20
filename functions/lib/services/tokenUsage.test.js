@@ -7,14 +7,14 @@ test('estimateAiInputTokens returns a positive deterministic count', () => {
         educationLevel: 'High School',
         mode: 'Conversational',
         objective: 'Understand biology basics',
-        history: [{ role: 'user', content: 'What is chlorophyll?' }],
+        history: [{ role: 'user', parts: [{ type: 'text', text: 'What is chlorophyll?' }] }],
     });
     const second = estimateAiInputTokens({
         prompt: 'Explain photosynthesis in simple terms.',
         educationLevel: 'High School',
         mode: 'Conversational',
         objective: 'Understand biology basics',
-        history: [{ role: 'user', content: 'What is chlorophyll?' }],
+        history: [{ role: 'user', parts: [{ type: 'text', text: 'What is chlorophyll?' }] }],
     });
     assert.equal(first, second);
     assert.ok(first > 0);
@@ -37,7 +37,7 @@ test('buildEstimatedUsage includes input and output token totals', () => {
         educationLevel: 'College/University',
         mode: 'ExamPrep',
         objective: 'Study for finals',
-        history: [{ role: 'assistant', content: 'Sure, send the material.' }],
+        history: [{ role: 'assistant', parts: [{ type: 'text', text: 'Sure, send the material.' }] }],
         answer: 'Here is a concise summary.',
     });
     assert.equal(usage.usageSource, 'estimated');

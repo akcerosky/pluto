@@ -6,6 +6,8 @@ export type PlanFeatureKey =
   | 'prioritySupport'
   | 'extendedContext';
 
+export type AttachmentKind = 'image' | 'pdf';
+
 export interface PlanConfig {
   id: SubscriptionPlan;
   price: string;
@@ -19,11 +21,16 @@ export interface PlanConfig {
   maxProjects: number | null;
   historyWindow: number;
   allowedModes: Array<'Conversational' | 'Homework' | 'ExamPrep'>;
+  attachmentsEnabled: boolean;
+  allowedAttachmentKinds: AttachmentKind[];
+  maxAttachmentBytes: number;
+  maxTotalAttachmentPayloadBytes: number;
   features: Record<PlanFeatureKey, boolean>;
   bullets: string[];
 }
 
 export const FREE_PREMIUM_MODE_DAILY_LIMIT = 3;
+export const INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES = 8 * 1024 * 1024;
 
 export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
   Free: {
@@ -39,6 +46,10 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
     maxProjects: 2,
     historyWindow: 8,
     allowedModes: ['Conversational', 'Homework', 'ExamPrep'],
+    attachmentsEnabled: false,
+    allowedAttachmentKinds: [],
+    maxAttachmentBytes: 0,
+    maxTotalAttachmentPayloadBytes: INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
     features: {
       homeworkMode: false,
       examPrepMode: false,
@@ -67,6 +78,10 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
     maxProjects: 12,
     historyWindow: 24,
     allowedModes: ['Conversational', 'Homework', 'ExamPrep'],
+    attachmentsEnabled: true,
+    allowedAttachmentKinds: ['image'],
+    maxAttachmentBytes: 5 * 1024 * 1024,
+    maxTotalAttachmentPayloadBytes: INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
     features: {
       homeworkMode: true,
       examPrepMode: true,
@@ -95,6 +110,10 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
     maxProjects: null,
     historyWindow: 80,
     allowedModes: ['Conversational', 'Homework', 'ExamPrep'],
+    attachmentsEnabled: true,
+    allowedAttachmentKinds: ['image', 'pdf'],
+    maxAttachmentBytes: 20 * 1024 * 1024,
+    maxTotalAttachmentPayloadBytes: INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
     features: {
       homeworkMode: true,
       examPrepMode: true,

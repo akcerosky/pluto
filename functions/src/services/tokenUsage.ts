@@ -12,7 +12,14 @@ const estimateTextTokens = (value: string) =>
 
 export const estimateHistoryTokens = (history: AiHistoryMessage[]) =>
   history.reduce(
-    (sum, message) => sum + estimateTextTokens(message.content) + MESSAGE_OVERHEAD_TOKENS,
+    (sum, message) =>
+      sum +
+      message.parts.reduce(
+        (partSum, part) =>
+          part.type === 'text' ? partSum + estimateTextTokens(part.text) : partSum,
+        0
+      ) +
+      MESSAGE_OVERHEAD_TOKENS,
     0
   );
 
