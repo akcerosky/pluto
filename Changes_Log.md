@@ -265,11 +265,7 @@
   - `Plus`: images only, up to 5 MB per file
   - `Pro`: images and PDFs, up to 20 MB per file
 - Updated Pluto's message model from plain `content` strings to structured `parts`, while preserving backward compatibility for existing saved chats.
-- Added composer attachment UX in the chat interface with:
-  - file picker support
-  - mobile camera capture support
-  - attachment preview chips before send
-  - metadata chips persisted in chat history after send
+- Added composer attachment UX in the chat interface with file picker support, mobile camera capture support, attachment preview chips before send, metadata chips persisted in chat history after send
 - Implemented inline base64 attachment sending for the current turn only, without storing file contents in thread state, `appState/main`, or Firestore.
 - Added frontend and backend request-size guards so prompt + attachment payloads stay under the 8 MB callable safety limit.
 - Added backend MIME-type, size, and base64 validation before sending multimodal parts to Gemini.
