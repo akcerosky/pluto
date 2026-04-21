@@ -47,12 +47,6 @@
 - Improved responsive behavior for pricing cards, the pricing comparison section, auth pages, profile page, project modal, and policy pages.
 - Fixed hero paragraph alignment, mobile Login button styling, and reduced footer height.
 
-### README, Git, and Deployment
-
-- Rewrote the README with local setup, features, tech stack, Firebase configuration, and EC2 deployment notes.
-- Added `scripts/deploy-ec2.ps1` to update the EC2 deployment by pulling from GitHub and building on the server.
-- Deployed the latest `main` branch to EC2 for `https://pluto.akcero.ai`.
-
 ## 2026-04-13
 
 ### Secure Backend Migration
@@ -202,12 +196,6 @@
 - Stopped the app from briefly showing Free-plan usage for paid users during refresh by waiting for the server subscription snapshot before rendering plan-sensitive UI.
 - Improved token usage formatting.
 
-### Validation and Deployment
-
-- Ran and passed: frontend lint, frontend build, Functions build, Functions tests
-- Deployed updated Firebase Functions to `pluto-ef61b`.
-- Deployed the latest Pluto frontend to EC2 from GitHub commit `89f95a4` on `razorpay-backend`.
-
 ## 2026-04-16
 
 ### Transactional Billing Email Delivery
@@ -292,10 +280,35 @@
 - Refined chat footer behavior on mobile by improving the helper panel layering, moving the composer slightly lower while the helper panel is open, and keeping the prompt area easier to read.
 - Tuned the mobile composer placeholder styling so its text scales down on smaller screens while staying normal on wider layouts.
 
+## 2026-04-21
+
+### Rolling Chat Memory and Gemini Context
+
+- Replaced plan-specific Gemini history caps with rolling per-thread `contextSummary` memory plus a shared latest-16-message window for all plans.
+- Added backend summary candidate validation, summary refresh support, deterministic fallback summaries, and summary-aware token estimation.
+- Persisted `contextSummary` in thread/app state while keeping attachment bytes excluded from thread state and Firestore.
+- Added summary injection guidance so prior refused/off-topic requests are treated as already handled and do not cause legitimate meta questions like “what did I say earlier?” to be over-refused.
+
+### Chat Reliability and Function Performance
+
+- Increased the `aiChat` callable timeout to 120 seconds for larger Gemini/PDF workloads.
+- Reduced server-side Gemini retry backoff to cap retry waiting around 5 seconds instead of the previous long retry schedule.
+- Removed an extra post-response `getMeSnapshot` read by returning usage values from reconciliation results.
+- Updated system prompt token overhead estimates to better match the larger tutoring prompt.
+- Lazy-loaded billing/webhook-only dependencies so `aiChat` cold starts avoid loading Razorpay/Resend paths unnecessarily.
+- Updated `firebase-functions` in the Functions package and confirmed the Functions build still passes.
+
+### Frontend Polish and Bundle Size
+
+- Fixed sidebar recent-chat navigation after visiting Settings by routing recent-chat clicks back to `/chat`.
+- Reworked sidebar daily reset UX to use a single info button beside the usage text, with the IST reset time shown inline only on hover/click.
+- Aligned the mobile sidebar New Chat and close controls on one row.
+- Wrapped frontend debug/info logs so they only emit when `VITE_APP_ENV === 'development'`, while keeping error logs unconditional.
+- Added route-based React `lazy` and `Suspense` splitting for page-level routes, reducing the largest production JS chunk below 500 KB.
+
 ### Verification and Deployment
 
-- Ran and passed the frontend build locally.
-- Ran and passed the Functions test suite and Functions TypeScript build locally.
-- Committed and pushed the latest Pluto changes to GitHub on `main` as commit `4facac9`.
-- Confirmed Firebase Functions deployment to `pluto-ef61b`; Functions were already current so Firebase skipped unchanged backend services.
-- Deployed the latest Pluto frontend to EC2 using the repo deployment script and verified the live site responded with `HTTP 200` at `https://pluto.akcero.ai`.
+- Ran and passed root lint, root production build, Functions TypeScript build, and the Functions test suite.
+- Committed and pushed the verified changes to GitHub on `main` as commit `0ddc557`.
+- Deployed Firebase Functions to `pluto-ef61b`, including the updated `aiChat` function in `asia-south1`.
+- Deployed the latest frontend to EC2 from GitHub using `scripts/deploy-frontend-ec2.sh`, built successfully on the server, and reloaded Nginx for `https://pluto.akcero.ai`.
