@@ -30,6 +30,15 @@ export interface Message {
   timestamp: number;
 }
 
+export interface ThreadContextSummary {
+  version: 1;
+  text: string;
+  summarizedMessageCount: number;
+  summarizedExchangeCount: number;
+  blockSize: number;
+  updatedAt: number;
+}
+
 export interface Thread {
   id: string;
   title: string;
@@ -40,6 +49,7 @@ export interface Thread {
   createdAt: number;
   updatedAt: number;
   projectId?: string;
+  contextSummary?: ThreadContextSummary;
 }
 
 export interface Project {
@@ -137,3 +147,23 @@ export const normalizeMessage = (message: LegacyMessage): Message => ({
   mode: message.mode,
   timestamp: message.timestamp,
 });
+
+export const normalizeThreadContextSummary = (value: unknown): ThreadContextSummary | undefined => {
+  if (!isRecord(value) || typeof value.text !== 'string') {
+    return undefined;
+  }
+
+  const text = value.text.trim();
+  if (!text) {
+    return undefined;
+  }
+
+  return {
+    version: 1,
+    text: text.slice(0, 4000),
+    summarizedMessageCount: Math.max(0, Math.floor(Number(value.summarizedMessageCount) || 0)),
+    summarizedExchangeCount: Math.max(0, Math.floor(Number(value.summarizedExchangeCount) || 0)),
+    blockSize: Math.max(1, Math.floor(Number(value.blockSize) || 10)),
+    updatedAt: Math.max(0, Math.floor(Number(value.updatedAt) || Date.now())),
+  };
+};

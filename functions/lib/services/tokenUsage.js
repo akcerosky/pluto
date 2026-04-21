@@ -1,6 +1,6 @@
 import { PLAN_DEFINITIONS } from '../config/plans.js';
 const CHARS_PER_TOKEN = 4;
-const SYSTEM_INSTRUCTION_OVERHEAD_TOKENS = 180;
+const SYSTEM_INSTRUCTION_OVERHEAD_TOKENS = 500;
 const MESSAGE_OVERHEAD_TOKENS = 12;
 export const ABSOLUTE_MAX_DAILY_TOKEN_CEILING = 1_000_000;
 const PROVIDER_TOKEN_SANITY_MULTIPLIER = 2;
@@ -13,6 +13,7 @@ export const estimateAiInputTokens = (payload) => {
         payload.mode.trim().length +
         payload.objective.trim().length;
     return (estimateTextTokens(payload.prompt) +
+        (payload.contextSummaryText ? estimateTextTokens(payload.contextSummaryText) + MESSAGE_OVERHEAD_TOKENS : 0) +
         estimateHistoryTokens(payload.history) +
         estimateTextTokens(String(systemContext)) +
         SYSTEM_INSTRUCTION_OVERHEAD_TOKENS);
@@ -26,13 +27,14 @@ export const estimateReservedTokens = (payload) => {
     };
 };
 export const estimateOutputTokensFromText = (text) => estimateTextTokens(text) + MESSAGE_OVERHEAD_TOKENS;
-export const buildEstimatedUsage = ({ prompt, educationLevel, mode, objective, history, answer, }) => {
+export const buildEstimatedUsage = ({ prompt, educationLevel, mode, objective, history, contextSummaryText, answer, }) => {
     const inputTokens = estimateAiInputTokens({
         prompt,
         educationLevel,
         mode,
         objective,
         history,
+        contextSummaryText,
     });
     const outputTokens = estimateOutputTokensFromText(answer);
     return {

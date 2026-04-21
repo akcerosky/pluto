@@ -14,6 +14,7 @@ import {
 import {
   getMessageText,
   normalizeMessage,
+  normalizeThreadContextSummary,
   type Message,
   type Project,
   type Thread,
@@ -26,6 +27,20 @@ const STORAGE_KEY = 'pluto_v3';
 const CLOUD_STATE_DOC = 'main';
 const START_NEW_CHAT_KEY = `${STORAGE_KEY}_start_new_chat`;
 const estimatePromptTokens = (value: string) => Math.max(1, Math.ceil(value.trim().length / 4));
+
+const getNextIstMidnightMs = (from = new Date()) => {
+  const istParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(from);
+  const year = Number(istParts.find((part) => part.type === 'year')?.value);
+  const month = Number(istParts.find((part) => part.type === 'month')?.value);
+  const day = Number(istParts.find((part) => part.type === 'day')?.value);
+
+  return Date.UTC(year, month - 1, day + 1, -5, -30);
+};
 
 const normalizeEducationLevel = (value: string | undefined): EducationLevel => {
   switch (value) {
@@ -78,6 +93,7 @@ const normalizeThread = (thread: Thread): Thread => ({
   messages: Array.isArray(thread.messages)
     ? thread.messages.map((message) => normalizeMessage(message))
     : [],
+  contextSummary: normalizeThreadContextSummary(thread.contextSummary),
 });
 
 const normalizeThreads = (threads: Thread[]) => threads.map((thread) => normalizeThread(thread));
@@ -281,6 +297,40 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setIsSubscriptionHydrated(true);
     }
   }, []);
+
+  useEffect(() => {
+    if (!user) return undefined;
+
+    let nextResetMs = getNextIstMidnightMs();
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleNextResetRefresh = () => {
+      nextResetMs = getNextIstMidnightMs();
+      const delayMs = Math.max(nextResetMs - Date.now() + 1500, 1000);
+      timeoutId = setTimeout(() => {
+        void refreshServerState().finally(scheduleNextResetRefresh);
+      }, delayMs);
+    };
+
+    const refreshIfResetPassed = () => {
+      if (Date.now() >= nextResetMs + 1000) {
+        void refreshServerState();
+        nextResetMs = getNextIstMidnightMs();
+      }
+    };
+
+    scheduleNextResetRefresh();
+    window.addEventListener('focus', refreshIfResetPassed);
+    document.addEventListener('visibilitychange', refreshIfResetPassed);
+
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      window.removeEventListener('focus', refreshIfResetPassed);
+      document.removeEventListener('visibilitychange', refreshIfResetPassed);
+    };
+  }, [refreshServerState, user]);
 
   const setUser = useCallback((nextUser: UserSession | null) => {
     setUserState(normalizeUser(nextUser));

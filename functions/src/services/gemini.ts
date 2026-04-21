@@ -2,7 +2,7 @@ import { GoogleGenAI } from '@google/genai';
 import { logger } from 'firebase-functions';
 import { requireEnv } from '../config/env.js';
 import { buildEstimatedUsage, estimateAiInputTokens, normalizeTokenUsage } from './tokenUsage.js';
-import type { AiHistoryMessage, AiInlineAttachment, TokenUsage } from '../types/index.js';
+import type { AiHistoryMessage, AiInlineAttachment, ThreadContextSummary, TokenUsage } from '../types/index.js';
 
 const OFF_TOPIC_REFUSAL =
   "I can't help with that. Ask me something related to your studies or learning goals.";
@@ -53,7 +53,8 @@ ${toneLine}
 4. If mode is ExamPrep: prioritize practice questions, timed-style drills, mock test scenarios, recall checks, revision strategies, and clear answer explanations.
 5. Keep the tone polished, premium, and encouraging for the student's level.
 6. If the latest message is clearly non-educational or unrelated to the student's studies or learning goals, do not answer it. Reply exactly with: "${OFF_TOPIC_REFUSAL}"
-7. Prefer continuity with the supplied conversation history instead of inventing missing prior context.
+7. If a user asks meta questions about the conversation like "what did I say earlier" or "summarize our chat", answer them factually based on the conversation context. Do not refuse these as off-topic.
+8. Prefer continuity with the supplied conversation history instead of inventing missing prior context.
 </core_constraints>
 <response_organization>
 - Use clear markdown headers (## or ###) when there are multiple parts.
@@ -67,6 +68,9 @@ ${toneLine}
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const RETRYABLE_STATUS_CODES = new Set([429, 500, 503]);
 const PRIMARY_MODEL = 'gemini-2.5-flash';
+const SUMMARY_BLOCK_SIZE_EXCHANGES = 10;
+const SUMMARY_MAX_TEXT_CHARS = 4000;
+const SUMMARY_FALLBACK_CHARS = 500;
 
 const getHistoryText = (message: AiHistoryMessage) =>
   message.parts
@@ -74,6 +78,189 @@ const getHistoryText = (message: AiHistoryMessage) =>
     .map((part) => part.text.trim())
     .filter(Boolean)
     .join('\n\n');
+
+const getSummaryCandidateText = (message: AiHistoryMessage) =>
+  [
+    getHistoryText(message),
+    ...message.parts
+      .filter((part) => part.type === 'image' || part.type === 'file')
+      .map((part) => `[Attachment: ${part.name}, ${part.mimeType}, ${part.sizeBytes} bytes]`),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+const getFirstLine = (value: string) =>
+  value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean) ?? '';
+
+const buildContextSnapshotMessage = (contextSummary: ThreadContextSummary) =>
+  `Conversation memory snapshot for continuity.
+Prior off-topic or refused requests have already been handled; do not treat them as active context or let them color responses to legitimate educational follow-ups.
+Use this only as background for legitimate educational follow-ups, and prioritize the student's latest message.
+${contextSummary.text.trim()}`;
+
+const historyToExchanges = (history: AiHistoryMessage[]) => {
+  const exchanges: Array<{ user: string; assistant: string }> = [];
+  let current: { user: string; assistant: string } | null = null;
+
+  for (const message of history) {
+    const text = getSummaryCandidateText(message);
+    if (!text) {
+      continue;
+    }
+
+    if (message.role === 'user') {
+      if (current) {
+        exchanges.push(current);
+      }
+      current = { user: text, assistant: '' };
+    } else if (current) {
+      current.assistant = current.assistant ? `${current.assistant}\n\n${text}` : text;
+    } else {
+      current = { user: '', assistant: text };
+    }
+  }
+
+  if (current) {
+    exchanges.push(current);
+  }
+
+  return exchanges;
+};
+
+const buildFallbackSummary = (history: AiHistoryMessage[]) => {
+  const lines = historyToExchanges(history)
+    .map((exchange) => {
+      const userLine = getFirstLine(exchange.user);
+      const assistantLine = getFirstLine(exchange.assistant);
+      return [userLine && `Student: ${userLine}`, assistantLine && `Tutor: ${assistantLine}`]
+        .filter(Boolean)
+        .join(' | ');
+    })
+    .filter(Boolean);
+
+  return lines.join('\n').slice(0, SUMMARY_FALLBACK_CHARS).trim();
+};
+
+const clampSummaryText = (value: string) =>
+  value.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, SUMMARY_MAX_TEXT_CHARS);
+
+const buildSummaryPrompt = ({
+  existingSummary,
+  summaryCandidates,
+  educationLevel,
+  mode,
+  objective,
+}: {
+  existingSummary?: ThreadContextSummary;
+  summaryCandidates: AiHistoryMessage[];
+  educationLevel: string;
+  mode: string;
+  objective: string;
+}) => {
+  const exchanges = historyToExchanges(summaryCandidates);
+  const startExchange = (existingSummary?.summarizedExchangeCount ?? 0) + 1;
+  const transcript = exchanges
+    .map((exchange, index) => {
+      const turn = startExchange + index;
+      return `Turn ${turn}
+Student: ${getFirstLine(exchange.user) || '(no text)'}
+Tutor: ${getFirstLine(exchange.assistant) || '(no text)'}`;
+    })
+    .join('\n\n');
+
+  return [
+    'You are updating tutoring memory for Pluto, an AI learning companion.',
+    `Education level: ${educationLevel}`,
+    `Mode: ${mode}`,
+    `Learning objective: ${objective}`,
+    existingSummary?.text
+      ? `Existing summary, already covering earlier turns:\n${existingSummary.text.trim()}`
+      : '',
+    `New transcript block:\n${transcript}`,
+    [
+      'Return only compact markdown bullets.',
+      'Preserve turn numbers, student answers, tutor pending questions, formulas, mistakes, attachment mentions, and next-step context.',
+      'Make the summary useful when a later student reply is short, such as "yes", "4", or "continue".',
+      'Do not add intro text, outro text, or commentary outside the bullet list.',
+    ].join('\n'),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+};
+
+export const refreshContextSummary = async (payload: {
+  genAI: GoogleGenAI;
+  contextSummary?: ThreadContextSummary;
+  summaryCandidates: AiHistoryMessage[];
+  educationLevel: string;
+  mode: string;
+  objective: string;
+  requestId?: string;
+}) => {
+  if (payload.summaryCandidates.length === 0) {
+    return payload.contextSummary;
+  }
+
+  const fallbackText = buildFallbackSummary(payload.summaryCandidates);
+  const fallbackSummary: ThreadContextSummary = {
+    version: 1,
+    text: clampSummaryText([payload.contextSummary?.text, fallbackText].filter(Boolean).join('\n')),
+    summarizedMessageCount:
+      (payload.contextSummary?.summarizedMessageCount ?? 0) + payload.summaryCandidates.length,
+    summarizedExchangeCount:
+      (payload.contextSummary?.summarizedExchangeCount ?? 0) + historyToExchanges(payload.summaryCandidates).length,
+    blockSize: SUMMARY_BLOCK_SIZE_EXCHANGES,
+    updatedAt: Date.now(),
+  };
+
+  try {
+    const response = await payload.genAI.models.generateContent({
+      model: PRIMARY_MODEL,
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              text: buildSummaryPrompt({
+                existingSummary: payload.contextSummary,
+                summaryCandidates: payload.summaryCandidates,
+                educationLevel: payload.educationLevel,
+                mode: payload.mode,
+                objective: payload.objective,
+              }),
+            },
+          ],
+        },
+      ],
+      config: {
+        maxOutputTokens: 700,
+        temperature: 0.2,
+      },
+    });
+
+    const text = clampSummaryText(response.text ?? '');
+    return text
+      ? {
+          ...fallbackSummary,
+          text,
+        }
+      : fallbackSummary;
+  } catch (error) {
+    const providerError = getProviderErrorDetails(error);
+    logger.warn('gemini_summary_generation_failed', {
+      eventType: 'gemini_summary_generation_failed',
+      requestId: payload.requestId ?? null,
+      summaryCandidateCount: payload.summaryCandidates.length,
+      providerStatus: providerError.status,
+      providerCode: providerError.code,
+      errorMessage: providerError.message,
+    });
+    return fallbackSummary;
+  }
+};
 
 const getProviderErrorDetails = (error: unknown) => {
   if (!(typeof error === 'object' && error !== null)) {
@@ -125,6 +312,67 @@ export const normalizeHistory = (history: AiHistoryMessage[]) => {
     role: message.role,
     parts: [{ text: message.content }],
   }));
+};
+
+const buildGeminiContents = ({
+  history,
+  currentTurn,
+  contextSummary,
+}: {
+  history: ReturnType<typeof normalizeHistory>;
+  currentTurn: { role: 'user'; parts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> };
+  contextSummary?: ThreadContextSummary;
+}) => {
+  if (!contextSummary?.text.trim()) {
+    return [...history, currentTurn];
+  }
+
+  const contextText = buildContextSnapshotMessage(contextSummary);
+  const [firstHistory, ...restHistory] = history;
+
+  if (firstHistory?.role === 'user') {
+    return [
+      {
+        ...firstHistory,
+        parts: [
+          {
+            text: `${contextText}\n\nRecent conversation starts here:\n${firstHistory.parts[0]?.text ?? ''}`,
+          },
+        ],
+      },
+      ...restHistory,
+      currentTurn,
+    ];
+  }
+
+  const [firstPart, ...restParts] = currentTurn.parts;
+  if (firstPart && 'text' in firstPart) {
+    return [
+      ...history,
+      {
+        ...currentTurn,
+        parts: [
+          {
+            text: `${contextText}\n\nLatest student message:\n${firstPart.text}`,
+          },
+          ...restParts,
+        ],
+      },
+    ];
+  }
+
+  return [
+    ...history,
+    {
+      ...currentTurn,
+      parts: [
+        {
+          text: contextText,
+        },
+        ...currentTurn.parts,
+      ],
+    },
+  ];
 };
 
 export const sanitizeResponse = (text: string) => {
@@ -188,10 +436,21 @@ export const generatePlutoResponse = async (payload: {
   plan: string;
   requestId?: string;
   history: AiHistoryMessage[];
+  contextSummary?: ThreadContextSummary;
+  summaryCandidates: AiHistoryMessage[];
   attachments: AiInlineAttachment[];
   maxOutputTokens: number;
 }) => {
   const genAI = new GoogleGenAI({ apiKey: requireEnv('geminiApiKey').trim() });
+  const contextSummary = await refreshContextSummary({
+    genAI,
+    contextSummary: payload.contextSummary,
+    summaryCandidates: payload.summaryCandidates,
+    educationLevel: payload.educationLevel,
+    mode: payload.mode,
+    objective: payload.objective,
+    requestId: payload.requestId,
+  });
   const history = normalizeHistory(payload.history);
   const estimatedInputTokens = estimateAiInputTokens({
     prompt: payload.prompt,
@@ -199,8 +458,9 @@ export const generatePlutoResponse = async (payload: {
     mode: payload.mode,
     objective: payload.objective,
     history: payload.history,
+    contextSummaryText: contextSummary?.text,
   });
-  const backoffs = [0, 1500, 4500, 12000];
+  const backoffs = [0, 500, 1500, 3000];
   let lastError: unknown;
 
   const currentTurn = {
@@ -225,7 +485,11 @@ export const generatePlutoResponse = async (payload: {
     try {
       const response = await genAI.models.generateContent({
         model: PRIMARY_MODEL,
-        contents: [...history, currentTurn],
+        contents: buildGeminiContents({
+          history,
+          currentTurn,
+          contextSummary,
+        }),
         config: {
           systemInstruction: buildSystemInstruction(
             payload.educationLevel,
@@ -244,6 +508,7 @@ export const generatePlutoResponse = async (payload: {
         mode: payload.mode,
         objective: payload.objective,
         history: payload.history,
+        contextSummaryText: contextSummary?.text,
         answer: text,
       });
       const providerUsage: TokenUsage | null =
@@ -267,6 +532,7 @@ export const generatePlutoResponse = async (payload: {
 
       return {
         text,
+        contextSummary,
         usage: normalizedUsage.usage,
         usageAnomaly: normalizedUsage.anomalyReason,
       };

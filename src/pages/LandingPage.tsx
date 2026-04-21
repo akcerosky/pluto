@@ -303,7 +303,7 @@ export const LandingPage = () => {
               <PricingRow label="Input length per prompt" free={`${PLAN_CONFIGS.Free.maxInputChars} chars`} plus={`${PLAN_CONFIGS.Plus.maxInputChars} chars`} pro={`${PLAN_CONFIGS.Pro.maxInputChars} chars`} />
               <PricingRow label="Learning modes" free="Conversational" plus="All modes" pro="All modes" />
               <PricingRow label="Projects" free={`${PLAN_CONFIGS.Free.maxProjects}`} plus={`${PLAN_CONFIGS.Plus.maxProjects}`} pro="Unlimited" />
-              <PricingRow label="Context memory window" free={`${PLAN_CONFIGS.Free.historyWindow} messages`} plus={`${PLAN_CONFIGS.Plus.historyWindow} messages`} pro={`${PLAN_CONFIGS.Pro.historyWindow} messages`} />
+              <PricingRow label="Context memory" free={`Summary + last ${PLAN_CONFIGS.Free.historyWindow}`} plus={`Summary + last ${PLAN_CONFIGS.Plus.historyWindow}`} pro={`Summary + last ${PLAN_CONFIGS.Pro.historyWindow}`} />
               <PricingRow label="Priority support" free="No" plus="Yes" pro="Yes" />
             </div>
           </div>

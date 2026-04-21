@@ -87,6 +87,15 @@ export interface AiHistoryMessage {
   parts: AiMessagePart[];
 }
 
+export interface ThreadContextSummary {
+  version: 1;
+  text: string;
+  summarizedMessageCount: number;
+  summarizedExchangeCount: number;
+  blockSize: number;
+  updatedAt: number;
+}
+
 export interface AiInlineAttachment {
   name: string;
   mimeType: string;
@@ -100,6 +109,8 @@ export interface AiChatPayload {
   educationLevel: string;
   objective: string;
   history: AiHistoryMessage[];
+  contextSummary?: ThreadContextSummary;
+  summaryCandidates?: AiHistoryMessage[];
   attachments: AiInlineAttachment[];
   requestId: string;
 }

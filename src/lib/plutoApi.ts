@@ -1,7 +1,7 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from './firebase';
 import type { SubscriptionPlan } from '../config/subscription';
-import type { MessagePart } from '../types';
+import type { MessagePart, ThreadContextSummary } from '../types';
 import type { InlineAttachmentInput } from './attachments';
 
 const requireFunctions = () => {
@@ -13,6 +13,19 @@ const requireFunctions = () => {
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 const AI_CHAT_CLIENT_RETRY_DELAYS_MS = [1800, 4200];
+const isDevelopmentLogEnabled = import.meta.env.VITE_APP_ENV === 'development';
+
+const logAiChatInfo = (...args: unknown[]) => {
+  if (isDevelopmentLogEnabled) {
+    console.log('[Pluto][aiChat]', ...args);
+  }
+};
+
+const logAiChatWarning = (...args: unknown[]) => {
+  if (isDevelopmentLogEnabled) {
+    console.warn('[Pluto][aiChat]', ...args);
+  }
+};
 
 const getCallableErrorStatus = (error: unknown) => {
   if (!(typeof error === 'object' && error !== null)) {
@@ -134,6 +147,8 @@ export const aiChat = async (payload: {
   educationLevel: string;
   objective: string;
   history: Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>;
+  contextSummary?: ThreadContextSummary;
+  summaryCandidates?: Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>;
   attachments: InlineAttachmentInput[];
   requestId: string;
   onRetrying?: (state: { attempt: number; delayMs: number; totalRetries: number }) => void;
@@ -150,6 +165,7 @@ export const aiChat = async (payload: {
     premiumModeCount: number;
     freePremiumModesRemainingToday: number | null;
     planConfig: MeResponse['planConfig'];
+    contextSummary?: ThreadContextSummary;
     usage?: {
       inputTokens: number;
       outputTokens: number;
@@ -163,14 +179,16 @@ export const aiChat = async (payload: {
   for (let attempt = 0; attempt <= AI_CHAT_CLIENT_RETRY_DELAYS_MS.length; attempt += 1) {
     try {
       if (attempt === 0) {
-        console.info('[Pluto][aiChat] Sending request', {
+        logAiChatInfo('Sending request', {
           requestId: requestPayload.requestId,
           mode: requestPayload.mode,
           historyCount: requestPayload.history.length,
+          summaryCandidateCount: requestPayload.summaryCandidates?.length ?? 0,
+          hasContextSummary: Boolean(requestPayload.contextSummary?.text),
           attachmentCount: requestPayload.attachments.length,
         });
       } else {
-        console.info('[Pluto][aiChat] Retry attempt started', {
+        logAiChatInfo('Retry attempt started', {
           requestId: requestPayload.requestId,
           attempt,
           totalRetries: AI_CHAT_CLIENT_RETRY_DELAYS_MS.length,
@@ -179,7 +197,7 @@ export const aiChat = async (payload: {
 
       const result = await call(requestPayload);
       if (attempt > 0) {
-        console.info('[Pluto][aiChat] Retry succeeded', {
+        logAiChatInfo('Retry succeeded', {
           requestId: requestPayload.requestId,
           attempt,
           totalRetries: AI_CHAT_CLIENT_RETRY_DELAYS_MS.length,
@@ -189,7 +207,7 @@ export const aiChat = async (payload: {
     } catch (error) {
       lastError = error;
       const { code, status } = getCallableErrorStatus(error);
-      console.warn('[Pluto][aiChat] Request failed', {
+      logAiChatWarning('Request failed', {
         requestId: requestPayload.requestId,
         attempt,
         totalRetries: AI_CHAT_CLIENT_RETRY_DELAYS_MS.length,

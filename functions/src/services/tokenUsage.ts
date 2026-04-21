@@ -2,7 +2,7 @@ import { PLAN_DEFINITIONS, type SubscriptionPlan } from '../config/plans.js';
 import type { AiHistoryMessage, TokenUsage } from '../types/index.js';
 
 const CHARS_PER_TOKEN = 4;
-const SYSTEM_INSTRUCTION_OVERHEAD_TOKENS = 180;
+const SYSTEM_INSTRUCTION_OVERHEAD_TOKENS = 500;
 const MESSAGE_OVERHEAD_TOKENS = 12;
 export const ABSOLUTE_MAX_DAILY_TOKEN_CEILING = 1_000_000;
 const PROVIDER_TOKEN_SANITY_MULTIPLIER = 2;
@@ -29,6 +29,7 @@ export const estimateAiInputTokens = (payload: {
   mode: string;
   objective: string;
   history: AiHistoryMessage[];
+  contextSummaryText?: string;
 }) => {
   const systemContext =
     payload.educationLevel.trim().length +
@@ -37,6 +38,7 @@ export const estimateAiInputTokens = (payload: {
 
   return (
     estimateTextTokens(payload.prompt) +
+    (payload.contextSummaryText ? estimateTextTokens(payload.contextSummaryText) + MESSAGE_OVERHEAD_TOKENS : 0) +
     estimateHistoryTokens(payload.history) +
     estimateTextTokens(String(systemContext)) +
     SYSTEM_INSTRUCTION_OVERHEAD_TOKENS
@@ -49,6 +51,7 @@ export const estimateReservedTokens = (payload: {
   mode: string;
   objective: string;
   history: AiHistoryMessage[];
+  contextSummaryText?: string;
   plan: SubscriptionPlan;
 }) => {
   const inputTokens = estimateAiInputTokens(payload);
@@ -68,6 +71,7 @@ export const buildEstimatedUsage = ({
   mode,
   objective,
   history,
+  contextSummaryText,
   answer,
 }: {
   prompt: string;
@@ -75,6 +79,7 @@ export const buildEstimatedUsage = ({
   mode: string;
   objective: string;
   history: AiHistoryMessage[];
+  contextSummaryText?: string;
   answer: string;
 }): TokenUsage => {
   const inputTokens = estimateAiInputTokens({
@@ -83,6 +88,7 @@ export const buildEstimatedUsage = ({
     mode,
     objective,
     history,
+    contextSummaryText,
   });
   const outputTokens = estimateOutputTokensFromText(answer);
   return {

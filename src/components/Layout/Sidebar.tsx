@@ -8,10 +8,11 @@ import {
   Search,
   ChevronLeft,
   Trash2,
-  X
+  X,
+  Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ProjectsModal } from '../Modals/ProjectsModal';
@@ -22,6 +23,28 @@ interface SidebarProps {
   isMobileOpen?: boolean;
   onCloseMobile?: () => void;
 }
+
+const getNextIstResetLabel = () => {
+  const now = new Date();
+  const istParts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const year = Number(istParts.find((part) => part.type === 'year')?.value);
+  const month = Number(istParts.find((part) => part.type === 'month')?.value);
+  const day = Number(istParts.find((part) => part.type === 'day')?.value);
+  const nextIstMidnightUtc = Date.UTC(year, month - 1, day + 1, -5, -30);
+  const resetDate = new Date(nextIstMidnightUtc);
+  const formattedReset = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(resetDate);
+
+  return `Daily limit resets at ${formattedReset} IST`;
+};
 
 export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile }: SidebarProps) => {
   const { 
@@ -41,11 +64,25 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
   } = useApp();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isProjectsOpen, setIsProjectsOpen] = useState(false);
+  const [isUsageResetVisible, setIsUsageResetVisible] = useState(false);
+  const usageResetRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const effectiveCollapsed = isMobile ? false : isCollapsed;
+  const usageResetTitle = getNextIstResetLabel();
   const closeMobile = () => {
     if (isMobile) onCloseMobile?.();
   };
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!usageResetRef.current?.contains(event.target as Node)) {
+        setIsUsageResetVisible(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
 
   const handleNewChat = () => {
     setActiveThreadId(null);
@@ -59,7 +96,9 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
 
   const handleComingSoon = (feature: string) => {
     // Simple feedback for non-implemented features
-    console.log(`${feature} coming soon`);
+    if (import.meta.env.VITE_APP_ENV === 'development') {
+      console.log(`${feature} coming soon`);
+    }
     alert(`${feature} feature coming soon!`);
   };
 
@@ -81,16 +120,13 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
     >
       {/* Header / New Chat */}
       <div style={{ padding: '24px 20px', borderBottom: '1px solid var(--card-border)', position: 'relative' }}>
-        {isMobile && (
-          <button
-            className="app-sidebar-mobile-close"
-            type="button"
-            onClick={closeMobile}
-            aria-label="Close navigation"
-          >
-            <X size={18} />
-          </button>
-        )}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: isMobile ? '12px' : 0,
+          }}
+        >
         <motion.button
           whileHover={{ scale: 1.02, boxShadow: '0 0 20px var(--primary-glow)' }}
           whileTap={{ scale: 0.98 }}
@@ -108,12 +144,25 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
             gap: '12px',
             cursor: 'pointer',
             fontWeight: '600',
-            boxShadow: '0 4px 12px var(--primary-glow)'
+            boxShadow: '0 4px 12px var(--primary-glow)',
+            flex: 1
           }}
         >
           <Plus size={20} />
           {!effectiveCollapsed && <span>New Chat</span>}
         </motion.button>
+        {isMobile && (
+          <button
+            className="app-sidebar-mobile-close"
+            type="button"
+            onClick={closeMobile}
+            aria-label="Close navigation"
+            style={{ display: 'flex', margin: 0, flex: '0 0 52px' }}
+          >
+            <X size={18} />
+          </button>
+        )}
+        </div>
       </div>
 
       {/* Navigation Links */}
@@ -201,6 +250,7 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
               whileHover={{ background: 'var(--surface-2)' }}
               onClick={() => {
                 setActiveThreadId(thread.id);
+                navigate('/chat');
                 closeMobile();
               }}
               style={{
@@ -295,10 +345,57 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
                   {isSubscriptionHydrated ? `${currentPlan} Plan` : 'Loading plan...'}
                 </div>
               </div>
-              <div style={{ fontSize: '0.65rem', color: '#f59e0b', marginTop: '3px' }}>
-                {isSubscriptionHydrated
-                  ? formatTokenUsageSummary(remainingTodayTokens, estimatedMessagesLeft)
-                  : 'Syncing subscription...'}
+              <div
+                ref={usageResetRef}
+                onMouseEnter={() => setIsUsageResetVisible(true)}
+                onMouseLeave={() => setIsUsageResetVisible(false)}
+                style={{ marginTop: '3px' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
+                  <span style={{ fontSize: '0.65rem', color: '#f59e0b', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {isSubscriptionHydrated
+                      ? formatTokenUsageSummary(remainingTodayTokens, estimatedMessagesLeft)
+                      : 'Syncing subscription...'}
+                  </span>
+                  {isSubscriptionHydrated && (
+                    <button
+                      type="button"
+                      aria-label="Show daily reset time"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setIsUsageResetVisible((visible) => !visible);
+                      }}
+                      style={{
+                        width: '15px',
+                        height: '15px',
+                        borderRadius: '50%',
+                        border: 'none',
+                        background: 'rgba(245, 158, 11, 0.12)',
+                        color: '#f59e0b',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: 0,
+                        flex: '0 0 auto',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <Info size={10} />
+                    </button>
+                  )}
+                </div>
+                {isSubscriptionHydrated && isUsageResetVisible && (
+                  <div
+                    style={{
+                      marginTop: '4px',
+                      fontSize: '0.62rem',
+                      color: 'var(--text-secondary)',
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    {usageResetTitle}
+                  </div>
+                )}
               </div>
             </div>
           )}

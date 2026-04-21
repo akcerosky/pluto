@@ -224,26 +224,49 @@ export const reconcileUsageTokens = async (
   const usageRef = userRoot(uid).collection('usageDaily').doc(getIstDayKey(getIstNow()));
   const now = toIstIsoString(getIstNow());
 
-  await adminDb.runTransaction(async (transaction) => {
+  return adminDb.runTransaction(async (transaction) => {
     const snap = await transaction.get(usageRef);
     const data = snap.exists ? (snap.data() as Partial<UsageDailyDoc>) : null;
     const existingReserved = data?.reservedTokens ?? 0;
+    const count = (data?.count ?? 0) + 1;
+    const premiumModeCount =
+      (data?.premiumModeCount ?? 0) + (options?.countsTowardPremiumModeLimit ? 1 : 0);
+    const inputTokensUsed = (data?.inputTokensUsed ?? 0) + usage.inputTokens;
+    const outputTokensUsed = (data?.outputTokensUsed ?? 0) + usage.outputTokens;
+    const totalTokensUsed = (data?.totalTokensUsed ?? 0) + usage.totalTokens;
+    const nextReservedTokens = Math.max(existingReserved - reservedTokens, 0);
+
     transaction.set(
       usageRef,
       {
-        count: (data?.count ?? 0) + 1,
-        premiumModeCount:
-          (data?.premiumModeCount ?? 0) + (options?.countsTowardPremiumModeLimit ? 1 : 0),
-        inputTokensUsed: (data?.inputTokensUsed ?? 0) + usage.inputTokens,
-        outputTokensUsed: (data?.outputTokensUsed ?? 0) + usage.outputTokens,
-        totalTokensUsed: (data?.totalTokensUsed ?? 0) + usage.totalTokens,
-        reservedTokens: Math.max(existingReserved - reservedTokens, 0),
+        count,
+        premiumModeCount,
+        inputTokensUsed,
+        outputTokensUsed,
+        totalTokensUsed,
+        reservedTokens: nextReservedTokens,
         planSnapshot: plan,
         lastMessageAt: now,
         updatedAt: now,
       },
       { merge: true }
     );
+
+    const planDef = PLAN_DEFINITIONS[plan];
+    const remainingTodayTokens = Math.max(
+      planDef.dailyTokenLimit - (totalTokensUsed + nextReservedTokens),
+      0
+    );
+
+    return {
+      usageTodayTokens: totalTokensUsed,
+      dailyTokenLimit: planDef.dailyTokenLimit,
+      remainingTodayTokens,
+      estimatedMessagesLeft: estimateMessagesLeft(plan, remainingTodayTokens),
+      premiumModeCount,
+      freePremiumModesRemainingToday:
+        plan === 'Free' ? Math.max(FREE_PREMIUM_MODE_DAILY_LIMIT - premiumModeCount, 0) : null,
+    };
   });
 };
 

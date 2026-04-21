@@ -9,6 +9,8 @@ import {
   type ImagePart,
   type Message,
   type MessagePart,
+  type Thread,
+  type ThreadContextSummary,
 } from '../../types';
 import {
   Send,
@@ -60,6 +62,8 @@ interface FailedRequestState {
   prompt: string;
   mode: 'Conversational' | 'Homework' | 'ExamPrep';
   history: Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>;
+  contextSummary?: ThreadContextSummary;
+  summaryCandidates: Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>;
   attachments: InlineAttachmentInput[];
 }
 
@@ -76,6 +80,29 @@ const formatBytes = (value: number) => {
     return `${Math.round(value / 1024)} KB`;
   }
   return `${value} B`;
+};
+
+const SUMMARY_TRIGGER_OLDER_MESSAGE_COUNT = 10;
+const SUMMARY_CANDIDATE_MESSAGE_LIMIT = 20;
+
+const getSummaryPayload = (thread: Thread, historyWindow: number) => {
+  const summarizedMessageCount = thread.contextSummary?.summarizedMessageCount ?? 0;
+  const olderBoundary = Math.max(0, thread.messages.length - historyWindow);
+  const unsummarizedOlderCount = Math.max(0, olderBoundary - summarizedMessageCount);
+
+  if (unsummarizedOlderCount < SUMMARY_TRIGGER_OLDER_MESSAGE_COUNT) {
+    return {
+      contextSummary: thread.contextSummary,
+      summaryCandidates: [] as Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>,
+    };
+  }
+
+  return {
+    contextSummary: thread.contextSummary,
+    summaryCandidates: thread.messages
+      .slice(summarizedMessageCount, summarizedMessageCount + Math.min(unsummarizedOlderCount, SUMMARY_CANDIDATE_MESSAGE_LIMIT))
+      .map((message) => ({ role: message.role, parts: message.parts })),
+  };
 };
 
 const getAttachmentMetadata = (
@@ -522,6 +549,8 @@ export const ChatInterface = () => {
     prompt,
     mode,
     history,
+    contextSummary,
+    summaryCandidates,
     inlineAttachments,
   }: {
     threadId: string;
@@ -530,6 +559,8 @@ export const ChatInterface = () => {
     prompt: string;
     mode: 'Conversational' | 'Homework' | 'ExamPrep';
     history: Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>;
+    contextSummary?: ThreadContextSummary;
+    summaryCandidates: Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>;
     inlineAttachments: InlineAttachmentInput[];
   }) => {
     setIsLoading(true);
@@ -552,6 +583,8 @@ export const ChatInterface = () => {
         mode,
         user?.objective || 'General Learning',
         history,
+        contextSummary,
+        summaryCandidates,
         inlineAttachments,
         {
           onRetrying: ({ attempt, totalRetries }) => {
@@ -572,6 +605,12 @@ export const ChatInterface = () => {
         freePremiumModesRemainingToday: aiResponse.freePremiumModesRemainingToday,
       });
 
+      if (aiResponse.contextSummary) {
+        updateThread(threadId, {
+          contextSummary: aiResponse.contextSummary,
+        });
+      }
+
       const assistantMsg: Message = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
@@ -591,6 +630,8 @@ export const ChatInterface = () => {
         prompt,
         mode,
         history,
+        contextSummary,
+        summaryCandidates,
         attachments: inlineAttachments,
       });
       const errorText = `Pluto Error: ${error instanceof Error ? error.message : 'Gravity glitch detected.'}`;
@@ -622,6 +663,8 @@ export const ChatInterface = () => {
       prompt: failedRequest.prompt,
       mode: failedRequest.mode,
       history: failedRequest.history,
+      contextSummary: failedRequest.contextSummary,
+      summaryCandidates: failedRequest.summaryCandidates,
       inlineAttachments: failedRequest.attachments,
     });
   };
@@ -691,6 +734,10 @@ export const ChatInterface = () => {
     const history = activeThread.messages
       .slice(-planConfig.historyWindow)
       .map((message) => ({ role: message.role, parts: message.parts }));
+    const { contextSummary, summaryCandidates } = getSummaryPayload(
+      activeThread,
+      planConfig.historyWindow
+    );
 
     await submitAiRequest({
       threadId: activeThread.id,
@@ -698,6 +745,8 @@ export const ChatInterface = () => {
       prompt: trimmedInput,
       mode: activeThread.mode,
       history,
+      contextSummary,
+      summaryCandidates,
       inlineAttachments,
     });
   };

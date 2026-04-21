@@ -1,4 +1,3 @@
-import { onRequest } from 'firebase-functions/v2/https';
 import { env } from '../config/env.js';
 import { acquireBillingEventLock, createPaymentRecord, getPaymentRecord, getUserEmailContact, updateSubscriptionFromRazorpay, } from '../services/firestoreRepo.js';
 import { sendEmail } from '../services/email.js';
@@ -152,10 +151,3 @@ export const razorpayWebhookHandler = async (request, response) => {
     }
     response.status(200).json({ ok: true });
 };
-export const health = onRequest({
-    region: env.region,
-}, healthHandler);
-export const razorpayWebhook = onRequest({
-    region: env.region,
-    memory: '256MiB',
-}, razorpayWebhookHandler);

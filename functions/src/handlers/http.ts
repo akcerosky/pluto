@@ -1,4 +1,3 @@
-import { onRequest } from 'firebase-functions/v2/https';
 import type { Request, Response } from 'express';
 import { env } from '../config/env.js';
 import {
@@ -182,18 +181,3 @@ export const razorpayWebhookHandler = async (request: Request, response: Respons
 
   response.status(200).json({ ok: true });
 };
-
-export const health = onRequest(
-  {
-    region: env.region,
-  },
-  healthHandler
-);
-
-export const razorpayWebhook = onRequest(
-  {
-    region: env.region,
-    memory: '256MiB',
-  },
-  razorpayWebhookHandler
-);

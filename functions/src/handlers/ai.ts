@@ -17,7 +17,16 @@ import {
 } from '../services/firestoreRepo.js';
 import { generatePlutoResponse } from '../services/gemini.js';
 import { estimateReservedTokens } from '../services/tokenUsage.js';
-import type { AiHistoryMessage, AiInlineAttachment, AiMessagePart } from '../types/index.js';
+import type {
+  AiHistoryMessage,
+  AiInlineAttachment,
+  AiMessagePart,
+  ThreadContextSummary,
+} from '../types/index.js';
+
+const SHARED_HISTORY_WINDOW = 16;
+const SUMMARY_CANDIDATE_MESSAGE_LIMIT = 20;
+const SUMMARY_MIN_CANDIDATE_MESSAGES = 10;
 
 const mapAiErrorToHttpsError = (error: unknown) => {
   const status =
@@ -66,6 +75,15 @@ const attachmentSchema = z.object({
   base64Data: z.string().trim().min(1),
 });
 
+const contextSummarySchema = z.object({
+  version: z.literal(1),
+  text: z.string().trim().min(1).max(4000),
+  summarizedMessageCount: z.number().int().min(0).max(10000),
+  summarizedExchangeCount: z.number().int().min(0).max(5000),
+  blockSize: z.number().int().min(1).max(50),
+  updatedAt: z.number().int().min(0),
+});
+
 const aiChatSchema = z.object({
   prompt: z.string().trim().max(6000),
   mode: z.enum(['Conversational', 'Homework', 'ExamPrep']),
@@ -79,6 +97,16 @@ const aiChatSchema = z.object({
       })
     )
     .max(80),
+  contextSummary: contextSummarySchema.optional(),
+  summaryCandidates: z
+    .array(
+      z.object({
+        role: z.enum(['user', 'assistant']),
+        parts: z.array(z.union([textPartSchema, attachmentPartSchema])).max(16),
+      })
+    )
+    .max(SUMMARY_CANDIDATE_MESSAGE_LIMIT)
+    .optional(),
   attachments: z.array(attachmentSchema).max(8),
   requestId: z.string().trim().min(8).max(200),
 });
@@ -156,6 +184,26 @@ const clampAttachmentsForValidation = (attachments: AiInlineAttachment[]) =>
     base64Data: attachment.base64Data.trim(),
   }));
 
+const clampContextSummaryForValidation = (summary: unknown): ThreadContextSummary | undefined => {
+  if (!isRecord(summary) || typeof summary.text !== 'string') {
+    return undefined;
+  }
+
+  const text = summary.text.trim().slice(0, 4000);
+  if (!text) {
+    return undefined;
+  }
+
+  return {
+    version: 1,
+    text,
+    summarizedMessageCount: Math.max(0, Math.floor(Number(summary.summarizedMessageCount) || 0)),
+    summarizedExchangeCount: Math.max(0, Math.floor(Number(summary.summarizedExchangeCount) || 0)),
+    blockSize: Math.max(1, Math.floor(Number(summary.blockSize) || 10)),
+    updatedAt: Math.max(0, Math.floor(Number(summary.updatedAt) || 0)),
+  };
+};
+
 const getInlinePayloadBytes = (prompt: string, attachments: AiInlineAttachment[]) =>
   Buffer.byteLength(
     JSON.stringify({
@@ -212,6 +260,17 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
           )
         )
       : [],
+    contextSummary: clampContextSummaryForValidation(rawPayload.contextSummary),
+    summaryCandidates: Array.isArray(rawPayload.summaryCandidates)
+      ? clampHistoryForValidation(
+          rawPayload.summaryCandidates.filter(
+            (message): message is AiHistoryMessage =>
+              isRecord(message) &&
+              (message.role === 'user' || message.role === 'assistant') &&
+              Array.isArray(message.parts)
+          )
+        )
+      : [],
     attachments: Array.isArray(rawPayload.attachments)
       ? clampAttachmentsForValidation(
           rawPayload.attachments.filter(
@@ -242,6 +301,11 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
   const plan = snapshot.subscription.plan;
   const planConfig = PLAN_DEFINITIONS[plan];
   const isPremiumMode = payload.mode === 'Homework' || payload.mode === 'ExamPrep';
+  const history = payload.history.slice(-SHARED_HISTORY_WINDOW);
+  const summaryCandidates =
+    (payload.summaryCandidates ?? []).length >= SUMMARY_MIN_CANDIDATE_MESSAGES
+      ? (payload.summaryCandidates ?? []).slice(0, SUMMARY_CANDIDATE_MESSAGE_LIMIT)
+      : [];
 
   if (!payload.prompt.trim() && payload.attachments.length === 0) {
     throw new HttpsError('invalid-argument', 'Write a message or attach a file before sending.');
@@ -319,7 +383,8 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
     educationLevel: payload.educationLevel,
     mode: payload.mode,
     objective: payload.objective,
-    history: payload.history.slice(-planConfig.allowedModes.length * 20),
+    history,
+    contextSummaryText: payload.contextSummary?.text,
     plan,
   });
 
@@ -385,8 +450,15 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
       objective: payload.objective,
       plan,
       requestId,
-      history: payload.history.slice(-planConfig.allowedModes.length * 20),
-      attachments: decodedAttachments.map(({ data: _data, ...attachment }) => attachment),
+      history,
+      contextSummary: payload.contextSummary,
+      summaryCandidates,
+      attachments: decodedAttachments.map(({ name, mimeType, sizeBytes, base64Data }) => ({
+        name,
+        mimeType,
+        sizeBytes,
+        base64Data,
+      })),
       maxOutputTokens: planConfig.maxOutputTokensPerRequest,
     });
   } catch (error) {
@@ -402,6 +474,8 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
       educationLevel: payload.educationLevel,
       promptLength: payload.prompt.length,
       historyMessageCount: payload.history.length,
+      summaryCandidateCount: summaryCandidates.length,
+      hasContextSummary: Boolean(payload.contextSummary?.text),
       attachmentCount: payload.attachments.length,
       attachmentSummary: payload.attachments.map((attachment) => ({
         name: attachment.name,
@@ -433,14 +507,16 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
     throw mapAiErrorToHttpsError(error);
   }
 
+  let reconciledUsage: Awaited<ReturnType<typeof reconcileUsageTokens>>;
   try {
-    await reconcileUsageTokens(uid, plan, reservationEstimate.reservedTokens, result.usage, {
+    reconciledUsage = await reconcileUsageTokens(uid, plan, reservationEstimate.reservedTokens, result.usage, {
       countsTowardPremiumModeLimit: plan === 'Free' && isPremiumMode,
     });
   } catch {
     await releaseReservedUsageTokens(uid, reservationEstimate.reservedTokens).catch(() => undefined);
     const response = {
       answer: result.text,
+      contextSummary: result.contextSummary,
       usagePendingSync: true,
       subscription: snapshot.subscription,
       usageTodayTokens: snapshot.usageTodayTokens,
@@ -455,7 +531,6 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
     return response;
   }
 
-  const updatedSnapshot = await getMeSnapshot(uid, bootstrapIdentity);
   logAiQuotaEvent({
     uid,
     requestId,
@@ -465,7 +540,7 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
     actualTokens: result.usage.totalTokens,
     usageSource: result.usage.usageSource,
     remainingBefore: snapshot.remainingTodayTokens,
-    remainingAfter: updatedSnapshot.remainingTodayTokens,
+    remainingAfter: reconciledUsage.remainingTodayTokens,
     status: 'success',
   });
   logAiQuotaMetric('reserved_actual_delta', {
@@ -505,15 +580,16 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
   }
   const response = {
     answer: result.text,
+    contextSummary: result.contextSummary,
     usagePendingSync: false,
-    subscription: updatedSnapshot.subscription,
-    usageTodayTokens: updatedSnapshot.usageTodayTokens,
-    dailyTokenLimit: updatedSnapshot.dailyTokenLimit,
-    remainingTodayTokens: updatedSnapshot.remainingTodayTokens,
-    estimatedMessagesLeft: updatedSnapshot.estimatedMessagesLeft,
-    premiumModeCount: updatedSnapshot.premiumModeCount,
-    freePremiumModesRemainingToday: updatedSnapshot.freePremiumModesRemainingToday,
-    planConfig: PLAN_DEFINITIONS[updatedSnapshot.subscription.plan],
+    subscription: snapshot.subscription,
+    usageTodayTokens: reconciledUsage.usageTodayTokens,
+    dailyTokenLimit: reconciledUsage.dailyTokenLimit,
+    remainingTodayTokens: reconciledUsage.remainingTodayTokens,
+    estimatedMessagesLeft: reconciledUsage.estimatedMessagesLeft,
+    premiumModeCount: reconciledUsage.premiumModeCount,
+    freePremiumModesRemainingToday: reconciledUsage.freePremiumModesRemainingToday,
+    planConfig: PLAN_DEFINITIONS[snapshot.subscription.plan],
     usage: result.usage,
   };
   setCachedValue(cacheKey, response, 5 * 60 * 1000);

@@ -137,11 +137,13 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
           displayName: email.split('@')[0],
         });
         const actionCodeSettings = getEmailVerificationActionCodeSettings();
-        console.log('sendEmailVerification debug', {
-          source: 'AuthPages.signup',
-          env: import.meta.env.VITE_APP_ENV,
-          actionCodeSettings,
-        });
+        if (import.meta.env.VITE_APP_ENV === 'development') {
+          console.log('sendEmailVerification debug', {
+            source: 'AuthPages.signup',
+            env: import.meta.env.VITE_APP_ENV,
+            actionCodeSettings,
+          });
+        }
         await sendEmailVerification(firebaseUser, actionCodeSettings);
         setNotice('Verification email sent. Please check your inbox to continue.');
       } else {
