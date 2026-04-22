@@ -312,3 +312,32 @@
 - Committed and pushed the verified changes to GitHub on `main` as commit `0ddc557`.
 - Deployed Firebase Functions to `pluto-ef61b`, including the updated `aiChat` function in `asia-south1`.
 - Deployed the latest frontend to EC2 from GitHub using `scripts/deploy-frontend-ec2.sh`, built successfully on the server, and reloaded Nginx for `https://pluto.akcero.ai`.
+
+## 2026-04-22
+
+### aiChat Request Safety and Reliability
+
+- Added Firestore-backed `aiRequestCache` request deduplication so repeated callable attempts with the same request ID do not start duplicate Gemini calls or double-reserve quota.
+- Added Firestore-backed per-user `aiRateLimits` with a 20 requests/minute guard and structured logging for rate-limit hits.
+- Added Firestore-backed Gemini 503 spike monitoring with affected-user tracking for 5-minute overload windows.
+- Updated request cache completion writes so `contextSummary` is stored as `null` instead of `undefined`, and cache completion failures are now logged instead of silently swallowed.
+- Removed frontend auto-retry for backend `functions/unavailable` responses so server-side Gemini retries remain the only automatic provider-overload retry path; manual Retry Request remains available.
+
+### Gemini Fallbacks, Tokens, and Context Trimming
+
+- Added `gemini-2.5-flash-lite` as a fallback model after `gemini-2.5-flash` for retryable provider failures.
+- Changed Gemini retry behavior to two attempts with a longer 20-second delay before the second attempt, reducing rapid retry pressure during provider overload spikes.
+- Updated mode output budgets to `Conversational: 4000`, `Homework: 4000`, and `ExamPrep: 2500`, still clamped by each plan's max output token cap.
+- Added AlphaBuddy-style dynamic recent-history trimming so Gemini receives at most a 4000-token recent-history budget while preserving a minimum recent context window.
+- Added structured input-context logging on every request, including sent history count, trimmed history count, prompt/history/summary token estimates, attachments, summary candidates, and context summary state.
+- Fixed the IST daily usage reset bug by removing double timezone conversion in the backend day-key helper.
+- Checked `aiRequestCache`, usage documents, and runtime logs for specific request IDs to distinguish real Gemini provider overload from Pluto-side cache/write/retry issues.
+- added `gemini-2.5-flash-lite` as the fallback model to improve availability during `gemini-2.5-flash` high-demand windows.
+- Reviewed retry behavior end-to-end and removed frontend retry multiplication after confirming server-side retries were already handling provider retry attempts.
+
+### Testing and Deployment
+
+- Ran and passed Functions build, Jest coverage, frontend build, root lint, with only existing generated coverage-report warnings before coverage output was ignored.
+- Deployed Firebase Functions to `pluto-ef61b`, including the updated `aiChat` function in `asia-south1`.
+- Created and pushed the `chat-stability` branch to GitHub with commit `8c2ec12`.
+- Deployed the latest frontend to EC2 from the `chat-stability` branch using `scripts/deploy-frontend-ec2.sh`, built successfully on the server, reloaded Nginx, and validated `https://pluto.akcero.ai` returned HTTP 200.
