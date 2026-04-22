@@ -1,5 +1,3 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
 import crypto from 'node:crypto';
 import { verifyCheckoutSignature, verifyRazorpayWebhookSignature } from './razorpay.js';
 
@@ -8,7 +6,7 @@ test('verifyRazorpayWebhookSignature accepts valid signatures', () => {
   const body = JSON.stringify({ event: 'subscription.activated' });
   const signature = crypto.createHmac('sha256', 'webhook-secret').update(body).digest('hex');
 
-  assert.equal(verifyRazorpayWebhookSignature(body, signature), true);
+  expect(verifyRazorpayWebhookSignature(body, signature)).toBe(true);
 });
 
 test('verifyCheckoutSignature accepts valid checkout signatures', () => {
@@ -22,5 +20,5 @@ test('verifyCheckoutSignature accepts valid checkout signatures', () => {
       .digest('hex'),
   };
 
-  assert.equal(verifyCheckoutSignature(payload), true);
+  expect(verifyCheckoutSignature(payload)).toBe(true);
 });

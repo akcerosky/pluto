@@ -426,6 +426,26 @@ export const ChatInterface = () => {
       ? `Retrying ${retryState.attempt}/${retryState.totalRetries}${'.'.repeat(retryDotCount)}`
       : null;
 
+  const getChatErrorDisplayMessage = (error: unknown) => {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+    if (code === 'functions/already-exists') {
+      return 'Still processing, retrying...';
+    }
+    if (code === 'functions/resource-exhausted') {
+      return 'Too many requests. Please wait a moment and try again.';
+    }
+    if (code === 'functions/unavailable') {
+      return 'Pluto is temporarily busy. Please try again in a moment.';
+    }
+    if (code === 'functions/deadline-exceeded') {
+      return 'This took too long, but it may still finish. Please wait before retrying.';
+    }
+    return error instanceof Error ? error.message : 'Gravity glitch detected.';
+  };
+
   const updateThreadMessages = (
     threadId: string,
     updater: (messages: Message[]) => Message[]
@@ -634,7 +654,7 @@ export const ChatInterface = () => {
         summaryCandidates,
         attachments: inlineAttachments,
       });
-      const errorText = `Pluto Error: ${error instanceof Error ? error.message : 'Gravity glitch detected.'}`;
+      const errorText = `Pluto Error: ${getChatErrorDisplayMessage(error)}`;
 
       const errorMsg: Message = {
         id: errorMessageId,

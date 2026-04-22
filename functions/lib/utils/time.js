@@ -1,7 +1,7 @@
 import { addDays, eachDayOfInterval, format as formatDate } from 'date-fns';
 import { formatInTimeZone, toZonedTime } from 'date-fns-tz';
 import { IST_TIME_ZONE } from '../config/plans.js';
-export const getIstNow = () => toZonedTime(new Date(), IST_TIME_ZONE);
+export const getIstNow = () => new Date();
 export const getIstDayKey = (date) => `${formatInTimeZone(date, IST_TIME_ZONE, 'yyyy-MM-dd')}-IST`;
 export const getLast30IstDayKeys = (today = new Date()) => {
     const end = toZonedTime(today, IST_TIME_ZONE);

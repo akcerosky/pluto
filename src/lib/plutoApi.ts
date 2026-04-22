@@ -13,6 +13,9 @@ const requireFunctions = () => {
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 const AI_CHAT_CLIENT_RETRY_DELAYS_MS = [1800, 4200];
+const AI_CHAT_ALREADY_EXISTS_RETRY_DELAY_MS = 2000;
+const AI_CHAT_TEXT_TIMEOUT_MS = 120_000;
+const AI_CHAT_ATTACHMENT_TIMEOUT_MS = 180_000;
 const isDevelopmentLogEnabled = import.meta.env.VITE_APP_ENV === 'development';
 
 const logAiChatInfo = (...args: unknown[]) => {
@@ -50,12 +53,21 @@ const getCallableErrorStatus = (error: unknown) => {
 
 const isRetryableAiChatError = (error: unknown) => {
   const { code, status } = getCallableErrorStatus(error);
+
   return (
-    code === 'functions/unavailable' ||
-    code === 'functions/resource-exhausted' ||
-    status === 'UNAVAILABLE' ||
-    status === 'RESOURCE_EXHAUSTED'
+    code === 'functions/already-exists' ||
+    code === 'functions/deadline-exceeded' ||
+    status === 'ALREADY_EXISTS' ||
+    status === 'DEADLINE_EXCEEDED'
   );
+};
+
+const getAiChatRetryDelayMs = (error: unknown, attempt: number) => {
+  const { code, status } = getCallableErrorStatus(error);
+  if (code === 'functions/already-exists' || status === 'ALREADY_EXISTS') {
+    return AI_CHAT_ALREADY_EXISTS_RETRY_DELAY_MS;
+  }
+  return AI_CHAT_CLIENT_RETRY_DELAYS_MS[attempt] ?? 0;
 };
 
 export interface MeResponse {
@@ -154,6 +166,9 @@ export const aiChat = async (payload: {
   onRetrying?: (state: { attempt: number; delayMs: number; totalRetries: number }) => void;
 }) => {
   const { onRetrying, ...requestPayload } = payload;
+  const timeout = requestPayload.attachments.length > 0
+    ? AI_CHAT_ATTACHMENT_TIMEOUT_MS
+    : AI_CHAT_TEXT_TIMEOUT_MS;
   const call = httpsCallable<typeof requestPayload, {
     answer: string;
     usagePendingSync: boolean;
@@ -172,7 +187,7 @@ export const aiChat = async (payload: {
       totalTokens: number;
       usageSource: 'provider' | 'estimated';
     };
-  }>(requireFunctions(), 'aiChat');
+  }>(requireFunctions(), 'aiChat', { timeout });
 
   let lastError: unknown;
 
@@ -186,6 +201,7 @@ export const aiChat = async (payload: {
           summaryCandidateCount: requestPayload.summaryCandidates?.length ?? 0,
           hasContextSummary: Boolean(requestPayload.contextSummary?.text),
           attachmentCount: requestPayload.attachments.length,
+          timeout,
         });
       } else {
         logAiChatInfo('Retry attempt started', {
@@ -223,7 +239,7 @@ export const aiChat = async (payload: {
         break;
       }
 
-      const retryDelayMs = AI_CHAT_CLIENT_RETRY_DELAYS_MS[attempt] ?? 0;
+      const retryDelayMs = getAiChatRetryDelayMs(error, attempt);
       onRetrying?.({
         attempt: attempt + 1,
         delayMs: retryDelayMs,

@@ -1,14 +1,16 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
-import { FREE_PREMIUM_MODE_DAILY_LIMIT, PLAN_DEFINITIONS, INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES, } from '../config/plans.js';
+import { FREE_PREMIUM_MODE_DAILY_LIMIT, getEffectiveMaxOutputTokens, PLAN_DEFINITIONS, INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES, } from '../config/plans.js';
 import { assertAuth, getBootstrapIdentity, getRequestId } from '../lib/http.js';
 import { logAiQuotaEvent, logAiQuotaMetric } from '../lib/observability.js';
-import { getCachedValue, setCachedValue } from '../services/cache.js';
 import { getMeSnapshot, reconcileUsageTokens, releaseReservedUsageTokens, reserveUsageTokens, } from '../services/firestoreRepo.js';
 import { generatePlutoResponse } from '../services/gemini.js';
-import { estimateReservedTokens } from '../services/tokenUsage.js';
+import { acquireAiRequest, completeAiRequest, failAiRequest, throwCachedAiError, } from '../services/aiRequestCache.js';
+import { checkAndRecordAiRateLimit } from '../services/aiRateLimit.js';
+import { estimateAiInputTokenBreakdown, MESSAGE_OVERHEAD_TOKENS, estimateReservedTokens, } from '../services/tokenUsage.js';
 const SHARED_HISTORY_WINDOW = 16;
+const RECENT_HISTORY_TOKEN_BUDGET = 4000;
 const SUMMARY_CANDIDATE_MESSAGE_LIMIT = 20;
 const SUMMARY_MIN_CANDIDATE_MESSAGES = 10;
 const mapAiErrorToHttpsError = (error) => {
@@ -27,6 +29,30 @@ const mapAiErrorToHttpsError = (error) => {
         return error;
     }
     return new HttpsError('internal', message || 'Pluto hit an unexpected AI error. Please try again.');
+};
+const getCachedErrorFromHttpsError = (error) => ({
+    code: error.code,
+    message: error.message,
+});
+const logAiRequestCacheCompleteFailure = ({ uid, requestId, cacheKey, error, }) => {
+    logger.error('ai_request_cache_complete_failed', {
+        eventType: 'ai_request_cache_complete_failed',
+        uid,
+        requestId,
+        cacheKey,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+    });
+};
+const isTransientProviderError = (error) => {
+    const details = getErrorDetails(error);
+    const status = details.status;
+    const code = String(details.code ?? details.message ?? '').toUpperCase();
+    return status === 500 || status === 503 || code.includes('DEADLINE_EXCEEDED');
+};
+const isPermanentProviderError = (error) => {
+    const details = getErrorDetails(error);
+    return details.status === 400 || details.status === 403 || details.status === 429;
 };
 const textPartSchema = z.object({
     type: z.literal('text'),
@@ -172,6 +198,107 @@ const decodeAttachment = (attachment) => {
     }
     return buffer;
 };
+const MIN_HISTORY_MESSAGES_AFTER_TRIM = 2;
+const trimSummaryTextToTokenBudget = (summaryText, availableTokens) => {
+    if (availableTokens <= MESSAGE_OVERHEAD_TOKENS) {
+        return '';
+    }
+    const maxSummaryChars = Math.max(0, (availableTokens - MESSAGE_OVERHEAD_TOKENS) * 4);
+    return summaryText.trim().slice(0, maxSummaryChars).trim();
+};
+const cloneContextSummaryWithText = (contextSummary, text) => {
+    const trimmedText = text.trim();
+    if (!contextSummary || !trimmedText) {
+        return undefined;
+    }
+    return {
+        ...contextSummary,
+        text: trimmedText,
+        updatedAt: Date.now(),
+    };
+};
+const fitInputContextToPlan = ({ prompt, educationLevel, mode, objective, history, contextSummary, maxInputTokens, }) => {
+    let trimmedHistory = [...history];
+    let trimmedSummaryText = contextSummary?.text.trim() ?? '';
+    const initialBreakdown = estimateAiInputTokenBreakdown({
+        prompt,
+        educationLevel,
+        mode,
+        objective,
+        history: trimmedHistory,
+        contextSummaryText: trimmedSummaryText,
+    });
+    const promptOnlyBreakdown = estimateAiInputTokenBreakdown({
+        prompt,
+        educationLevel,
+        mode,
+        objective,
+        history: [],
+    });
+    if (promptOnlyBreakdown.totalTokens > maxInputTokens) {
+        return {
+            ok: false,
+            reason: 'prompt_exceeds_input_cap',
+            history,
+            contextSummary,
+            initialBreakdown,
+            finalBreakdown: promptOnlyBreakdown,
+            trimmedHistoryCount: 0,
+            trimmedSummaryChars: 0,
+            budget: maxInputTokens - promptOnlyBreakdown.totalTokens,
+            historyTokenBudget: RECENT_HISTORY_TOKEN_BUDGET,
+        };
+    }
+    let finalBreakdown = initialBreakdown;
+    let trimmedHistoryCount = 0;
+    const originalSummaryLength = trimmedSummaryText.length;
+    while ((finalBreakdown.totalTokens > maxInputTokens ||
+        finalBreakdown.historyTokens > RECENT_HISTORY_TOKEN_BUDGET) &&
+        trimmedHistory.length > MIN_HISTORY_MESSAGES_AFTER_TRIM) {
+        const dropCount = Math.min(2, trimmedHistory.length - MIN_HISTORY_MESSAGES_AFTER_TRIM);
+        trimmedHistory = trimmedHistory.slice(dropCount);
+        trimmedHistoryCount += dropCount;
+        finalBreakdown = estimateAiInputTokenBreakdown({
+            prompt,
+            educationLevel,
+            mode,
+            objective,
+            history: trimmedHistory,
+            contextSummaryText: trimmedSummaryText,
+        });
+    }
+    if (finalBreakdown.totalTokens > maxInputTokens && trimmedSummaryText) {
+        const nonSummaryTokens = finalBreakdown.promptTokens +
+            finalBreakdown.historyTokens +
+            finalBreakdown.systemContextTokens +
+            finalBreakdown.systemOverheadTokens;
+        trimmedSummaryText = trimSummaryTextToTokenBudget(trimmedSummaryText, maxInputTokens - nonSummaryTokens);
+        finalBreakdown = estimateAiInputTokenBreakdown({
+            prompt,
+            educationLevel,
+            mode,
+            objective,
+            history: trimmedHistory,
+            contextSummaryText: trimmedSummaryText,
+        });
+    }
+    const trimmedSummaryChars = Math.max(0, originalSummaryLength - trimmedSummaryText.length);
+    return {
+        ok: finalBreakdown.totalTokens <= maxInputTokens,
+        reason: finalBreakdown.totalTokens <= maxInputTokens ? null : 'context_exceeds_input_cap',
+        history: trimmedHistory,
+        contextSummary: cloneContextSummaryWithText(contextSummary, trimmedSummaryText),
+        initialBreakdown,
+        finalBreakdown,
+        trimmedHistoryCount,
+        trimmedSummaryChars,
+        budget: maxInputTokens -
+            initialBreakdown.systemOverheadTokens -
+            initialBreakdown.promptTokens -
+            initialBreakdown.systemContextTokens,
+        historyTokenBudget: RECENT_HISTORY_TOKEN_BUDGET,
+    };
+};
 export const aiChatHandler = async (request) => {
     const uid = assertAuth(request);
     const rawPayload = (request.data ?? {});
@@ -197,20 +324,11 @@ export const aiChatHandler = async (request) => {
             : [],
     });
     const requestId = getRequestId(payload);
-    const cacheKey = `${uid}:${requestId}`;
-    const cached = getCachedValue(cacheKey);
-    if (cached) {
-        logAiQuotaEvent({
-            uid,
-            requestId,
-            source: 'cache',
-        });
-        return cached;
-    }
     const bootstrapIdentity = getBootstrapIdentity(request);
     const snapshot = await getMeSnapshot(uid, bootstrapIdentity);
     const plan = snapshot.subscription.plan;
     const planConfig = PLAN_DEFINITIONS[plan];
+    const effectiveMaxOutputTokens = getEffectiveMaxOutputTokens(payload.mode, planConfig);
     const isPremiumMode = payload.mode === 'Homework' || payload.mode === 'ExamPrep';
     const history = payload.history.slice(-SHARED_HISTORY_WINDOW);
     const summaryCandidates = (payload.summaryCandidates ?? []).length >= SUMMARY_MIN_CANDIDATE_MESSAGES
@@ -258,15 +376,97 @@ export const aiChatHandler = async (request) => {
             data: decodeAttachment(attachment),
         };
     });
-    const reservationEstimate = estimateReservedTokens({
+    const inputContextFit = fitInputContextToPlan({
         prompt: payload.prompt,
         educationLevel: payload.educationLevel,
         mode: payload.mode,
         objective: payload.objective,
         history,
-        contextSummaryText: payload.contextSummary?.text,
+        contextSummary: payload.contextSummary,
+        maxInputTokens: planConfig.maxInputTokensPerRequest,
+    });
+    const inputContextLog = {
+        uid,
+        requestId,
+        plan,
+        status: inputContextFit.ok ? 'accepted' : 'rejected',
+        reason: inputContextFit.reason,
+        budget: inputContextFit.budget,
+        historyTokenBudget: inputContextFit.historyTokenBudget,
+        maxInputTokens: planConfig.maxInputTokensPerRequest,
+        promptTokens: inputContextFit.initialBreakdown.promptTokens,
+        summaryTokens: inputContextFit.initialBreakdown.summaryTokens,
+        historyTokens: inputContextFit.initialBreakdown.historyTokens,
+        systemContextTokens: inputContextFit.initialBreakdown.systemContextTokens,
+        systemOverheadTokens: inputContextFit.initialBreakdown.systemOverheadTokens,
+        inputTokens: inputContextFit.finalBreakdown.totalTokens,
+        inputtokkens: inputContextFit.finalBreakdown.totalTokens,
+        outputtokens: null,
+        maxOutputTokens: planConfig.maxOutputTokensPerRequest,
+        finalPromptTokens: inputContextFit.finalBreakdown.promptTokens,
+        finalSummaryTokens: inputContextFit.finalBreakdown.summaryTokens,
+        finalHistoryTokens: inputContextFit.finalBreakdown.historyTokens,
+        initialInputTokens: inputContextFit.initialBreakdown.totalTokens,
+        historyCount: history.length,
+        sentHistoryMessageCount: inputContextFit.history.length,
+        finalHistoryCount: inputContextFit.history.length,
+        summaryLength: payload.contextSummary?.text.length ?? 0,
+        finalSummaryLength: inputContextFit.contextSummary?.text.length ?? 0,
+        trimmedHistoryCount: inputContextFit.trimmedHistoryCount,
+        trimmedSummaryChars: inputContextFit.trimmedSummaryChars,
+        summaryCandidateCount: summaryCandidates.length,
+        hasContextSummary: Boolean(payload.contextSummary?.text),
+    };
+    logger.info('ai_input_context_fit', {
+        eventType: 'ai_input_context_fit',
+        ...inputContextLog,
+    });
+    if (inputContextFit.initialBreakdown.totalTokens > planConfig.maxInputTokensPerRequest ||
+        inputContextFit.initialBreakdown.historyTokens > RECENT_HISTORY_TOKEN_BUDGET ||
+        inputContextFit.trimmedHistoryCount > 0 ||
+        inputContextFit.trimmedSummaryChars > 0) {
+        logger.info('ai_input_token_cap', {
+            eventType: 'ai_input_token_cap',
+            ...inputContextLog,
+            status: inputContextFit.ok ? 'trimmed' : 'rejected',
+        });
+    }
+    if (!inputContextFit.ok) {
+        logAiQuotaMetric('quota_rejection', {
+            uid,
+            requestId,
+            plan,
+            rejectionReason: inputContextFit.reason ?? 'input_token_cap',
+            estimatedTokens: inputContextFit.finalBreakdown.totalTokens,
+            reservedTokens: inputContextFit.finalBreakdown.totalTokens + effectiveMaxOutputTokens,
+            remainingBefore: snapshot.remainingTodayTokens,
+            promptTokens: inputContextFit.initialBreakdown.promptTokens,
+            summaryTokens: inputContextFit.initialBreakdown.summaryTokens,
+            historyTokens: inputContextFit.initialBreakdown.historyTokens,
+            historyCount: history.length,
+            summaryLength: payload.contextSummary?.text.length ?? 0,
+            trimmedHistoryCount: inputContextFit.trimmedHistoryCount,
+            trimmedSummaryChars: inputContextFit.trimmedSummaryChars,
+            inputTokens: inputContextFit.finalBreakdown.totalTokens,
+            inputtokkens: inputContextFit.finalBreakdown.totalTokens,
+            outputtokens: null,
+            maxOutputTokens: effectiveMaxOutputTokens,
+        });
+        throw new HttpsError('invalid-argument', inputContextFit.reason === 'prompt_exceeds_input_cap'
+            ? `This request is too large for ${plan}. Reduce the prompt or history and try again.`
+            : `Your prompt is too long for ${plan}. Please shorten it and try again.`);
+    }
+    const reservationEstimate = estimateReservedTokens({
+        prompt: payload.prompt,
+        educationLevel: payload.educationLevel,
+        mode: payload.mode,
+        objective: payload.objective,
+        history: inputContextFit.history,
+        contextSummaryText: inputContextFit.contextSummary?.text,
         plan,
     });
+    reservationEstimate.reservedTokens =
+        reservationEstimate.inputTokens + effectiveMaxOutputTokens;
     if (reservationEstimate.inputTokens > planConfig.maxInputTokensPerRequest) {
         logAiQuotaMetric('quota_rejection', {
             uid,
@@ -276,8 +476,19 @@ export const aiChatHandler = async (request) => {
             estimatedTokens: reservationEstimate.inputTokens,
             reservedTokens: reservationEstimate.reservedTokens,
             remainingBefore: snapshot.remainingTodayTokens,
+            promptTokens: inputContextFit.finalBreakdown.promptTokens,
+            summaryTokens: inputContextFit.finalBreakdown.summaryTokens,
+            historyTokens: inputContextFit.finalBreakdown.historyTokens,
+            historyCount: inputContextFit.history.length,
+            summaryLength: inputContextFit.contextSummary?.text.length ?? 0,
+            trimmedHistoryCount: inputContextFit.trimmedHistoryCount,
+            trimmedSummaryChars: inputContextFit.trimmedSummaryChars,
+            inputTokens: reservationEstimate.inputTokens,
+            inputtokkens: reservationEstimate.inputTokens,
+            outputtokens: null,
+            maxOutputTokens: effectiveMaxOutputTokens,
         });
-        throw new HttpsError('invalid-argument', `This request is too large for ${plan}. Reduce the prompt or history and try again.`);
+        throw new HttpsError('invalid-argument', `Your prompt is too long for ${plan}. Please shorten it and try again.`);
     }
     if (reservationEstimate.reservedTokens > snapshot.remainingTodayTokens) {
         logAiQuotaMetric('quota_rejection', {
@@ -290,6 +501,56 @@ export const aiChatHandler = async (request) => {
             remainingBefore: snapshot.remainingTodayTokens,
         });
         throw new HttpsError('resource-exhausted', 'You do not have enough tokens remaining for this request today.');
+    }
+    const requestClaim = await acquireAiRequest(uid, requestId);
+    if (requestClaim.state === 'completed') {
+        logger.info('ai_request_deduplicated', {
+            eventType: 'ai_request_deduplicated',
+            uid,
+            requestId,
+            cacheKey: requestClaim.cacheKey,
+            cacheState: 'completed',
+            ageMs: requestClaim.ageMs,
+        });
+        return requestClaim.response;
+    }
+    if (requestClaim.state === 'permanent_failure') {
+        logger.info('ai_request_deduplicated', {
+            eventType: 'ai_request_deduplicated',
+            uid,
+            requestId,
+            cacheKey: requestClaim.cacheKey,
+            cacheState: 'failed',
+            failureType: 'permanent',
+            ageMs: requestClaim.ageMs,
+        });
+        throwCachedAiError(requestClaim.failure);
+    }
+    if (requestClaim.state === 'in_flight') {
+        logger.info('ai_request_in_flight', {
+            eventType: 'ai_request_in_flight',
+            uid,
+            requestId,
+            cacheKey: requestClaim.cacheKey,
+            ageMs: requestClaim.ageMs,
+            lockExpiresAt: requestClaim.lockExpiresAt,
+        });
+        throw new HttpsError('already-exists', 'This request is already being processed. Retrying shortly.');
+    }
+    const rateLimit = await checkAndRecordAiRateLimit(uid);
+    if (!rateLimit.allowed) {
+        logger.warn('ai_rate_limit_hit', {
+            eventType: 'ai_rate_limit_hit',
+            uid,
+            requestId,
+            cacheKey: requestClaim.cacheKey,
+            limit: rateLimit.limit,
+            windowMs: rateLimit.windowMs,
+            count: rateLimit.count,
+        });
+        const rateLimitError = new HttpsError('resource-exhausted', 'Too many requests. Please wait a moment and try again.');
+        await failAiRequest(requestClaim.cacheKey, 'permanent', getCachedErrorFromHttpsError(rateLimitError)).catch(() => undefined);
+        throw rateLimitError;
     }
     try {
         await reserveUsageTokens(uid, plan, reservationEstimate.reservedTokens);
@@ -305,8 +566,11 @@ export const aiChatHandler = async (request) => {
                 reservedTokens: reservationEstimate.reservedTokens,
                 remainingBefore: snapshot.remainingTodayTokens,
             });
-            throw new HttpsError('resource-exhausted', 'You do not have enough tokens remaining for this request today.');
+            const quotaError = new HttpsError('resource-exhausted', 'You do not have enough tokens remaining for this request today.');
+            await failAiRequest(requestClaim.cacheKey, 'permanent', getCachedErrorFromHttpsError(quotaError)).catch(() => undefined);
+            throw quotaError;
         }
+        await failAiRequest(requestClaim.cacheKey, 'transient').catch(() => undefined);
         throw error;
     }
     let result;
@@ -317,9 +581,10 @@ export const aiChatHandler = async (request) => {
             mode: payload.mode,
             objective: payload.objective,
             plan,
+            uid,
             requestId,
-            history,
-            contextSummary: payload.contextSummary,
+            history: inputContextFit.history,
+            contextSummary: inputContextFit.contextSummary,
             summaryCandidates,
             attachments: decodedAttachments.map(({ name, mimeType, sizeBytes, base64Data }) => ({
                 name,
@@ -327,11 +592,22 @@ export const aiChatHandler = async (request) => {
                 sizeBytes,
                 base64Data,
             })),
-            maxOutputTokens: planConfig.maxOutputTokensPerRequest,
+            maxOutputTokens: effectiveMaxOutputTokens,
         });
     }
     catch (error) {
-        await releaseReservedUsageTokens(uid, reservationEstimate.reservedTokens).catch(() => undefined);
+        const mappedError = mapAiErrorToHttpsError(error);
+        if (isTransientProviderError(error)) {
+            await releaseReservedUsageTokens(uid, reservationEstimate.reservedTokens).catch(() => undefined);
+            await failAiRequest(requestClaim.cacheKey, 'transient').catch(() => undefined);
+        }
+        else if (isPermanentProviderError(error)) {
+            await failAiRequest(requestClaim.cacheKey, 'permanent', getCachedErrorFromHttpsError(mappedError)).catch(() => undefined);
+        }
+        else {
+            await releaseReservedUsageTokens(uid, reservationEstimate.reservedTokens).catch(() => undefined);
+            await failAiRequest(requestClaim.cacheKey, 'transient').catch(() => undefined);
+        }
         const errorDetails = getErrorDetails(error);
         logger.error('ai_model_request_failed', {
             eventType: 'ai_model_request_failed',
@@ -343,8 +619,16 @@ export const aiChatHandler = async (request) => {
             educationLevel: payload.educationLevel,
             promptLength: payload.prompt.length,
             historyMessageCount: payload.history.length,
+            sentHistoryMessageCount: inputContextFit.history.length,
             summaryCandidateCount: summaryCandidates.length,
-            hasContextSummary: Boolean(payload.contextSummary?.text),
+            hasContextSummary: Boolean(inputContextFit.contextSummary?.text),
+            originalContextSummaryLength: payload.contextSummary?.text.length ?? 0,
+            sentContextSummaryLength: inputContextFit.contextSummary?.text.length ?? 0,
+            trimmedHistoryCount: inputContextFit.trimmedHistoryCount,
+            trimmedSummaryChars: inputContextFit.trimmedSummaryChars,
+            promptTokens: inputContextFit.finalBreakdown.promptTokens,
+            summaryTokens: inputContextFit.finalBreakdown.summaryTokens,
+            historyTokens: inputContextFit.finalBreakdown.historyTokens,
             attachmentCount: payload.attachments.length,
             attachmentSummary: payload.attachments.map((attachment) => ({
                 name: attachment.name,
@@ -373,7 +657,7 @@ export const aiChatHandler = async (request) => {
             remainingAfter: snapshot.remainingTodayTokens,
             status: 'model_error',
         });
-        throw mapAiErrorToHttpsError(error);
+        throw mappedError;
     }
     let reconciledUsage;
     try {
@@ -385,7 +669,7 @@ export const aiChatHandler = async (request) => {
         await releaseReservedUsageTokens(uid, reservationEstimate.reservedTokens).catch(() => undefined);
         const response = {
             answer: result.text,
-            contextSummary: result.contextSummary,
+            contextSummary: result.contextSummary ?? null,
             usagePendingSync: true,
             subscription: snapshot.subscription,
             usageTodayTokens: snapshot.usageTodayTokens,
@@ -396,7 +680,12 @@ export const aiChatHandler = async (request) => {
             freePremiumModesRemainingToday: snapshot.freePremiumModesRemainingToday,
             planConfig,
         };
-        setCachedValue(cacheKey, response, 5 * 60 * 1000);
+        await completeAiRequest(requestClaim.cacheKey, response).catch((error) => logAiRequestCacheCompleteFailure({
+            uid,
+            requestId,
+            cacheKey: requestClaim.cacheKey,
+            error,
+        }));
         return response;
     }
     logAiQuotaEvent({
@@ -448,7 +737,7 @@ export const aiChatHandler = async (request) => {
     }
     const response = {
         answer: result.text,
-        contextSummary: result.contextSummary,
+        contextSummary: result.contextSummary ?? null,
         usagePendingSync: false,
         subscription: snapshot.subscription,
         usageTodayTokens: reconciledUsage.usageTodayTokens,
@@ -460,6 +749,11 @@ export const aiChatHandler = async (request) => {
         planConfig: PLAN_DEFINITIONS[snapshot.subscription.plan],
         usage: result.usage,
     };
-    setCachedValue(cacheKey, response, 5 * 60 * 1000);
+    await completeAiRequest(requestClaim.cacheKey, response).catch((error) => logAiRequestCacheCompleteFailure({
+        uid,
+        requestId,
+        cacheKey: requestClaim.cacheKey,
+        error,
+    }));
     return response;
 };

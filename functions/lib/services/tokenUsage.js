@@ -1,29 +1,45 @@
-import { PLAN_DEFINITIONS } from '../config/plans.js';
-const CHARS_PER_TOKEN = 4;
-const SYSTEM_INSTRUCTION_OVERHEAD_TOKENS = 500;
-const MESSAGE_OVERHEAD_TOKENS = 12;
+import { getEffectiveMaxOutputTokens, PLAN_DEFINITIONS } from '../config/plans.js';
+export const CHARS_PER_TOKEN = 4;
+export const SYSTEM_INSTRUCTION_OVERHEAD_TOKENS = 500;
+export const MESSAGE_OVERHEAD_TOKENS = 12;
 export const ABSOLUTE_MAX_DAILY_TOKEN_CEILING = 1_000_000;
 const PROVIDER_TOKEN_SANITY_MULTIPLIER = 2;
-const estimateTextTokens = (value) => Math.max(1, Math.ceil(value.trim().length / CHARS_PER_TOKEN));
+export const estimateTextTokens = (value) => Math.max(1, Math.ceil(value.trim().length / CHARS_PER_TOKEN));
 export const estimateHistoryTokens = (history) => history.reduce((sum, message) => sum +
     message.parts.reduce((partSum, part) => part.type === 'text' ? partSum + estimateTextTokens(part.text) : partSum, 0) +
     MESSAGE_OVERHEAD_TOKENS, 0);
-export const estimateAiInputTokens = (payload) => {
+export const estimateAiInputTokenBreakdown = (payload) => {
     const systemContext = payload.educationLevel.trim().length +
         payload.mode.trim().length +
         payload.objective.trim().length;
-    return (estimateTextTokens(payload.prompt) +
-        (payload.contextSummaryText ? estimateTextTokens(payload.contextSummaryText) + MESSAGE_OVERHEAD_TOKENS : 0) +
-        estimateHistoryTokens(payload.history) +
-        estimateTextTokens(String(systemContext)) +
-        SYSTEM_INSTRUCTION_OVERHEAD_TOKENS);
+    const promptTokens = estimateTextTokens(payload.prompt);
+    const summaryTokens = payload.contextSummaryText
+        ? estimateTextTokens(payload.contextSummaryText) + MESSAGE_OVERHEAD_TOKENS
+        : 0;
+    const historyTokens = estimateHistoryTokens(payload.history);
+    const systemContextTokens = estimateTextTokens(String(systemContext));
+    return {
+        promptTokens,
+        summaryTokens,
+        historyTokens,
+        systemContextTokens,
+        systemOverheadTokens: SYSTEM_INSTRUCTION_OVERHEAD_TOKENS,
+        totalTokens: promptTokens +
+            summaryTokens +
+            historyTokens +
+            systemContextTokens +
+            SYSTEM_INSTRUCTION_OVERHEAD_TOKENS,
+    };
 };
+export const estimateAiInputTokens = (payload) => estimateAiInputTokenBreakdown(payload).totalTokens;
 export const estimateReservedTokens = (payload) => {
     const inputTokens = estimateAiInputTokens(payload);
     const planDef = PLAN_DEFINITIONS[payload.plan];
+    const maxOutputTokens = getEffectiveMaxOutputTokens(payload.mode, planDef);
     return {
         inputTokens,
-        reservedTokens: inputTokens + planDef.maxOutputTokensPerRequest,
+        reservedTokens: inputTokens + maxOutputTokens,
+        maxOutputTokens,
     };
 };
 export const estimateOutputTokensFromText = (text) => estimateTextTokens(text) + MESSAGE_OVERHEAD_TOKENS;

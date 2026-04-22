@@ -1,5 +1,3 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
 import { buildEstimatedUsage, estimateAiInputTokens, estimateMessagesLeft, normalizeTokenUsage, estimateReservedTokens, } from './tokenUsage.js';
 test('estimateAiInputTokens returns a positive deterministic count', () => {
     const first = estimateAiInputTokens({
@@ -16,8 +14,8 @@ test('estimateAiInputTokens returns a positive deterministic count', () => {
         objective: 'Understand biology basics',
         history: [{ role: 'user', parts: [{ type: 'text', text: 'What is chlorophyll?' }] }],
     });
-    assert.equal(first, second);
-    assert.ok(first > 0);
+    expect(first).toBe(second);
+    expect(first).toBeGreaterThan(0);
 });
 test('estimateReservedTokens adds the plan output cap', () => {
     const result = estimateReservedTokens({
@@ -28,8 +26,8 @@ test('estimateReservedTokens adds the plan output cap', () => {
         history: [],
         plan: 'Free',
     });
-    assert.ok(result.inputTokens > 0);
-    assert.equal(result.reservedTokens, result.inputTokens + 1500);
+    expect(result.inputTokens).toBeGreaterThan(0);
+    expect(result.reservedTokens).toBe(result.inputTokens + 1000);
 });
 test('buildEstimatedUsage includes input and output token totals', () => {
     const usage = buildEstimatedUsage({
@@ -40,14 +38,14 @@ test('buildEstimatedUsage includes input and output token totals', () => {
         history: [{ role: 'assistant', parts: [{ type: 'text', text: 'Sure, send the material.' }] }],
         answer: 'Here is a concise summary.',
     });
-    assert.equal(usage.usageSource, 'estimated');
-    assert.ok(usage.inputTokens > 0);
-    assert.ok(usage.outputTokens > 0);
-    assert.equal(usage.totalTokens, usage.inputTokens + usage.outputTokens);
+    expect(usage.usageSource).toBe('estimated');
+    expect(usage.inputTokens).toBeGreaterThan(0);
+    expect(usage.outputTokens).toBeGreaterThan(0);
+    expect(usage.totalTokens).toBe(usage.inputTokens + usage.outputTokens);
 });
 test('estimateMessagesLeft uses plan averages and never goes negative', () => {
-    assert.equal(estimateMessagesLeft('Free', 4000), 2);
-    assert.equal(estimateMessagesLeft('Plus', 0), 0);
+    expect(estimateMessagesLeft('Free', 4000)).toBe(2);
+    expect(estimateMessagesLeft('Plus', 0)).toBe(0);
 });
 test('normalizeTokenUsage falls back when provider usage is anomalous', () => {
     const estimatedUsage = {
@@ -67,6 +65,6 @@ test('normalizeTokenUsage falls back when provider usage is anomalous', () => {
         estimatedInputTokens: 300,
         maxOutputTokens: 1_500,
     });
-    assert.deepEqual(normalized.usage, estimatedUsage);
-    assert.equal(normalized.anomalyReason, 'provider_usage_out_of_range');
+    expect(normalized.usage).toEqual(estimatedUsage);
+    expect(normalized.anomalyReason).toBe('provider_usage_out_of_range');
 });

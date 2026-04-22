@@ -31,6 +31,11 @@ export interface PlanConfig {
 
 export const FREE_PREMIUM_MODE_DAILY_LIMIT = 3;
 export const INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES = 8 * 1024 * 1024;
+export const MODE_OUTPUT_TOKEN_BUDGETS = {
+  Conversational: 4_000,
+  Homework: 4_000,
+  ExamPrep: 2_500,
+} as const;
 
 export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
   Free: {
@@ -40,7 +45,7 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
     tagLine: 'Great for daily learning bursts',
     dailyTokenLimit: 25_000,
     maxInputTokensPerRequest: 1_000,
-    maxOutputTokensPerRequest: 1_500,
+    maxOutputTokensPerRequest: 1_000,
     averageTokensPerMessage: 2_000,
     maxInputChars: 500,
     maxProjects: 2,

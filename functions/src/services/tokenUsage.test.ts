@@ -1,5 +1,3 @@
-import assert from 'node:assert/strict';
-import test from 'node:test';
 import {
   buildEstimatedUsage,
   estimateAiInputTokens,
@@ -25,8 +23,8 @@ test('estimateAiInputTokens returns a positive deterministic count', () => {
     history: [{ role: 'user', parts: [{ type: 'text', text: 'What is chlorophyll?' }] }],
   });
 
-  assert.equal(first, second);
-  assert.ok(first > 0);
+  expect(first).toBe(second);
+  expect(first).toBeGreaterThan(0);
 });
 
 test('estimateReservedTokens adds the plan output cap', () => {
@@ -39,8 +37,8 @@ test('estimateReservedTokens adds the plan output cap', () => {
     plan: 'Free',
   });
 
-  assert.ok(result.inputTokens > 0);
-  assert.equal(result.reservedTokens, result.inputTokens + 1500);
+  expect(result.inputTokens).toBeGreaterThan(0);
+  expect(result.reservedTokens).toBe(result.inputTokens + 1000);
 });
 
 test('buildEstimatedUsage includes input and output token totals', () => {
@@ -53,15 +51,15 @@ test('buildEstimatedUsage includes input and output token totals', () => {
     answer: 'Here is a concise summary.',
   });
 
-  assert.equal(usage.usageSource, 'estimated');
-  assert.ok(usage.inputTokens > 0);
-  assert.ok(usage.outputTokens > 0);
-  assert.equal(usage.totalTokens, usage.inputTokens + usage.outputTokens);
+  expect(usage.usageSource).toBe('estimated');
+  expect(usage.inputTokens).toBeGreaterThan(0);
+  expect(usage.outputTokens).toBeGreaterThan(0);
+  expect(usage.totalTokens).toBe(usage.inputTokens + usage.outputTokens);
 });
 
 test('estimateMessagesLeft uses plan averages and never goes negative', () => {
-  assert.equal(estimateMessagesLeft('Free', 4000), 2);
-  assert.equal(estimateMessagesLeft('Plus', 0), 0);
+  expect(estimateMessagesLeft('Free', 4000)).toBe(2);
+  expect(estimateMessagesLeft('Plus', 0)).toBe(0);
 });
 
 test('normalizeTokenUsage falls back when provider usage is anomalous', () => {
@@ -84,6 +82,100 @@ test('normalizeTokenUsage falls back when provider usage is anomalous', () => {
     maxOutputTokens: 1_500,
   });
 
-  assert.deepEqual(normalized.usage, estimatedUsage);
-  assert.equal(normalized.anomalyReason, 'provider_usage_out_of_range');
+  expect(normalized.usage).toEqual(estimatedUsage);
+  expect(normalized.anomalyReason).toBe('provider_usage_out_of_range');
+});
+
+test('normalizeTokenUsage falls back when provider usage is missing', () => {
+  const estimatedUsage = {
+    inputTokens: 10,
+    outputTokens: 20,
+    totalTokens: 30,
+    usageSource: 'estimated' as const,
+  };
+
+  const normalized = normalizeTokenUsage({
+    providerUsage: null,
+    estimatedUsage,
+    estimatedInputTokens: 10,
+    maxOutputTokens: 20,
+  });
+
+  expect(normalized).toEqual({
+    usage: estimatedUsage,
+    anomalyReason: null,
+  });
+});
+
+test('normalizeTokenUsage rejects invalid provider numbers', () => {
+  const estimatedUsage = {
+    inputTokens: 10,
+    outputTokens: 20,
+    totalTokens: 30,
+    usageSource: 'estimated' as const,
+  };
+
+  const normalized = normalizeTokenUsage({
+    providerUsage: {
+      inputTokens: -1,
+      outputTokens: 20,
+      totalTokens: 19,
+      usageSource: 'provider',
+    },
+    estimatedUsage,
+    estimatedInputTokens: 10,
+    maxOutputTokens: 20,
+  });
+
+  expect(normalized.anomalyReason).toBe('provider_usage_non_finite');
+});
+
+test('normalizeTokenUsage rejects provider totals below parts', () => {
+  const estimatedUsage = {
+    inputTokens: 10,
+    outputTokens: 20,
+    totalTokens: 30,
+    usageSource: 'estimated' as const,
+  };
+
+  const normalized = normalizeTokenUsage({
+    providerUsage: {
+      inputTokens: 10,
+      outputTokens: 20,
+      totalTokens: 25,
+      usageSource: 'provider',
+    },
+    estimatedUsage,
+    estimatedInputTokens: 10,
+    maxOutputTokens: 20,
+  });
+
+  expect(normalized.anomalyReason).toBe('provider_usage_total_less_than_parts');
+});
+
+test('normalizeTokenUsage accepts sane provider usage', () => {
+  const estimatedUsage = {
+    inputTokens: 10,
+    outputTokens: 20,
+    totalTokens: 30,
+    usageSource: 'estimated' as const,
+  };
+  const providerUsage = {
+    inputTokens: 12,
+    outputTokens: 18,
+    totalTokens: 30,
+    usageSource: 'provider' as const,
+  };
+
+  const normalized = normalizeTokenUsage({
+    providerUsage,
+    estimatedUsage,
+    estimatedInputTokens: 10,
+    maxOutputTokens: 20,
+  });
+
+  expect(normalized).toEqual({
+    usage: providerUsage,
+    anomalyReason: null,
+  });
 });

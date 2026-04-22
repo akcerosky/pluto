@@ -14,7 +14,8 @@
     "shell": "firebase functions:shell",
     "deploy": "firebase deploy --only functions",
     "set-admin": "tsx src/scripts/setAdminClaims.ts",
-    "test": "tsx --test src/services/gemini.test.ts src/services/razorpay.test.ts src/services/tokenUsage.test.ts src/handlers/http.test.ts"
+    "test": "jest",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@google/genai": "^1.24.0",
@@ -27,7 +28,10 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@types/jest": "^30.0.0",
     "@types/node": "^24.12.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
     "tsx": "^4.20.5",
     "typescript": "^5.9.3"
   }
