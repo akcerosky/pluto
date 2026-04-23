@@ -335,9 +335,33 @@
 - added `gemini-2.5-flash-lite` as the fallback model to improve availability during `gemini-2.5-flash` high-demand windows.
 - Reviewed retry behavior end-to-end and removed frontend retry multiplication after confirming server-side retries were already handling provider retry attempts.
 
-### Testing and Deployment
+## 2026-04-23
 
-- Ran and passed Functions build, Jest coverage, frontend build, root lint, with only existing generated coverage-report warnings before coverage output was ignored.
+### Chat Stability and Provider Fallback Refinement
+
+- Refined the Gemini fallback path in `functions/src/services/gemini.ts` and the compiled Functions output so provider overload handling is more predictable and testable.
+- Added a dedicated fallback test in `functions/src/services/geminiModelFallback.test.ts` to verify fallback behavior and model reporting.
+- Updated retry-policy coverage in `functions/src/services/geminiRetryPolicy.test.ts`.
+- Kept the aiChat request path lightweight with small handler updates in `functions/src/handlers/ai.ts` and `functions/lib/handlers/ai.js`.
+
+### Secrets and Environment Cleanup
+
+- Added centralized secrets config files in `functions/src/config/secrets.ts` and `functions/lib/config/secrets.js`.
+- Updated function environment/config loading in `functions/src/config/env.ts` and `functions/lib/config/env.js`.
+- Adjusted `functions/src/index.ts` and `functions/lib/index.js` to use the updated config wiring.
+- Updated `functions/package.json`, `firebase.json`, and related repo config to support the current deployment/runtime setup.
+
+### Frontend Resilience and App Shell Cleanup
+
+- Added a reusable frontend error boundary in `src/components/ErrorBoundary.tsx` and wired the app through `src/App.tsx`.
+- Simplified layout/page wiring across `src/components/Layout/MainLayout.tsx`, `src/components/Layout/Sidebar.tsx`, `src/pages/AuthPages.tsx`, and `src/pages/VerifyEmailPage.tsx`.
+- Updated `src/lib/plutoApi.ts` to align the client request path with the current backend retry/fallback behavior.
+- Added small repo hygiene updates in `.gitignore`, `README.md`, and `eslint.config.js`.
+
+### Verification, Deployment, and Release Work
+
+- Ran and passed Functions Jest coverage: `37/37` tests, `10/10` suites, Functions TypeScript build, frontend production build, lint check.
 - Deployed Firebase Functions to `pluto-ef61b`, including the updated `aiChat` function in `asia-south1`.
-- Created and pushed the `chat-stability` branch to GitHub with commit `8c2ec12`.
-- Deployed the latest frontend to EC2 from the `chat-stability` branch using `scripts/deploy-frontend-ec2.sh`, built successfully on the server, reloaded Nginx, and validated `https://pluto.akcero.ai` returned HTTP 200.
+- Committed the verified code on `chat-stability` as `d89cfc2` with message `Improve chat stability and app resilience`, then pushed the branch to GitHub.
+- Deployed the latest frontend to EC2 from the same `chat-stability` branch using `scripts/deploy-frontend-ec2.sh`.
+- Verified the EC2 app directory was on branch `chat-stability` at commit `d89cfc2`, confirmed `dist` existed, and validated `https://pluto.akcero.ai` returned HTTP `200`.
