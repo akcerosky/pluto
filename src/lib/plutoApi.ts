@@ -12,15 +12,27 @@ const requireFunctions = () => {
 };
 
 const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
-const AI_CHAT_CLIENT_RETRY_DELAYS_MS = [1800, 4200];
+const AI_CHAT_CLIENT_RETRY_DELAYS_MS = [2000, 4000];
 const AI_CHAT_ALREADY_EXISTS_RETRY_DELAY_MS = 2000;
 const AI_CHAT_TEXT_TIMEOUT_MS = 120_000;
 const AI_CHAT_ATTACHMENT_TIMEOUT_MS = 180_000;
 const isDevelopmentLogEnabled = import.meta.env.VITE_APP_ENV === 'development';
+const RETRYABLE_ERRORS = new Set([
+  'functions/already-exists',
+  'functions/unavailable',
+  'functions/deadline-exceeded',
+]);
+const RETRYABLE_STATUSES = new Set(['ALREADY_EXISTS', 'UNAVAILABLE', 'DEADLINE_EXCEEDED']);
+const NON_RETRYABLE = new Set([
+  'functions/resource-exhausted',
+  'functions/permission-denied',
+  'functions/invalid-argument',
+]);
+const NON_RETRYABLE_STATUSES = new Set(['RESOURCE_EXHAUSTED', 'PERMISSION_DENIED', 'INVALID_ARGUMENT']);
 
 const logAiChatInfo = (...args: unknown[]) => {
   if (isDevelopmentLogEnabled) {
-    console.log('[Pluto][aiChat]', ...args);
+    void args;
   }
 };
 
@@ -54,12 +66,11 @@ const getCallableErrorStatus = (error: unknown) => {
 const isRetryableAiChatError = (error: unknown) => {
   const { code, status } = getCallableErrorStatus(error);
 
-  return (
-    code === 'functions/already-exists' ||
-    code === 'functions/deadline-exceeded' ||
-    status === 'ALREADY_EXISTS' ||
-    status === 'DEADLINE_EXCEEDED'
-  );
+  if ((code && NON_RETRYABLE.has(code)) || (status && NON_RETRYABLE_STATUSES.has(status))) {
+    return false;
+  }
+
+  return Boolean((code && RETRYABLE_ERRORS.has(code)) || (status && RETRYABLE_STATUSES.has(status)));
 };
 
 const getAiChatRetryDelayMs = (error: unknown, attempt: number) => {
@@ -171,6 +182,7 @@ export const aiChat = async (payload: {
     : AI_CHAT_TEXT_TIMEOUT_MS;
   const call = httpsCallable<typeof requestPayload, {
     answer: string;
+    modelUsed: 'flash' | 'flash-lite';
     usagePendingSync: boolean;
     subscription: MeResponse['subscription'];
     usageTodayTokens: number;

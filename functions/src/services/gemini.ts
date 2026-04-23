@@ -67,11 +67,12 @@ ${toneLine}
 };
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-export const GEMINI_RETRY_BACKOFFS_MS = [0, 20000] as const;
+export const GEMINI_RETRY_BACKOFFS_MS = [0, 3000] as const;
 export const GEMINI_RETRY_JITTER_MS = 500;
 const PRIMARY_MODEL = 'gemini-2.5-flash';
 const FALLBACK_MODEL = 'gemini-2.5-flash-lite';
 export const GEMINI_MODEL_FALLBACK_ORDER = [PRIMARY_MODEL, FALLBACK_MODEL] as const;
+export type GeminiModelUsed = 'flash' | 'flash-lite';
 const SUMMARY_BLOCK_SIZE_EXCHANGES = 10;
 const SUMMARY_MAX_TEXT_CHARS = 4000;
 const SUMMARY_FALLBACK_CHARS = 500;
@@ -299,6 +300,9 @@ export const isRetryableGeminiError = (error: unknown) => {
   return status === 500 || status === 503 || code.includes('DEADLINE_EXCEEDED');
 };
 
+const getModelUsed = (model: (typeof GEMINI_MODEL_FALLBACK_ORDER)[number]): GeminiModelUsed =>
+  model === FALLBACK_MODEL ? 'flash-lite' : 'flash';
+
 export const normalizeHistory = (history: AiHistoryMessage[]) => {
   const sanitized: Array<{ role: 'user' | 'model'; content: string }> = history
     .map((message) => ({
@@ -487,135 +491,127 @@ export const generatePlutoResponse = async (payload: {
     ],
   };
 
-  for (let modelIndex = 0; modelIndex < GEMINI_MODEL_FALLBACK_ORDER.length; modelIndex += 1) {
-    const model = GEMINI_MODEL_FALLBACK_ORDER[modelIndex];
-    if (modelIndex > 0) {
-      logger.warn('gemini_model_fallback_started', {
-        eventType: 'gemini_model_fallback_started',
+  for (let attempt = 0; attempt < GEMINI_MODEL_FALLBACK_ORDER.length; attempt += 1) {
+    const model = GEMINI_MODEL_FALLBACK_ORDER[attempt];
+
+    try {
+      const response = await genAI.models.generateContent({
+        model,
+        contents: buildGeminiContents({
+          history,
+          currentTurn,
+          contextSummary,
+        }),
+        config: {
+          systemInstruction: buildSystemInstruction(
+            payload.educationLevel,
+            payload.mode,
+            payload.objective,
+            payload.plan
+          ),
+          maxOutputTokens: payload.maxOutputTokens,
+        },
+      });
+      const text = sanitizeResponse(response.text ?? '');
+      const metadata = response.usageMetadata;
+      const estimatedUsage = buildEstimatedUsage({
+        prompt: payload.prompt,
+        educationLevel: payload.educationLevel,
+        mode: payload.mode,
+        objective: payload.objective,
+        history: payload.history,
+        contextSummaryText: contextSummary?.text,
+        answer: text,
+      });
+      const providerUsage: TokenUsage | null =
+        metadata &&
+        typeof metadata.promptTokenCount === 'number' &&
+        typeof metadata.candidatesTokenCount === 'number' &&
+        typeof metadata.totalTokenCount === 'number'
+          ? {
+              inputTokens: metadata.promptTokenCount,
+              outputTokens: metadata.candidatesTokenCount,
+              totalTokens: metadata.totalTokenCount,
+              usageSource: 'provider',
+            }
+          : null;
+      const normalizedUsage = normalizeTokenUsage({
+        providerUsage,
+        estimatedUsage,
+        estimatedInputTokens,
+        maxOutputTokens: payload.maxOutputTokens,
+      });
+      const modelUsed = getModelUsed(model);
+
+      logger.info('gemini_success', {
+        eventType: 'gemini_success',
         requestId: payload.requestId ?? null,
-        fromModel: GEMINI_MODEL_FALLBACK_ORDER[modelIndex - 1],
-        fallbackModel: model,
+        model,
+        modelUsed,
+        attempt: attempt + 1,
         mode: payload.mode,
         plan: payload.plan,
-        reason: 'primary_model_retryable_failure',
       });
-    }
 
-    for (let attempt = 0; attempt < GEMINI_RETRY_BACKOFFS_MS.length; attempt += 1) {
-      if (attempt > 0) {
-        const jitter = Math.floor(Math.random() * (GEMINI_RETRY_JITTER_MS + 1));
-        await wait(GEMINI_RETRY_BACKOFFS_MS[attempt] + jitter);
+      return {
+        text,
+        contextSummary,
+        usage: normalizedUsage.usage,
+        usageAnomaly: normalizedUsage.anomalyReason,
+        modelUsed,
+      };
+    } catch (error) {
+      lastError = error;
+      const providerError = getProviderErrorDetails(error);
+      const retryable = isRetryableGeminiError(error);
+      const hasFallbackModel = attempt + 1 < GEMINI_MODEL_FALLBACK_ORDER.length;
+      const fallbackDelayMs = providerError.status === 503 ? 0 : GEMINI_RETRY_BACKOFFS_MS[attempt + 1] ?? 0;
+      logger.error('gemini_generate_content_attempt_failed', {
+        eventType: 'gemini_generate_content_attempt_failed',
+        requestId: payload.requestId ?? null,
+        model,
+        primaryModel: PRIMARY_MODEL,
+        fallbackModel: FALLBACK_MODEL,
+        attempt: attempt + 1,
+        maxAttempts: GEMINI_MODEL_FALLBACK_ORDER.length,
+        mode: payload.mode,
+        plan: payload.plan,
+        promptLength: payload.prompt.length,
+        historyMessageCount: payload.history.length,
+        attachmentCount: payload.attachments.length,
+        attachmentSummary: payload.attachments.map((attachment) => ({
+          name: attachment.name,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+        })),
+        providerStatus: providerError.status,
+        providerCode: providerError.code,
+        nextRetryDelayMs: retryable && hasFallbackModel ? fallbackDelayMs : null,
+        willFallbackToModel: retryable && hasFallbackModel ? FALLBACK_MODEL : null,
+        errorMessage: providerError.message,
+        errorDetails: providerError.details,
+        stack: providerError.stack,
+      });
+      if (providerError.status === 503 && payload.uid && payload.requestId) {
+        await recordGemini503(payload.uid, payload.requestId).catch(() => undefined);
       }
-
-      try {
-        const response = await genAI.models.generateContent({
-          model,
-          contents: buildGeminiContents({
-            history,
-            currentTurn,
-            contextSummary,
-          }),
-          config: {
-            systemInstruction: buildSystemInstruction(
-              payload.educationLevel,
-              payload.mode,
-              payload.objective,
-              payload.plan
-            ),
-            maxOutputTokens: payload.maxOutputTokens,
-          },
-        });
-        const text = sanitizeResponse(response.text ?? '');
-        const metadata = response.usageMetadata;
-        const estimatedUsage = buildEstimatedUsage({
-          prompt: payload.prompt,
-          educationLevel: payload.educationLevel,
-          mode: payload.mode,
-          objective: payload.objective,
-          history: payload.history,
-          contextSummaryText: contextSummary?.text,
-          answer: text,
-        });
-        const providerUsage: TokenUsage | null =
-          metadata &&
-          typeof metadata.promptTokenCount === 'number' &&
-          typeof metadata.candidatesTokenCount === 'number' &&
-          typeof metadata.totalTokenCount === 'number'
-            ? {
-                inputTokens: metadata.promptTokenCount,
-                outputTokens: metadata.candidatesTokenCount,
-                totalTokens: metadata.totalTokenCount,
-                usageSource: 'provider',
-              }
-            : null;
-        const normalizedUsage = normalizeTokenUsage({
-          providerUsage,
-          estimatedUsage,
-          estimatedInputTokens,
-          maxOutputTokens: payload.maxOutputTokens,
-        });
-
-        if (modelIndex > 0) {
-          logger.info('gemini_model_fallback_succeeded', {
-            eventType: 'gemini_model_fallback_succeeded',
-            requestId: payload.requestId ?? null,
-            model,
-            attempt: attempt + 1,
-            mode: payload.mode,
-            plan: payload.plan,
-          });
-        }
-
-        return {
-          text,
-          contextSummary,
-          usage: normalizedUsage.usage,
-          usageAnomaly: normalizedUsage.anomalyReason,
-        };
-      } catch (error) {
-        lastError = error;
-        const providerError = getProviderErrorDetails(error);
-        const retryable = isRetryableGeminiError(error);
-        const hasNextAttempt = attempt + 1 < GEMINI_RETRY_BACKOFFS_MS.length;
-        const hasFallbackModel = modelIndex + 1 < GEMINI_MODEL_FALLBACK_ORDER.length;
-        logger.error('gemini_generate_content_attempt_failed', {
-          eventType: 'gemini_generate_content_attempt_failed',
+      if (!retryable || !hasFallbackModel) {
+        throw error;
+      }
+      if (providerError.status === 503) {
+        logger.warn('gemini_503_fallback_to_lite', {
+          eventType: 'gemini_503_fallback_to_lite',
           requestId: payload.requestId ?? null,
-          model,
           primaryModel: PRIMARY_MODEL,
           fallbackModel: FALLBACK_MODEL,
-          modelIndex,
-          attempt: attempt + 1,
-          maxAttempts: GEMINI_RETRY_BACKOFFS_MS.length,
           mode: payload.mode,
           plan: payload.plan,
-          promptLength: payload.prompt.length,
-          historyMessageCount: payload.history.length,
-          attachmentCount: payload.attachments.length,
-          attachmentSummary: payload.attachments.map((attachment) => ({
-            name: attachment.name,
-            mimeType: attachment.mimeType,
-            sizeBytes: attachment.sizeBytes,
-          })),
-          providerStatus: providerError.status,
-          providerCode: providerError.code,
-          nextRetryDelayMs: retryable && hasNextAttempt ? GEMINI_RETRY_BACKOFFS_MS[attempt + 1] : null,
-          willFallbackToModel: retryable && !hasNextAttempt && hasFallbackModel ? FALLBACK_MODEL : null,
-          errorMessage: providerError.message,
-          errorDetails: providerError.details,
-          stack: providerError.stack,
         });
-        if (providerError.status === 503 && payload.uid && payload.requestId) {
-          await recordGemini503(payload.uid, payload.requestId).catch(() => undefined);
-        }
-        if (!retryable) {
-          throw error;
-        }
-        if (hasNextAttempt) {
-          continue;
-        }
-        break;
+      } else if (fallbackDelayMs > 0) {
+        const jitter = Math.floor(Math.random() * (GEMINI_RETRY_JITTER_MS + 1));
+        await wait(fallbackDelayMs + jitter);
       }
+      continue;
     }
   }
 

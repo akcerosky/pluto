@@ -1,8 +1,7 @@
 import { onCall, type CallableRequest } from 'firebase-functions/v2/https';
 import { onRequest } from 'firebase-functions/v2/https';
 import { env } from './config/env.js';
-import { aiChatHandler } from './handlers/ai.js';
-import { meGetHandler, meUpdateProfileHandler, meUsageHistoryHandler } from './handlers/me.js';
+import { runtimeSecrets } from './config/secrets.js';
 
 type CloudCallableHandler = (request: CallableRequest<unknown>) => Promise<unknown>;
 type LazyCallableHandler = () => Promise<CloudCallableHandler>;
@@ -23,13 +22,14 @@ const secureCallable = (
       timeoutSeconds: options?.timeoutSeconds,
       memory: '512MiB',
       serviceAccount,
+      secrets: runtimeSecrets,
     },
     handler as never
   );
 
 const lazySecureCallable = (
   loadHandler: LazyCallableHandler,
-  options?: { minInstances?: number }
+  options?: { minInstances?: number; timeoutSeconds?: number }
 ) =>
   secureCallable(
     async (request) => {
@@ -39,11 +39,17 @@ const lazySecureCallable = (
     options
   );
 
-export const meGet = secureCallable(meGetHandler as CloudCallableHandler);
-export const meUpdateProfile = secureCallable(meUpdateProfileHandler as CloudCallableHandler);
-export const meUsageHistory = secureCallable(meUsageHistoryHandler as CloudCallableHandler);
+export const meGet = lazySecureCallable(
+  async () => (await import('./handlers/me.js')).meGetHandler as CloudCallableHandler
+);
+export const meUpdateProfile = lazySecureCallable(
+  async () => (await import('./handlers/me.js')).meUpdateProfileHandler as CloudCallableHandler
+);
+export const meUsageHistory = lazySecureCallable(
+  async () => (await import('./handlers/me.js')).meUsageHistoryHandler as CloudCallableHandler
+);
 
-export const aiChat = secureCallable(aiChatHandler as CloudCallableHandler, {
+export const aiChat = lazySecureCallable(async () => (await import('./handlers/ai.js')).aiChatHandler as CloudCallableHandler, {
   minInstances: 1,
   timeoutSeconds: 120,
 });
@@ -92,6 +98,7 @@ export const razorpayWebhook = onRequest(
   {
     region: env.region,
     memory: '256MiB',
+    secrets: runtimeSecrets,
   },
   async (request, response) => {
     const { razorpayWebhookHandler } = await import('./handlers/http.js');

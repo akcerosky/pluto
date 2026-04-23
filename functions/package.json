@@ -14,7 +14,7 @@
     "shell": "firebase functions:shell",
     "deploy": "firebase deploy --only functions",
     "set-admin": "tsx src/scripts/setAdminClaims.ts",
-    "test": "jest",
+    "test": "jest --runInBand",
     "test:coverage": "jest --coverage"
   },
   "dependencies": {

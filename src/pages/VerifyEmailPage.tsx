@@ -28,13 +28,6 @@ export const VerifyEmailPage = () => {
     setNotice(null);
     try {
       const actionCodeSettings = getEmailVerificationActionCodeSettings();
-      if (import.meta.env.VITE_APP_ENV === 'development') {
-        console.log('sendEmailVerification debug', {
-          source: 'VerifyEmailPage.resend',
-          env: import.meta.env.VITE_APP_ENV,
-          actionCodeSettings,
-        });
-      }
       await sendEmailVerification(auth.currentUser, actionCodeSettings);
       setNotice('Verification email sent. Check your inbox for the latest link.');
     } catch (error) {
@@ -54,9 +47,6 @@ export const VerifyEmailPage = () => {
         await auth.currentUser?.reload();
         await auth.currentUser?.getIdToken(true);
         const fresh = auth.currentUser;
-        if (import.meta.env.VITE_APP_ENV === 'development') {
-          console.log('emailVerified after reload:', fresh?.emailVerified);
-        }
         const verified = fresh?.emailVerified === true;
         updateUser({ emailVerified: verified });
         if (verified) {

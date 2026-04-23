@@ -14,11 +14,12 @@ test('Gemini retry policy retries only transient provider errors', () => {
 
   expect(isRetryableGeminiError(providerError(429))).toBe(false);
   expect(isRetryableGeminiError(providerError(403))).toBe(false);
+  expect(isRetryableGeminiError(providerError(401))).toBe(false);
   expect(isRetryableGeminiError(providerError(400))).toBe(false);
 });
 
 test('Gemini retry schedule uses two total attempts with defined jitter', () => {
-  expect(GEMINI_RETRY_BACKOFFS_MS).toEqual([0, 20000]);
+  expect(GEMINI_RETRY_BACKOFFS_MS).toEqual([0, 3000]);
   expect(GEMINI_RETRY_JITTER_MS).toBe(500);
 });
 

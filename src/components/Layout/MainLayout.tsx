@@ -40,13 +40,6 @@ export const MainLayout = ({ children }: { children: ReactNode }) => {
     setVerificationNotice(null);
     try {
       const actionCodeSettings = getEmailVerificationActionCodeSettings();
-      if (import.meta.env.VITE_APP_ENV === 'development') {
-        console.log('sendEmailVerification debug', {
-          source: 'MainLayout.bannerResend',
-          env: import.meta.env.VITE_APP_ENV,
-          actionCodeSettings,
-        });
-      }
       await sendEmailVerification(auth.currentUser, actionCodeSettings);
       setVerificationNotice('Verification email sent. Check your inbox for the latest link.');
     } catch (error) {

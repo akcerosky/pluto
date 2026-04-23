@@ -1,16 +1,25 @@
+import { googleGeminiApiKey, razorpayKeySecret, razorpayWebhookSecret, razorpayPlusPlanId, razorpayProPlanId, resendApiKey, resendFromEmail, } from './secrets.js';
 const getOptional = (envKey, fallback = '') => process.env[envKey] ?? fallback;
+const getSecretOptional = (secret, envKey, fallback = '') => {
+    try {
+        return secret.value() || getOptional(envKey, fallback);
+    }
+    catch {
+        return getOptional(envKey, fallback);
+    }
+};
 const envReaders = {
     region: () => 'asia-south1',
     logLevel: () => getOptional('LOG_LEVEL', 'info'),
     projectId: () => getOptional('FIREBASE_PROJECT_ID'),
-    geminiApiKey: () => getOptional('GOOGLE_GEMINI_API_KEY'),
+    geminiApiKey: () => getSecretOptional(googleGeminiApiKey, 'GOOGLE_GEMINI_API_KEY'),
     razorpayKeyId: () => getOptional('RAZORPAY_KEY_ID'),
-    razorpayKeySecret: () => getOptional('RAZORPAY_KEY_SECRET'),
-    razorpayWebhookSecret: () => getOptional('RAZORPAY_WEBHOOK_SECRET'),
-    razorpayPlusPlanId: () => getOptional('RAZORPAY_PLUS_PLAN_ID'),
-    razorpayProPlanId: () => getOptional('RAZORPAY_PRO_PLAN_ID'),
-    resendApiKey: () => getOptional('RESEND_API_KEY'),
-    resendFromEmail: () => getOptional('RESEND_FROM_EMAIL'),
+    razorpayKeySecret: () => getSecretOptional(razorpayKeySecret, 'RAZORPAY_KEY_SECRET'),
+    razorpayWebhookSecret: () => getSecretOptional(razorpayWebhookSecret, 'RAZORPAY_WEBHOOK_SECRET'),
+    razorpayPlusPlanId: () => getSecretOptional(razorpayPlusPlanId, 'RAZORPAY_PLUS_PLAN_ID'),
+    razorpayProPlanId: () => getSecretOptional(razorpayProPlanId, 'RAZORPAY_PRO_PLAN_ID'),
+    resendApiKey: () => getSecretOptional(resendApiKey, 'RESEND_API_KEY'),
+    resendFromEmail: () => getSecretOptional(resendFromEmail, 'RESEND_FROM_EMAIL'),
 };
 export const env = {
     get region() {

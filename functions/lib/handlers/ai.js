@@ -669,6 +669,7 @@ export const aiChatHandler = async (request) => {
         await releaseReservedUsageTokens(uid, reservationEstimate.reservedTokens).catch(() => undefined);
         const response = {
             answer: result.text,
+            modelUsed: result.modelUsed,
             contextSummary: result.contextSummary ?? null,
             usagePendingSync: true,
             subscription: snapshot.subscription,
@@ -737,6 +738,7 @@ export const aiChatHandler = async (request) => {
     }
     const response = {
         answer: result.text,
+        modelUsed: result.modelUsed,
         contextSummary: result.contextSummary ?? null,
         usagePendingSync: false,
         subscription: snapshot.subscription,

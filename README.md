@@ -237,7 +237,11 @@ Production/runtime notes:
 
 - region: `asia-south1`
 - `aiChat` and billing callables use `minInstances = 1`
-- webhook URL is exposed through the `razorpayWebhook` Function
+- Razorpay webhook URL must be the direct Cloud Function URL:
+  `https://asia-south1-pluto-ef61b.cloudfunctions.net/razorpayWebhook`
+- Do not configure Razorpay to use the Firebase Hosting path
+  `https://pluto-ef61b.web.app/webhooks/razorpay`; keep the dashboard pointed at the direct Function URL even if
+  the Hosting rewrite is available as a fallback.
 - App Check is enabled on all callable Functions
 
 ## Razorpay Notes
@@ -250,6 +254,16 @@ Implemented server flows:
 - cancel renewal
 - resume paused subscriptions
 - refund request with usage-based eligibility checks
+
+Razorpay dashboard webhook URL:
+
+```text
+https://asia-south1-pluto-ef61b.cloudfunctions.net/razorpayWebhook
+```
+
+Use the direct Cloud Function URL above for Razorpay webhooks. The Firebase Hosting rewrite at
+`/webhooks/razorpay` is retained in `firebase.json` as a convenience fallback, but it is not the
+canonical production Razorpay dashboard URL.
 
 Important behavior:
 

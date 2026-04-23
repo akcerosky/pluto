@@ -1,8 +1,7 @@
 import { onCall } from 'firebase-functions/v2/https';
 import { onRequest } from 'firebase-functions/v2/https';
 import { env } from './config/env.js';
-import { aiChatHandler } from './handlers/ai.js';
-import { meGetHandler, meUpdateProfileHandler, meUsageHistoryHandler } from './handlers/me.js';
+import { runtimeSecrets } from './config/secrets.js';
 const serviceAccount = process.env.FUNCTIONS_SERVICE_ACCOUNT ||
     `firebase-adminsdk-fbsvc@${env.projectId || 'pluto-ef61b'}.iam.gserviceaccount.com`;
 const secureCallable = (handler, options) => onCall({
@@ -12,15 +11,16 @@ const secureCallable = (handler, options) => onCall({
     timeoutSeconds: options?.timeoutSeconds,
     memory: '512MiB',
     serviceAccount,
+    secrets: runtimeSecrets,
 }, handler);
 const lazySecureCallable = (loadHandler, options) => secureCallable(async (request) => {
     const handler = await loadHandler();
     return handler(request);
 }, options);
-export const meGet = secureCallable(meGetHandler);
-export const meUpdateProfile = secureCallable(meUpdateProfileHandler);
-export const meUsageHistory = secureCallable(meUsageHistoryHandler);
-export const aiChat = secureCallable(aiChatHandler, {
+export const meGet = lazySecureCallable(async () => (await import('./handlers/me.js')).meGetHandler);
+export const meUpdateProfile = lazySecureCallable(async () => (await import('./handlers/me.js')).meUpdateProfileHandler);
+export const meUsageHistory = lazySecureCallable(async () => (await import('./handlers/me.js')).meUsageHistoryHandler);
+export const aiChat = lazySecureCallable(async () => (await import('./handlers/ai.js')).aiChatHandler, {
     minInstances: 1,
     timeoutSeconds: 120,
 });
@@ -41,6 +41,7 @@ export const health = onRequest({
 export const razorpayWebhook = onRequest({
     region: env.region,
     memory: '256MiB',
+    secrets: runtimeSecrets,
 }, async (request, response) => {
     const { razorpayWebhookHandler } = await import('./handlers/http.js');
     return razorpayWebhookHandler(request, response);

@@ -95,10 +95,6 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
     : threads;
 
   const handleComingSoon = (feature: string) => {
-    // Simple feedback for non-implemented features
-    if (import.meta.env.VITE_APP_ENV === 'development') {
-      console.log(`${feature} coming soon`);
-    }
     alert(`${feature} feature coming soon!`);
   };
 

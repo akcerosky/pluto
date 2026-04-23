@@ -18,6 +18,7 @@ functions/coverage/
 .npm-cache
 .dist
 .codex/environments/
+.firebase/
 .tmp/
 
 # Editor directories and files

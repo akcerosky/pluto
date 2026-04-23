@@ -6,6 +6,7 @@
     "rules": "firestore.rules"
   },
   "hosting": {
+    "_comment": "Razorpay production webhooks must use the direct function URL https://asia-south1-pluto-ef61b.cloudfunctions.net/razorpayWebhook. The /webhooks/razorpay Hosting rewrite is retained only as a fallback and is not the canonical Razorpay dashboard URL.",
     "public": "dist",
     "ignore": [
       "firebase.json",

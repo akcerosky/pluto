@@ -2,6 +2,7 @@ import { lazy, Suspense, type ReactNode } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AppProvider } from './context/AppContext';
 import { useApp } from './context/useApp';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const LandingPage = lazy(() => import('./pages/LandingPage').then((module) => ({ default: module.LandingPage })));
 const AuthPages = lazy(() => import('./pages/AuthPages').then((module) => ({ default: module.AuthPages })));
@@ -60,9 +61,11 @@ const AppRoutes = () => {
         element={
           canAccessApp ? (
             <LazyRoute>
-              <MainLayout>
-                <ChatInterface />
-              </MainLayout>
+              <ErrorBoundary>
+                <MainLayout>
+                  <ChatInterface />
+                </MainLayout>
+              </ErrorBoundary>
             </LazyRoute>
           ) : (
             <Navigate to={needsVerification ? '/verify-email' : '/login'} replace />
@@ -92,11 +95,13 @@ const AppRoutes = () => {
 
 function App() {
   return (
-    <AppProvider>
-      <Router>
-        <AppRoutes />
-      </Router>
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <Router>
+          <AppRoutes />
+        </Router>
+      </AppProvider>
+    </ErrorBoundary>
   );
 }
 
