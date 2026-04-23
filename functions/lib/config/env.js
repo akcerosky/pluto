@@ -1,4 +1,4 @@
-import { googleGeminiApiKey, razorpayKeySecret, razorpayWebhookSecret, razorpayPlusPlanId, razorpayProPlanId, resendApiKey, resendFromEmail, } from './secrets.js';
+import { amazonBedrockApiKey, googleGeminiApiKey, razorpayKeySecret, razorpayWebhookSecret, razorpayPlusPlanId, razorpayProPlanId, resendApiKey, resendFromEmail, } from './secrets.js';
 const getOptional = (envKey, fallback = '') => process.env[envKey] ?? fallback;
 const getSecretOptional = (secret, envKey, fallback = '') => {
     try {
@@ -13,6 +13,10 @@ const envReaders = {
     logLevel: () => getOptional('LOG_LEVEL', 'info'),
     projectId: () => getOptional('FIREBASE_PROJECT_ID'),
     geminiApiKey: () => getSecretOptional(googleGeminiApiKey, 'GOOGLE_GEMINI_API_KEY'),
+    bedrockApiKey: () => getSecretOptional(amazonBedrockApiKey, 'AMAZON_BEDROCK_API_KEY') ||
+        getOptional('AWS_BEARER_TOKEN_BEDROCK'),
+    bedrockRegion: () => getOptional('BEDROCK_REGION', 'ap-south-1'),
+    bedrockNovaModelId: () => getOptional('BEDROCK_NOVA_MICRO_MODEL_ID', 'apac.amazon.nova-micro-v1:0'),
     razorpayKeyId: () => getOptional('RAZORPAY_KEY_ID'),
     razorpayKeySecret: () => getSecretOptional(razorpayKeySecret, 'RAZORPAY_KEY_SECRET'),
     razorpayWebhookSecret: () => getSecretOptional(razorpayWebhookSecret, 'RAZORPAY_WEBHOOK_SECRET'),
@@ -33,6 +37,15 @@ export const env = {
     },
     get geminiApiKey() {
         return envReaders.geminiApiKey();
+    },
+    get bedrockApiKey() {
+        return envReaders.bedrockApiKey();
+    },
+    get bedrockRegion() {
+        return envReaders.bedrockRegion();
+    },
+    get bedrockNovaModelId() {
+        return envReaders.bedrockNovaModelId();
     },
     get razorpayKeyId() {
         return envReaders.razorpayKeyId();

@@ -182,7 +182,8 @@ export const aiChat = async (payload: {
     : AI_CHAT_TEXT_TIMEOUT_MS;
   const call = httpsCallable<typeof requestPayload, {
     answer: string;
-    modelUsed: 'flash' | 'flash-lite';
+    modelUsed: 'flash' | 'nova-micro';
+    provider?: 'gemini' | 'nova-micro';
     usagePendingSync: boolean;
     subscription: MeResponse['subscription'];
     usageTodayTokens: number;

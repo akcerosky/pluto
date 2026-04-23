@@ -5,7 +5,7 @@ import { FREE_PREMIUM_MODE_DAILY_LIMIT, getEffectiveMaxOutputTokens, PLAN_DEFINI
 import { assertAuth, getBootstrapIdentity, getRequestId } from '../lib/http.js';
 import { logAiQuotaEvent, logAiQuotaMetric } from '../lib/observability.js';
 import { getMeSnapshot, reconcileUsageTokens, releaseReservedUsageTokens, reserveUsageTokens, } from '../services/firestoreRepo.js';
-import { generatePlutoResponse } from '../services/gemini.js';
+import { executeHybridAiRequest } from '../services/ai/orchestrator.js';
 import { acquireAiRequest, completeAiRequest, failAiRequest, throwCachedAiError, } from '../services/aiRequestCache.js';
 import { checkAndRecordAiRateLimit } from '../services/aiRateLimit.js';
 import { estimateAiInputTokenBreakdown, MESSAGE_OVERHEAD_TOKENS, estimateReservedTokens, } from '../services/tokenUsage.js';
@@ -575,7 +575,7 @@ export const aiChatHandler = async (request) => {
     }
     let result;
     try {
-        result = await generatePlutoResponse({
+        result = await executeHybridAiRequest({
             prompt: payload.prompt,
             educationLevel: payload.educationLevel,
             mode: payload.mode,
@@ -670,6 +670,7 @@ export const aiChatHandler = async (request) => {
         const response = {
             answer: result.text,
             modelUsed: result.modelUsed,
+            provider: result.finalProvider,
             contextSummary: result.contextSummary ?? null,
             usagePendingSync: true,
             subscription: snapshot.subscription,
@@ -739,6 +740,7 @@ export const aiChatHandler = async (request) => {
     const response = {
         answer: result.text,
         modelUsed: result.modelUsed,
+        provider: result.finalProvider,
         contextSummary: result.contextSummary ?? null,
         usagePendingSync: false,
         subscription: snapshot.subscription,

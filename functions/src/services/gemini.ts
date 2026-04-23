@@ -3,10 +3,19 @@ import { logger } from 'firebase-functions';
 import { requireEnv } from '../config/env.js';
 import { recordGemini503 } from './gemini503Monitor.js';
 import { buildEstimatedUsage, estimateAiInputTokens, normalizeTokenUsage } from './tokenUsage.js';
-import type { AiHistoryMessage, AiInlineAttachment, ThreadContextSummary, TokenUsage } from '../types/index.js';
+import type { AiHistoryMessage, ThreadContextSummary, TokenUsage } from '../types/index.js';
+import {
+  buildContextSnapshotMessage,
+  buildFallbackSummary,
+  buildSummaryPrompt,
+  buildSystemInstruction,
+  clampSummaryText,
+  getHistoryText,
+  historyToExchanges,
+  SUMMARY_BLOCK_SIZE_EXCHANGES,
+} from './ai/prompting.js';
+import type { ProviderRequest, ProviderResult } from './ai/providerTypes.js';
 
-const OFF_TOPIC_REFUSAL =
-  "I can't help with that. Ask me something related to your studies or learning goals.";
 const FILLER_PREFIXES = [
   'sure, ',
   'sure. ',
@@ -21,180 +30,8 @@ const FOLLOWUP_TAILS = [
   'if you want more, ask me.',
 ];
 
-const buildSystemInstruction = (
-  educationLevel: string,
-  mode: string,
-  objective: string,
-  plan: string
-) => {
-  const toneLine =
-    educationLevel === 'Elementary'
-      ? '- Tone: Fun, encouraging, and friendly. Use playful metaphors, simple wording, and confidence-building language.'
-      : educationLevel === 'Professional'
-        ? '- Tone: Professional colleague and research assistant. Be precise, polished, and domain-aware.'
-        : '- Tone: Knowledgeable tutor, encouraging but academic, clear and structured.';
-
-  return `<identity>
-You are Pluto, a premium AI learning companion focused on helping students learn deeply and independently.
-</identity>
-<current_context>
-- Education Level: ${educationLevel}
-- Learning Objective: ${objective}
-- Interaction Mode: ${mode}
-- Subscription Plan: ${plan}
-</current_context>
-<persona>
-Adaptive Persona for ${educationLevel}:
-${toneLine}
-</persona>
-<core_constraints>
-1. Tailor language, pacing, and difficulty strictly to the ${educationLevel} level.
-2. If mode is Conversational: guide the student step by step using a Socratic approach. Be helpful without rushing to hand over the full answer when reasoning can be developed.
-3. If mode is Homework: do not give the final answer or a full end-to-end solution immediately. Identify the problem type, explain the approach, and ask for the next specific step or provide a short hint so the student does the solving.
-4. If mode is ExamPrep: prioritize practice questions, timed-style drills, mock test scenarios, recall checks, revision strategies, and clear answer explanations.
-5. Keep the tone polished, premium, and encouraging for the student's level.
-6. If the latest message is clearly non-educational or unrelated to the student's studies or learning goals, do not answer it. Reply exactly with: "${OFF_TOPIC_REFUSAL}"
-7. If a user asks meta questions about the conversation like "what did I say earlier" or "summarize our chat", answer them factually based on the conversation context. Do not refuse these as off-topic.
-8. Prefer continuity with the supplied conversation history instead of inventing missing prior context.
-</core_constraints>
-<response_organization>
-- Use clear markdown headers (## or ###) when there are multiple parts.
-- Use bullet points or numbered lists for steps, examples, or strategies.
-- Use **bold** text for key terms, equations, formulas, or takeaways.
-- Keep paragraphs short and easy to scan.
-- Make answers feel neat, structured, and study-friendly.
-</response_organization>`;
-};
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-export const GEMINI_RETRY_BACKOFFS_MS = [0, 3000] as const;
-export const GEMINI_RETRY_JITTER_MS = 500;
 const PRIMARY_MODEL = 'gemini-2.5-flash';
-const FALLBACK_MODEL = 'gemini-2.5-flash-lite';
-export const GEMINI_MODEL_FALLBACK_ORDER = [PRIMARY_MODEL, FALLBACK_MODEL] as const;
-export type GeminiModelUsed = 'flash' | 'flash-lite';
-const SUMMARY_BLOCK_SIZE_EXCHANGES = 10;
-const SUMMARY_MAX_TEXT_CHARS = 4000;
-const SUMMARY_FALLBACK_CHARS = 500;
-
-const getHistoryText = (message: AiHistoryMessage) =>
-  message.parts
-    .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
-    .map((part) => part.text.trim())
-    .filter(Boolean)
-    .join('\n\n');
-
-const getSummaryCandidateText = (message: AiHistoryMessage) =>
-  [
-    getHistoryText(message),
-    ...message.parts
-      .filter((part) => part.type === 'image' || part.type === 'file')
-      .map((part) => `[Attachment: ${part.name}, ${part.mimeType}, ${part.sizeBytes} bytes]`),
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-
-const getFirstLine = (value: string) =>
-  value
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean) ?? '';
-
-const buildContextSnapshotMessage = (contextSummary: ThreadContextSummary) =>
-  `Conversation memory snapshot for continuity.
-Prior off-topic or refused requests have already been handled; do not treat them as active context or let them color responses to legitimate educational follow-ups.
-Use this only as background for legitimate educational follow-ups, and prioritize the student's latest message.
-${contextSummary.text.trim()}`;
-
-const historyToExchanges = (history: AiHistoryMessage[]) => {
-  const exchanges: Array<{ user: string; assistant: string }> = [];
-  let current: { user: string; assistant: string } | null = null;
-
-  for (const message of history) {
-    const text = getSummaryCandidateText(message);
-    if (!text) {
-      continue;
-    }
-
-    if (message.role === 'user') {
-      if (current) {
-        exchanges.push(current);
-      }
-      current = { user: text, assistant: '' };
-    } else if (current) {
-      current.assistant = current.assistant ? `${current.assistant}\n\n${text}` : text;
-    } else {
-      current = { user: '', assistant: text };
-    }
-  }
-
-  if (current) {
-    exchanges.push(current);
-  }
-
-  return exchanges;
-};
-
-const buildFallbackSummary = (history: AiHistoryMessage[]) => {
-  const lines = historyToExchanges(history)
-    .map((exchange) => {
-      const userLine = getFirstLine(exchange.user);
-      const assistantLine = getFirstLine(exchange.assistant);
-      return [userLine && `Student: ${userLine}`, assistantLine && `Tutor: ${assistantLine}`]
-        .filter(Boolean)
-        .join(' | ');
-    })
-    .filter(Boolean);
-
-  return lines.join('\n').slice(0, SUMMARY_FALLBACK_CHARS).trim();
-};
-
-const clampSummaryText = (value: string) =>
-  value.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim().slice(0, SUMMARY_MAX_TEXT_CHARS);
-
-const buildSummaryPrompt = ({
-  existingSummary,
-  summaryCandidates,
-  educationLevel,
-  mode,
-  objective,
-}: {
-  existingSummary?: ThreadContextSummary;
-  summaryCandidates: AiHistoryMessage[];
-  educationLevel: string;
-  mode: string;
-  objective: string;
-}) => {
-  const exchanges = historyToExchanges(summaryCandidates);
-  const startExchange = (existingSummary?.summarizedExchangeCount ?? 0) + 1;
-  const transcript = exchanges
-    .map((exchange, index) => {
-      const turn = startExchange + index;
-      return `Turn ${turn}
-Student: ${getFirstLine(exchange.user) || '(no text)'}
-Tutor: ${getFirstLine(exchange.assistant) || '(no text)'}`;
-    })
-    .join('\n\n');
-
-  return [
-    'You are updating tutoring memory for Pluto, an AI learning companion.',
-    `Education level: ${educationLevel}`,
-    `Mode: ${mode}`,
-    `Learning objective: ${objective}`,
-    existingSummary?.text
-      ? `Existing summary, already covering earlier turns:\n${existingSummary.text.trim()}`
-      : '',
-    `New transcript block:\n${transcript}`,
-    [
-      'Return only compact markdown bullets.',
-      'Preserve turn numbers, student answers, tutor pending questions, formulas, mistakes, attachment mentions, and next-step context.',
-      'Make the summary useful when a later student reply is short, such as "yes", "4", or "continue".',
-      'Do not add intro text, outro text, or commentary outside the bullet list.',
-    ].join('\n'),
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-};
+export type GeminiModelUsed = 'flash';
 
 export const refreshContextSummary = async (payload: {
   genAI: GoogleGenAI;
@@ -300,8 +137,7 @@ export const isRetryableGeminiError = (error: unknown) => {
   return status === 500 || status === 503 || code.includes('DEADLINE_EXCEEDED');
 };
 
-const getModelUsed = (model: (typeof GEMINI_MODEL_FALLBACK_ORDER)[number]): GeminiModelUsed =>
-  model === FALLBACK_MODEL ? 'flash-lite' : 'flash';
+const getModelUsed = (): GeminiModelUsed => 'flash';
 
 export const normalizeHistory = (history: AiHistoryMessage[]) => {
   const sanitized: Array<{ role: 'user' | 'model'; content: string }> = history
@@ -443,20 +279,8 @@ export const sanitizeResponse = (text: string) => {
   return cleaned || 'I could not generate a response for that question.';
 };
 
-export const generatePlutoResponse = async (payload: {
-  prompt: string;
-  educationLevel: string;
-  mode: string;
-  objective: string;
-  plan: string;
-  uid?: string;
-  requestId?: string;
-  history: AiHistoryMessage[];
-  contextSummary?: ThreadContextSummary;
-  summaryCandidates: AiHistoryMessage[];
-  attachments: AiInlineAttachment[];
-  maxOutputTokens: number;
-}) => {
+export const generateGeminiResponse = async (payload: ProviderRequest): Promise<ProviderResult> => {
+  const startedAt = Date.now();
   const genAI = new GoogleGenAI({ apiKey: requireEnv('geminiApiKey').trim() });
   const contextSummary = await refreshContextSummary({
     genAI,
@@ -476,8 +300,6 @@ export const generatePlutoResponse = async (payload: {
     history: payload.history,
     contextSummaryText: contextSummary?.text,
   });
-  let lastError: unknown;
-
   const currentTurn = {
     role: 'user' as const,
     parts: [
@@ -491,129 +313,101 @@ export const generatePlutoResponse = async (payload: {
     ],
   };
 
-  for (let attempt = 0; attempt < GEMINI_MODEL_FALLBACK_ORDER.length; attempt += 1) {
-    const model = GEMINI_MODEL_FALLBACK_ORDER[attempt];
-
-    try {
-      const response = await genAI.models.generateContent({
-        model,
-        contents: buildGeminiContents({
-          history,
-          currentTurn,
-          contextSummary,
-        }),
-        config: {
-          systemInstruction: buildSystemInstruction(
-            payload.educationLevel,
-            payload.mode,
-            payload.objective,
-            payload.plan
-          ),
-          maxOutputTokens: payload.maxOutputTokens,
-        },
-      });
-      const text = sanitizeResponse(response.text ?? '');
-      const metadata = response.usageMetadata;
-      const estimatedUsage = buildEstimatedUsage({
-        prompt: payload.prompt,
-        educationLevel: payload.educationLevel,
-        mode: payload.mode,
-        objective: payload.objective,
-        history: payload.history,
-        contextSummaryText: contextSummary?.text,
-        answer: text,
-      });
-      const providerUsage: TokenUsage | null =
-        metadata &&
-        typeof metadata.promptTokenCount === 'number' &&
-        typeof metadata.candidatesTokenCount === 'number' &&
-        typeof metadata.totalTokenCount === 'number'
-          ? {
-              inputTokens: metadata.promptTokenCount,
-              outputTokens: metadata.candidatesTokenCount,
-              totalTokens: metadata.totalTokenCount,
-              usageSource: 'provider',
-            }
-          : null;
-      const normalizedUsage = normalizeTokenUsage({
-        providerUsage,
-        estimatedUsage,
-        estimatedInputTokens,
-        maxOutputTokens: payload.maxOutputTokens,
-      });
-      const modelUsed = getModelUsed(model);
-
-      logger.info('gemini_success', {
-        eventType: 'gemini_success',
-        requestId: payload.requestId ?? null,
-        model,
-        modelUsed,
-        attempt: attempt + 1,
-        mode: payload.mode,
-        plan: payload.plan,
-      });
-
-      return {
-        text,
+  try {
+    const response = await genAI.models.generateContent({
+      model: PRIMARY_MODEL,
+      contents: buildGeminiContents({
+        history,
+        currentTurn,
         contextSummary,
-        usage: normalizedUsage.usage,
-        usageAnomaly: normalizedUsage.anomalyReason,
-        modelUsed,
-      };
-    } catch (error) {
-      lastError = error;
-      const providerError = getProviderErrorDetails(error);
-      const retryable = isRetryableGeminiError(error);
-      const hasFallbackModel = attempt + 1 < GEMINI_MODEL_FALLBACK_ORDER.length;
-      const fallbackDelayMs = providerError.status === 503 ? 0 : GEMINI_RETRY_BACKOFFS_MS[attempt + 1] ?? 0;
-      logger.error('gemini_generate_content_attempt_failed', {
-        eventType: 'gemini_generate_content_attempt_failed',
-        requestId: payload.requestId ?? null,
-        model,
-        primaryModel: PRIMARY_MODEL,
-        fallbackModel: FALLBACK_MODEL,
-        attempt: attempt + 1,
-        maxAttempts: GEMINI_MODEL_FALLBACK_ORDER.length,
-        mode: payload.mode,
-        plan: payload.plan,
-        promptLength: payload.prompt.length,
-        historyMessageCount: payload.history.length,
-        attachmentCount: payload.attachments.length,
-        attachmentSummary: payload.attachments.map((attachment) => ({
-          name: attachment.name,
-          mimeType: attachment.mimeType,
-          sizeBytes: attachment.sizeBytes,
-        })),
-        providerStatus: providerError.status,
-        providerCode: providerError.code,
-        nextRetryDelayMs: retryable && hasFallbackModel ? fallbackDelayMs : null,
-        willFallbackToModel: retryable && hasFallbackModel ? FALLBACK_MODEL : null,
-        errorMessage: providerError.message,
-        errorDetails: providerError.details,
-        stack: providerError.stack,
-      });
-      if (providerError.status === 503 && payload.uid && payload.requestId) {
-        await recordGemini503(payload.uid, payload.requestId).catch(() => undefined);
-      }
-      if (!retryable || !hasFallbackModel) {
-        throw error;
-      }
-      if (providerError.status === 503) {
-        logger.warn('gemini_503_fallback_to_lite', {
-          eventType: 'gemini_503_fallback_to_lite',
-          requestId: payload.requestId ?? null,
-          primaryModel: PRIMARY_MODEL,
-          fallbackModel: FALLBACK_MODEL,
-          mode: payload.mode,
-          plan: payload.plan,
-        });
-      } else if (fallbackDelayMs > 0) {
-        const jitter = Math.floor(Math.random() * (GEMINI_RETRY_JITTER_MS + 1));
-        await wait(fallbackDelayMs + jitter);
-      }
-      continue;
-    }
-  }
+      }),
+      config: {
+        systemInstruction: buildSystemInstruction(
+          payload.educationLevel,
+          payload.mode,
+          payload.objective,
+          payload.plan
+        ),
+        maxOutputTokens: payload.maxOutputTokens,
+      },
+    });
+    const text = sanitizeResponse(response.text ?? '');
+    const metadata = response.usageMetadata;
+    const estimatedUsage = buildEstimatedUsage({
+      prompt: payload.prompt,
+      educationLevel: payload.educationLevel,
+      mode: payload.mode,
+      objective: payload.objective,
+      history: payload.history,
+      contextSummaryText: contextSummary?.text,
+      answer: text,
+    });
+    const providerUsage: TokenUsage | null =
+      metadata &&
+      typeof metadata.promptTokenCount === 'number' &&
+      typeof metadata.candidatesTokenCount === 'number' &&
+      typeof metadata.totalTokenCount === 'number'
+        ? {
+            inputTokens: metadata.promptTokenCount,
+            outputTokens: metadata.candidatesTokenCount,
+            totalTokens: metadata.totalTokenCount,
+            usageSource: 'provider',
+          }
+        : null;
+    const normalizedUsage = normalizeTokenUsage({
+      providerUsage,
+      estimatedUsage,
+      estimatedInputTokens,
+      maxOutputTokens: payload.maxOutputTokens,
+    });
+    const modelUsed = getModelUsed();
 
-  throw lastError ?? new Error('Gemini request failed.');
+    logger.info('gemini_success', {
+      eventType: 'gemini_success',
+      requestId: payload.requestId ?? null,
+      model: PRIMARY_MODEL,
+      modelUsed,
+      mode: payload.mode,
+      plan: payload.plan,
+    });
+
+    return {
+      text,
+      contextSummary,
+      usage: normalizedUsage.usage,
+      usageAnomaly: normalizedUsage.anomalyReason,
+      provider: 'gemini',
+      modelId: PRIMARY_MODEL,
+      modelUsed,
+      latencyMs: Date.now() - startedAt,
+    };
+  } catch (error) {
+    const providerError = getProviderErrorDetails(error);
+    logger.error('gemini_generate_content_failed', {
+      eventType: 'gemini_generate_content_failed',
+      requestId: payload.requestId ?? null,
+      model: PRIMARY_MODEL,
+      mode: payload.mode,
+      plan: payload.plan,
+      promptLength: payload.prompt.length,
+      historyMessageCount: payload.history.length,
+      attachmentCount: payload.attachments.length,
+      attachmentSummary: payload.attachments.map((attachment) => ({
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        sizeBytes: attachment.sizeBytes,
+      })),
+      providerStatus: providerError.status,
+      providerCode: providerError.code,
+      errorMessage: providerError.message,
+      errorDetails: providerError.details,
+      stack: providerError.stack,
+    });
+    if (providerError.status === 503 && payload.uid && payload.requestId) {
+      await recordGemini503(payload.uid, payload.requestId).catch(() => undefined);
+    }
+    throw error;
+  }
 };
+
+export const generatePlutoResponse = generateGeminiResponse;

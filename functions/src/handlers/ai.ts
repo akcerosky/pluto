@@ -15,7 +15,7 @@ import {
   releaseReservedUsageTokens,
   reserveUsageTokens,
 } from '../services/firestoreRepo.js';
-import { generatePlutoResponse } from '../services/gemini.js';
+import { executeHybridAiRequest } from '../services/ai/orchestrator.js';
 import {
   acquireAiRequest,
   completeAiRequest,
@@ -795,9 +795,9 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
     throw error;
   }
 
-  let result: Awaited<ReturnType<typeof generatePlutoResponse>>;
+  let result: Awaited<ReturnType<typeof executeHybridAiRequest>>;
   try {
-    result = await generatePlutoResponse({
+    result = await executeHybridAiRequest({
       prompt: payload.prompt,
       educationLevel: payload.educationLevel,
       mode: payload.mode,
@@ -893,6 +893,7 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
     const response = {
       answer: result.text,
       modelUsed: result.modelUsed,
+      provider: result.finalProvider,
       contextSummary: result.contextSummary ?? null,
       usagePendingSync: true,
       subscription: snapshot.subscription,
@@ -965,6 +966,7 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
   const response = {
     answer: result.text,
     modelUsed: result.modelUsed,
+    provider: result.finalProvider,
     contextSummary: result.contextSummary ?? null,
     usagePendingSync: false,
     subscription: snapshot.subscription,
