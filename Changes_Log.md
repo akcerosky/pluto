@@ -358,10 +358,20 @@
 - Updated `src/lib/plutoApi.ts` to align the client request path with the current backend retry/fallback behavior.
 - Added small repo hygiene updates in `.gitignore`, `README.md`, and `eslint.config.js`.
 
-### Verification, Deployment, and Release Work
+### Nova Hybrid Routing Rollout
 
-- Ran and passed Functions Jest coverage: `37/37` tests, `10/10` suites, Functions TypeScript build, frontend production build, lint check.
-- Deployed Firebase Functions to `pluto-ef61b`, including the updated `aiChat` function in `asia-south1`.
-- Committed the verified code on `chat-stability` as `d89cfc2` with message `Improve chat stability and app resilience`, then pushed the branch to GitHub.
-- Deployed the latest frontend to EC2 from the same `chat-stability` branch using `scripts/deploy-frontend-ec2.sh`.
-- Verified the EC2 app directory was on branch `chat-stability` at commit `d89cfc2`, confirmed `dist` existed, and validated `https://pluto.akcero.ai` returned HTTP `200`.
+- Added deterministic AI provider routing so attachment requests go to Gemini and text-only requests go to Nova Micro.
+- Introduced provider-isolated AI orchestration under `functions/src/services/ai/` and the compiled `functions/lib/services/ai/` output.
+- Added Nova retry and terminal Gemini fallback coverage in `functions/src/services/ai/orchestrator.test.ts` and routing coverage in `functions/src/services/ai/router.test.ts`.
+- Refactored the Gemini path into a single-attempt provider executor and updated client response typing in `src/lib/plutoApi.ts`.
+- Added Bedrock secret/config support in `functions/src/config/secrets.ts`, `functions/src/config/env.ts`, and `functions/.env.example`.
+- Fixed the Nova provider endpoint to use the correct AWS Bedrock runtime hostname and switched the default Bedrock path to `BEDROCK_REGION=ap-south-1` with `BEDROCK_NOVA_MICRO_MODEL_ID=apac.amazon.nova-micro-v1:0`.
+
+### Verification and Deployment
+
+- Ran and passed local verification: root lint, frontend production build, Functions TypeScript build, and Functions Jest tests (`40/40` tests, `12/12` suites).
+- Deployed Firebase Functions to `pluto-ef61b`, including the updated hybrid `aiChat` path in `asia-south1`.
+- Created branch `nova-hybrid`, committed the verified code as `6d75d89` with message `Add Nova hybrid routing with Gemini attachment fallback`, and pushed the branch to GitHub.
+- Deployed the frontend to EC2 from `nova-hybrid`, built successfully on the server, and reloaded Nginx.
+- Verified `https://pluto.akcero.ai` returned HTTP `200`.
+- Verified the EC2 app directory is now on branch `nova-hybrid` at commit `6d75d89`.
