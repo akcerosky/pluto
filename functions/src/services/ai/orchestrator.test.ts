@@ -1,6 +1,8 @@
 jest.mock('./providers/geminiProvider.js', () => ({
   geminiProvider: {
     provider: 'gemini',
+    configuredModelId: 'gemini-2.5-flash',
+    configuredModelUsed: 'gemini-2.5-flash',
     execute: jest.fn(),
   },
 }));
@@ -8,6 +10,8 @@ jest.mock('./providers/geminiProvider.js', () => ({
 jest.mock('./providers/novaMicroProvider.js', () => ({
   novaMicroProvider: {
     provider: 'nova-micro',
+    configuredModelId: 'amazon.nova-micro-v1:0',
+    configuredModelUsed: 'nova-micro',
     execute: jest.fn(),
   },
   isRetryableNovaError: jest.fn(),
@@ -30,6 +34,7 @@ const geminiExecute = geminiProvider.execute as jest.Mock;
 const novaExecute = novaMicroProvider.execute as jest.Mock;
 const isRetryableNovaErrorMock = isRetryableNovaError as jest.Mock;
 const loggerWarn = (logger.warn ?? jest.fn()) as jest.Mock;
+const loggerInfo = (logger.info ?? jest.fn()) as jest.Mock;
 
 const baseRequest = {
   prompt: 'Explain inertia',
@@ -67,6 +72,7 @@ beforeEach(() => {
   novaExecute.mockReset();
   isRetryableNovaErrorMock.mockReset();
   loggerWarn.mockReset();
+  loggerInfo.mockReset();
 });
 
 test('text request uses nova with no fallback on first-attempt success', async () => {
@@ -89,7 +95,9 @@ test('text request falls back to gemini only after three nova failures', async (
     .mockRejectedValueOnce(failure)
     .mockRejectedValueOnce(failure);
   isRetryableNovaErrorMock.mockReturnValue(true);
-  geminiExecute.mockResolvedValueOnce(successResult('gemini', 'gemini-2.5-flash', 'flash'));
+  geminiExecute.mockResolvedValueOnce(
+    successResult('gemini', 'gemini-2.5-flash', 'gemini-2.5-flash')
+  );
 
   const result = await executeHybridAiRequest(baseRequest);
 
@@ -110,7 +118,9 @@ test('text request falls back to gemini only after three nova failures', async (
 });
 
 test('attachment request uses gemini only', async () => {
-  geminiExecute.mockResolvedValueOnce(successResult('gemini', 'gemini-2.5-flash', 'flash'));
+  geminiExecute.mockResolvedValueOnce(
+    successResult('gemini', 'gemini-2.5-flash-lite', 'gemini-2.5-flash-lite')
+  );
 
   const result = await executeHybridAiRequest({
     ...baseRequest,
@@ -129,13 +139,16 @@ test('attachment request uses gemini only', async () => {
   expect(result.primaryProvider).toBe('gemini');
   expect(result.finalProvider).toBe('gemini');
   expect(result.fallbackTriggered).toBe(false);
+  expect(result.modelUsed).toBe('gemini-2.5-flash-lite');
 });
 
 test('non-retryable nova failure does not exceed retry cap before gemini fallback', async () => {
   const failure = { status: 400, message: 'bad request' };
   novaExecute.mockRejectedValueOnce(failure);
   isRetryableNovaErrorMock.mockReturnValue(false);
-  geminiExecute.mockResolvedValueOnce(successResult('gemini', 'gemini-2.5-flash', 'flash'));
+  geminiExecute.mockResolvedValueOnce(
+    successResult('gemini', 'gemini-2.5-flash', 'gemini-2.5-flash')
+  );
 
   const result = await executeHybridAiRequest(baseRequest);
 
@@ -143,4 +156,33 @@ test('non-retryable nova failure does not exceed retry cap before gemini fallbac
   expect(geminiExecute).toHaveBeenCalledTimes(1);
   expect(result.finalProvider).toBe('gemini');
   expect(result.fallbackTriggered).toBe(true);
+});
+
+test('completion logs include modelUsed and failure errors carry model metadata', async () => {
+  const failure = { status: 503, message: 'temporary outage' };
+  novaExecute.mockRejectedValueOnce(failure);
+  isRetryableNovaErrorMock.mockReturnValue(true);
+  geminiExecute.mockResolvedValueOnce(
+    successResult('gemini', 'gemini-2.5-flash-lite', 'gemini-2.5-flash-lite')
+  );
+
+  const result = await executeHybridAiRequest(baseRequest);
+
+  expect(result.modelUsed).toBe('gemini-2.5-flash-lite');
+  expect(loggerInfo).toHaveBeenCalledWith(
+    'ai_request_completed',
+    expect.objectContaining({
+      eventType: 'ai_request_completed',
+      requestId: baseRequest.requestId,
+      modelUsed: 'gemini-2.5-flash-lite',
+      finalModelId: 'gemini-2.5-flash-lite',
+    })
+  );
+  expect(failure).toMatchObject({
+    provider: 'nova-micro',
+    modelId: 'amazon.nova-micro-v1:0',
+    modelUsed: 'nova-micro',
+    attemptNumber: 1,
+    retryEligible: true,
+  });
 });

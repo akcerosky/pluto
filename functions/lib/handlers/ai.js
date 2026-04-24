@@ -120,6 +120,11 @@ const getErrorDetails = (error) => {
         stack: typeof error.stack === 'string' ? error.stack : error instanceof Error ? error.stack : undefined,
         status: typeof error.status === 'number' ? error.status : null,
         code: typeof error.code === 'string' ? error.code : null,
+        provider: typeof error.provider === 'string' ? error.provider : null,
+        modelId: typeof error.modelId === 'string' ? error.modelId : null,
+        modelUsed: typeof error.modelUsed === 'string' ? error.modelUsed : null,
+        attemptNumber: typeof error.attemptNumber === 'number' ? error.attemptNumber : null,
+        retryEligible: typeof error.retryEligible === 'boolean' ? error.retryEligible : null,
         details: 'details' in error ? error.details : undefined,
     };
 };
@@ -639,6 +644,11 @@ export const aiChatHandler = async (request) => {
             estimatedInputTokens: reservationEstimate.inputTokens,
             reservedTokens: reservationEstimate.reservedTokens,
             remainingBefore: snapshot.remainingTodayTokens,
+            provider: errorDetails.provider,
+            modelId: errorDetails.modelId,
+            modelUsed: errorDetails.modelUsed,
+            attemptNumber: errorDetails.attemptNumber,
+            retryEligible: errorDetails.retryEligible,
             providerStatus: errorDetails.status,
             providerCode: errorDetails.code,
             errorMessage: errorDetails.message,
@@ -702,6 +712,27 @@ export const aiChatHandler = async (request) => {
         remainingAfter: reconciledUsage.remainingTodayTokens,
         status: 'success',
     });
+    if (decodedAttachments.some((attachment) => attachment.mimeType === 'application/pdf') &&
+        result.usage.usageSource === 'provider' &&
+        result.usage.inputTokens > 8000) {
+        logger.warn('high_pdf_token_cost', {
+            eventType: 'high_pdf_token_cost',
+            uid,
+            requestId,
+            plan,
+            provider: result.finalProvider,
+            modelId: result.modelId,
+            modelUsed: result.modelUsed,
+            providerInputTokens: result.usage.inputTokens,
+            outputTokens: result.usage.outputTokens,
+            totalTokens: result.usage.totalTokens,
+            attachmentCount: decodedAttachments.length,
+            pdfAttachmentCount: decodedAttachments.filter((attachment) => attachment.mimeType === 'application/pdf').length,
+            largestPdfBytes: decodedAttachments
+                .filter((attachment) => attachment.mimeType === 'application/pdf')
+                .reduce((max, attachment) => Math.max(max, attachment.sizeBytes), 0),
+        });
+    }
     logAiQuotaMetric('reserved_actual_delta', {
         uid,
         requestId,

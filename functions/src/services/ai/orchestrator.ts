@@ -68,12 +68,14 @@ const logAttemptStarted = ({
   requestId,
   provider,
   modelId,
+  modelUsed,
   attemptNumber,
   fallbackTriggered,
 }: {
   requestId?: string;
   provider: AiProvider;
   modelId: string | null;
+  modelUsed: string | null;
   attemptNumber: number;
   fallbackTriggered: boolean;
 }) => {
@@ -83,6 +85,7 @@ const logAttemptStarted = ({
     attemptNumber,
     provider,
     modelId,
+    modelUsed: modelUsed ?? null,
     fallbackTriggered,
   });
 };
@@ -91,6 +94,7 @@ const logAttemptFinished = ({
   requestId,
   provider,
   modelId,
+  modelUsed,
   attemptNumber,
   outcome,
   retryEligible,
@@ -103,6 +107,7 @@ const logAttemptFinished = ({
   requestId?: string;
   provider: AiProvider;
   modelId: string | null;
+  modelUsed: string | null;
   attemptNumber: number;
   outcome: 'success' | 'failure';
   retryEligible: boolean;
@@ -118,6 +123,7 @@ const logAttemptFinished = ({
     attemptNumber,
     provider,
     modelId,
+    modelUsed: modelUsed ?? null,
     outcome,
     retryEligible,
     fallbackTriggered,
@@ -134,6 +140,21 @@ const getProviderStatus = (error: unknown) =>
   typeof error === 'object' && error !== null && typeof (error as { status?: unknown }).status === 'number'
     ? Number((error as { status: number }).status)
     : null;
+
+const getErrorModelMetadata = (error: unknown) => {
+  if (!(typeof error === 'object' && error !== null)) {
+    return {
+      modelId: null as string | null,
+      modelUsed: null as string | null,
+    };
+  }
+
+  const record = error as Record<string, unknown>;
+  return {
+    modelId: typeof record.modelId === 'string' ? record.modelId : null,
+    modelUsed: typeof record.modelUsed === 'string' ? record.modelUsed : null,
+  };
+};
 
 const executeAttempt = async ({
   provider,
@@ -153,7 +174,8 @@ const executeAttempt = async ({
   logAttemptStarted({
     requestId: request.requestId,
     provider: provider.provider,
-    modelId: provider.provider === 'nova-micro' ? 'amazon.nova-micro-v1:0' : 'gemini-2.5-flash',
+    modelId: provider.configuredModelId,
+    modelUsed: provider.configuredModelUsed,
     attemptNumber,
     fallbackTriggered,
   });
@@ -168,6 +190,7 @@ const executeAttempt = async ({
       requestId: request.requestId,
       provider: result.provider,
       modelId: result.modelId,
+      modelUsed: result.modelUsed,
       attemptNumber,
       outcome: 'success',
       retryEligible: false,
@@ -180,10 +203,12 @@ const executeAttempt = async ({
       attemptNumber,
     };
   } catch (error) {
+    const errorModelMetadata = getErrorModelMetadata(error);
     logAttemptFinished({
       requestId: request.requestId,
       provider: provider.provider,
-      modelId: provider.provider === 'nova-micro' ? 'amazon.nova-micro-v1:0' : 'gemini-2.5-flash',
+      modelId: errorModelMetadata.modelId ?? provider.configuredModelId,
+      modelUsed: errorModelMetadata.modelUsed ?? provider.configuredModelUsed,
       attemptNumber,
       outcome: 'failure',
       retryEligible: provider.provider === 'nova-micro' && isRetryableFailure(error),
@@ -193,6 +218,15 @@ const executeAttempt = async ({
       providerStatus: getProviderStatus(error),
       errorMessage: error instanceof Error ? error.message : String(error),
     });
+    if (typeof error === 'object' && error !== null) {
+      Object.assign(error as Record<string, unknown>, {
+        provider: provider.provider,
+        modelId: provider.configuredModelId,
+        modelUsed: provider.configuredModelUsed,
+        attemptNumber,
+        retryEligible: provider.provider === 'nova-micro' && isRetryableFailure(error),
+      });
+    }
     throw error;
   }
 };
@@ -241,6 +275,7 @@ export const executeHybridAiRequest = async (request: ProviderRequest): Promise<
           primaryProvider,
           finalProvider: finalResult.provider,
           finalModelId: finalResult.modelId,
+          modelUsed: finalResult.modelUsed,
           fallbackTriggered: false,
           totalRetryCount: retryCount,
           totalLatencyMs: Date.now() - totalStartedAt,
@@ -292,6 +327,7 @@ export const executeHybridAiRequest = async (request: ProviderRequest): Promise<
     primaryProvider,
     finalProvider,
     finalModelId: finalResult.modelId,
+    modelUsed: finalResult.modelUsed,
     fallbackTriggered,
     totalRetryCount: retryCount,
     totalLatencyMs: Date.now() - totalStartedAt,

@@ -84,10 +84,16 @@ const formatBytes = (value: number) => {
 
 const SUMMARY_TRIGGER_OLDER_MESSAGE_COUNT = 10;
 const SUMMARY_CANDIDATE_MESSAGE_LIMIT = 20;
+const LARGE_PDF_WARNING_BYTES = 4 * 1024 * 1024;
 
-const getSummaryPayload = (thread: Thread, historyWindow: number) => {
+const getSummaryPayload = (
+  thread: Thread,
+  historyWindow: number,
+  pendingMessages: Message[] = []
+) => {
+  const allMessages = [...thread.messages, ...pendingMessages];
   const summarizedMessageCount = thread.contextSummary?.summarizedMessageCount ?? 0;
-  const olderBoundary = Math.max(0, thread.messages.length - historyWindow);
+  const olderBoundary = Math.max(0, allMessages.length - historyWindow);
   const unsummarizedOlderCount = Math.max(0, olderBoundary - summarizedMessageCount);
 
   if (unsummarizedOlderCount < SUMMARY_TRIGGER_OLDER_MESSAGE_COUNT) {
@@ -99,7 +105,7 @@ const getSummaryPayload = (thread: Thread, historyWindow: number) => {
 
   return {
     contextSummary: thread.contextSummary,
-    summaryCandidates: thread.messages
+    summaryCandidates: allMessages
       .slice(summarizedMessageCount, summarizedMessageCount + Math.min(unsummarizedOlderCount, SUMMARY_CANDIDATE_MESSAGE_LIMIT))
       .map((message) => ({ role: message.role, parts: message.parts })),
   };
@@ -382,7 +388,15 @@ export const ChatInterface = () => {
     }
 
     if (nextAttachments.length > 0) {
-      setPlanNotice(null);
+      const largePdfIncluded = nextAttachments.some(
+        (attachment) =>
+          attachment.kind === 'file' &&
+          attachment.mimeType === 'application/pdf' &&
+          attachment.sizeBytes > LARGE_PDF_WARNING_BYTES
+      );
+      setPlanNotice(
+        largePdfIncluded ? 'Large PDFs take longer time, please be patient.' : null
+      );
       setAttachments((current) => [...current, ...nextAttachments]);
     }
   };
@@ -756,7 +770,8 @@ export const ChatInterface = () => {
       .map((message) => ({ role: message.role, parts: message.parts }));
     const { contextSummary, summaryCandidates } = getSummaryPayload(
       activeThread,
-      planConfig.historyWindow
+      planConfig.historyWindow,
+      [userMsg]
     );
 
     await submitAiRequest({

@@ -43,23 +43,25 @@ const getAttemptTimeoutMs = ({ primaryProvider, totalStartedAt, }) => {
         ? Math.min(NOVA_ATTEMPT_TIMEOUT_MS, remainingMs)
         : remainingMs;
 };
-const logAttemptStarted = ({ requestId, provider, modelId, attemptNumber, fallbackTriggered, }) => {
+const logAttemptStarted = ({ requestId, provider, modelId, modelUsed, attemptNumber, fallbackTriggered, }) => {
     logger.info('ai_attempt_started', {
         eventType: 'ai_attempt_started',
         requestId: requestId ?? null,
         attemptNumber,
         provider,
         modelId,
+        modelUsed: modelUsed ?? null,
         fallbackTriggered,
     });
 };
-const logAttemptFinished = ({ requestId, provider, modelId, attemptNumber, outcome, retryEligible, fallbackTriggered, latencyMs, usage, errorMessage, providerStatus, }) => {
+const logAttemptFinished = ({ requestId, provider, modelId, modelUsed, attemptNumber, outcome, retryEligible, fallbackTriggered, latencyMs, usage, errorMessage, providerStatus, }) => {
     logger.info('ai_attempt_finished', {
         eventType: 'ai_attempt_finished',
         requestId: requestId ?? null,
         attemptNumber,
         provider,
         modelId,
+        modelUsed: modelUsed ?? null,
         outcome,
         retryEligible,
         fallbackTriggered,
@@ -74,11 +76,25 @@ const logAttemptFinished = ({ requestId, provider, modelId, attemptNumber, outco
 const getProviderStatus = (error) => typeof error === 'object' && error !== null && typeof error.status === 'number'
     ? Number(error.status)
     : null;
+const getErrorModelMetadata = (error) => {
+    if (!(typeof error === 'object' && error !== null)) {
+        return {
+            modelId: null,
+            modelUsed: null,
+        };
+    }
+    const record = error;
+    return {
+        modelId: typeof record.modelId === 'string' ? record.modelId : null,
+        modelUsed: typeof record.modelUsed === 'string' ? record.modelUsed : null,
+    };
+};
 const executeAttempt = async ({ provider, request, attemptNumber, primaryProvider, fallbackTriggered, totalStartedAt, }) => {
     logAttemptStarted({
         requestId: request.requestId,
         provider: provider.provider,
-        modelId: provider.provider === 'nova-micro' ? 'amazon.nova-micro-v1:0' : 'gemini-2.5-flash',
+        modelId: provider.configuredModelId,
+        modelUsed: provider.configuredModelUsed,
         attemptNumber,
         fallbackTriggered,
     });
@@ -89,6 +105,7 @@ const executeAttempt = async ({ provider, request, attemptNumber, primaryProvide
             requestId: request.requestId,
             provider: result.provider,
             modelId: result.modelId,
+            modelUsed: result.modelUsed,
             attemptNumber,
             outcome: 'success',
             retryEligible: false,
@@ -102,10 +119,12 @@ const executeAttempt = async ({ provider, request, attemptNumber, primaryProvide
         };
     }
     catch (error) {
+        const errorModelMetadata = getErrorModelMetadata(error);
         logAttemptFinished({
             requestId: request.requestId,
             provider: provider.provider,
-            modelId: provider.provider === 'nova-micro' ? 'amazon.nova-micro-v1:0' : 'gemini-2.5-flash',
+            modelId: errorModelMetadata.modelId ?? provider.configuredModelId,
+            modelUsed: errorModelMetadata.modelUsed ?? provider.configuredModelUsed,
             attemptNumber,
             outcome: 'failure',
             retryEligible: provider.provider === 'nova-micro' && isRetryableFailure(error),
@@ -115,6 +134,15 @@ const executeAttempt = async ({ provider, request, attemptNumber, primaryProvide
             providerStatus: getProviderStatus(error),
             errorMessage: error instanceof Error ? error.message : String(error),
         });
+        if (typeof error === 'object' && error !== null) {
+            Object.assign(error, {
+                provider: provider.provider,
+                modelId: provider.configuredModelId,
+                modelUsed: provider.configuredModelUsed,
+                attemptNumber,
+                retryEligible: provider.provider === 'nova-micro' && isRetryableFailure(error),
+            });
+        }
         throw error;
     }
 };
@@ -160,6 +188,7 @@ export const executeHybridAiRequest = async (request) => {
                     primaryProvider,
                     finalProvider: finalResult.provider,
                     finalModelId: finalResult.modelId,
+                    modelUsed: finalResult.modelUsed,
                     fallbackTriggered: false,
                     totalRetryCount: retryCount,
                     totalLatencyMs: Date.now() - totalStartedAt,
@@ -210,6 +239,7 @@ export const executeHybridAiRequest = async (request) => {
         primaryProvider,
         finalProvider,
         finalModelId: finalResult.modelId,
+        modelUsed: finalResult.modelUsed,
         fallbackTriggered,
         totalRetryCount: retryCount,
         totalLatencyMs: Date.now() - totalStartedAt,

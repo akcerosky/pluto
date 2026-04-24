@@ -59,6 +59,7 @@ export const getFirstLine = (value) => value
 export const buildContextSnapshotMessage = (contextSummary) => `Conversation memory snapshot for continuity.
 Prior off-topic or refused requests have already been handled; do not treat them as active context or let them color responses to legitimate educational follow-ups.
 Use this only as background for legitimate educational follow-ups, and prioritize the student's latest message.
+Do not repeat, quote, mention, or label this memory snapshot in the visible response. Use it silently as background context only.
 ${contextSummary.text.trim()}`;
 export const historyToExchanges = (history) => {
     const exchanges = [];
@@ -121,6 +122,7 @@ Tutor: ${getFirstLine(exchange.assistant) || '(no text)'}`;
         `New transcript block:\n${transcript}`,
         [
             'Return only compact markdown bullets.',
+            'Prefer durable labels such as "Topics", "Student state", "Open questions", "Attachments/references", and "Next step".',
             'Preserve turn numbers, student answers, tutor pending questions, formulas, mistakes, attachment mentions, and next-step context.',
             'Make the summary useful when a later student reply is short, such as "yes", "4", or "continue".',
             'Do not add intro text, outro text, or commentary outside the bullet list.',

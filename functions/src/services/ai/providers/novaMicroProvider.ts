@@ -96,20 +96,32 @@ const buildNovaMessages = (request: ProviderRequest) => {
   }));
 
   const prompt = request.prompt.trim();
-  const contextText = request.contextSummary?.text.trim()
-    ? buildContextSnapshotMessage(request.contextSummary)
-    : '';
-  const currentText = contextText
-    ? `${contextText}\n\nLatest student message:\n${prompt}`
-    : prompt;
 
   return [
     ...history,
     {
       role: 'user',
-      content: [{ text: currentText || 'Continue helping the student.' }],
+      content: [{ text: prompt || 'Continue helping the student.' }],
     },
   ];
+};
+
+const buildNovaSystemMessages = ({
+  systemInstruction,
+  contextSummary,
+}: {
+  systemInstruction: string;
+  contextSummary?: ThreadContextSummary;
+}) => {
+  const messages = [{ text: systemInstruction }];
+
+  if (contextSummary?.text.trim()) {
+    messages.push({
+      text: buildContextSnapshotMessage(contextSummary),
+    });
+  }
+
+  return messages;
 };
 
 const extractConverseText = (response: unknown) => {
@@ -159,10 +171,12 @@ const validateNovaText = (text: string) => {
 const callNovaConverse = async ({
   request,
   systemInstruction,
+  contextSummary,
   maxOutputTokens,
 }: {
   request: ProviderRequest;
   systemInstruction: string;
+  contextSummary?: ThreadContextSummary;
   maxOutputTokens: number;
 }) => {
   const modelId = getNovaModelId();
@@ -173,7 +187,7 @@ const callNovaConverse = async ({
       Authorization: `Bearer ${getNovaApiKey().trim()}`,
     },
     body: JSON.stringify({
-      system: [{ text: systemInstruction }],
+      system: buildNovaSystemMessages({ systemInstruction, contextSummary }),
       messages: buildNovaMessages(request),
       inferenceConfig: {
         maxTokens: maxOutputTokens,
@@ -247,6 +261,7 @@ const refreshContextSummary = async (
         maxOutputTokens: 700,
       },
       systemInstruction,
+      contextSummary: undefined,
       maxOutputTokens: 700,
     });
     const text = clampSummaryText(sanitizeResponse(extractConverseText(payload)));
@@ -283,6 +298,7 @@ export const generateNovaMicroResponse = async (request: ProviderRequest): Promi
   const { modelId, payload } = await callNovaConverse({
     request: providerRequest,
     systemInstruction,
+    contextSummary,
     maxOutputTokens: request.maxOutputTokens,
   });
   const text = sanitizeResponse(extractConverseText(payload));
@@ -318,5 +334,7 @@ export const generateNovaMicroResponse = async (request: ProviderRequest): Promi
 
 export const novaMicroProvider: ProviderExecutor = {
   provider: 'nova-micro',
+  configuredModelId: getNovaModelId(),
+  configuredModelUsed: 'nova-micro',
   execute: generateNovaMicroResponse,
 };

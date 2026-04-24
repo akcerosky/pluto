@@ -35,6 +35,8 @@ export interface AttemptExecutionResult extends ProviderResult {
 
 export interface ProviderExecutor {
   provider: AiProvider;
+  configuredModelId: string;
+  configuredModelUsed: string;
   execute: (request: ProviderRequest) => Promise<ProviderResult>;
 }
 

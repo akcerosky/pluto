@@ -18,6 +18,7 @@ const FOLLOWUP_TAILS = [
     'if you want more, ask me.',
 ];
 const PRIMARY_MODEL = 'gemini-2.5-flash';
+const FALLBACK_MODEL = 'gemini-2.5-flash-lite';
 export const refreshContextSummary = async (payload) => {
     if (payload.summaryCandidates.length === 0) {
         return payload.contextSummary;
@@ -105,7 +106,8 @@ export const isRetryableGeminiError = (error) => {
     const code = String(providerError.code ?? providerError.message ?? '').toUpperCase();
     return status === 500 || status === 503 || code.includes('DEADLINE_EXCEEDED');
 };
-const getModelUsed = () => 'flash';
+const getModelUsed = (modelId) => modelId;
+const getAuditModelUsed = (modelId) => modelId;
 export const normalizeHistory = (history) => {
     const sanitized = history
         .map((message) => ({
@@ -222,8 +224,97 @@ export const sanitizeResponse = (text) => {
     cleaned = cleaned.trim();
     return cleaned || 'I could not generate a response for that question.';
 };
-export const generateGeminiResponse = async (payload) => {
+const logGeminiFailure = async ({ payload, modelId, error, }) => {
+    const providerError = getProviderErrorDetails(error);
+    logger.error('gemini_generate_content_failed', {
+        eventType: 'gemini_generate_content_failed',
+        requestId: payload.requestId ?? null,
+        model: modelId,
+        modelUsed: getAuditModelUsed(modelId),
+        mode: payload.mode,
+        plan: payload.plan,
+        promptLength: payload.prompt.length,
+        historyMessageCount: payload.history.length,
+        attachmentCount: payload.attachments.length,
+        attachmentSummary: payload.attachments.map((attachment) => ({
+            name: attachment.name,
+            mimeType: attachment.mimeType,
+            sizeBytes: attachment.sizeBytes,
+        })),
+        providerStatus: providerError.status,
+        providerCode: providerError.code,
+        errorMessage: providerError.message,
+        errorDetails: providerError.details,
+        stack: providerError.stack,
+    });
+    if (providerError.status === 503 && payload.uid && payload.requestId) {
+        await recordGemini503(payload.uid, payload.requestId).catch(() => undefined);
+    }
+};
+const executeGeminiModel = async ({ genAI, payload, modelId, contextSummary, history, currentTurn, estimatedInputTokens, }) => {
     const startedAt = Date.now();
+    const response = await genAI.models.generateContent({
+        model: modelId,
+        contents: buildGeminiContents({
+            history,
+            currentTurn,
+            contextSummary,
+        }),
+        config: {
+            systemInstruction: buildSystemInstruction(payload.educationLevel, payload.mode, payload.objective, payload.plan),
+            maxOutputTokens: payload.maxOutputTokens,
+        },
+    });
+    const text = sanitizeResponse(response.text ?? '');
+    const metadata = response.usageMetadata;
+    const estimatedUsage = buildEstimatedUsage({
+        prompt: payload.prompt,
+        educationLevel: payload.educationLevel,
+        mode: payload.mode,
+        objective: payload.objective,
+        history: payload.history,
+        contextSummaryText: contextSummary?.text,
+        answer: text,
+    });
+    const providerUsage = metadata &&
+        typeof metadata.promptTokenCount === 'number' &&
+        typeof metadata.candidatesTokenCount === 'number' &&
+        typeof metadata.totalTokenCount === 'number'
+        ? {
+            inputTokens: metadata.promptTokenCount,
+            outputTokens: metadata.candidatesTokenCount,
+            totalTokens: metadata.totalTokenCount,
+            usageSource: 'provider',
+        }
+        : null;
+    const normalizedUsage = normalizeTokenUsage({
+        providerUsage,
+        estimatedUsage,
+        estimatedInputTokens,
+        maxOutputTokens: payload.maxOutputTokens,
+    });
+    const modelUsed = getModelUsed(modelId);
+    logger.info('gemini_success', {
+        eventType: 'gemini_success',
+        requestId: payload.requestId ?? null,
+        model: modelId,
+        modelUsed,
+        auditModelUsed: getAuditModelUsed(modelId),
+        mode: payload.mode,
+        plan: payload.plan,
+    });
+    return {
+        text,
+        contextSummary,
+        usage: normalizedUsage.usage,
+        usageAnomaly: normalizedUsage.anomalyReason,
+        provider: 'gemini',
+        modelId,
+        modelUsed,
+        latencyMs: Date.now() - startedAt,
+    };
+};
+export const generateGeminiResponse = async (payload) => {
     const genAI = new GoogleGenAI({ apiKey: requireEnv('geminiApiKey').trim() });
     const contextSummary = await refreshContextSummary({
         genAI,
@@ -256,92 +347,64 @@ export const generateGeminiResponse = async (payload) => {
         ],
     };
     try {
-        const response = await genAI.models.generateContent({
-            model: PRIMARY_MODEL,
-            contents: buildGeminiContents({
-                history,
-                currentTurn,
-                contextSummary,
-            }),
-            config: {
-                systemInstruction: buildSystemInstruction(payload.educationLevel, payload.mode, payload.objective, payload.plan),
-                maxOutputTokens: payload.maxOutputTokens,
-            },
-        });
-        const text = sanitizeResponse(response.text ?? '');
-        const metadata = response.usageMetadata;
-        const estimatedUsage = buildEstimatedUsage({
-            prompt: payload.prompt,
-            educationLevel: payload.educationLevel,
-            mode: payload.mode,
-            objective: payload.objective,
-            history: payload.history,
-            contextSummaryText: contextSummary?.text,
-            answer: text,
-        });
-        const providerUsage = metadata &&
-            typeof metadata.promptTokenCount === 'number' &&
-            typeof metadata.candidatesTokenCount === 'number' &&
-            typeof metadata.totalTokenCount === 'number'
-            ? {
-                inputTokens: metadata.promptTokenCount,
-                outputTokens: metadata.candidatesTokenCount,
-                totalTokens: metadata.totalTokenCount,
-                usageSource: 'provider',
-            }
-            : null;
-        const normalizedUsage = normalizeTokenUsage({
-            providerUsage,
-            estimatedUsage,
-            estimatedInputTokens,
-            maxOutputTokens: payload.maxOutputTokens,
-        });
-        const modelUsed = getModelUsed();
-        logger.info('gemini_success', {
-            eventType: 'gemini_success',
-            requestId: payload.requestId ?? null,
-            model: PRIMARY_MODEL,
-            modelUsed,
-            mode: payload.mode,
-            plan: payload.plan,
-        });
-        return {
-            text,
-            contextSummary,
-            usage: normalizedUsage.usage,
-            usageAnomaly: normalizedUsage.anomalyReason,
-            provider: 'gemini',
+        return await executeGeminiModel({
+            genAI,
+            payload,
             modelId: PRIMARY_MODEL,
-            modelUsed,
-            latencyMs: Date.now() - startedAt,
-        };
+            contextSummary,
+            history,
+            currentTurn,
+            estimatedInputTokens,
+        });
     }
     catch (error) {
-        const providerError = getProviderErrorDetails(error);
-        logger.error('gemini_generate_content_failed', {
-            eventType: 'gemini_generate_content_failed',
+        await logGeminiFailure({
+            payload,
+            modelId: PRIMARY_MODEL,
+            error,
+        });
+        if (!isRetryableGeminiError(error)) {
+            if (typeof error === 'object' && error !== null) {
+                Object.assign(error, {
+                    modelId: PRIMARY_MODEL,
+                    modelUsed: getModelUsed(PRIMARY_MODEL),
+                });
+            }
+            throw error;
+        }
+        logger.warn('gemini_model_fallback_triggered', {
+            eventType: 'gemini_model_fallback_triggered',
             requestId: payload.requestId ?? null,
-            model: PRIMARY_MODEL,
+            fromModel: PRIMARY_MODEL,
+            toModel: FALLBACK_MODEL,
             mode: payload.mode,
             plan: payload.plan,
-            promptLength: payload.prompt.length,
-            historyMessageCount: payload.history.length,
-            attachmentCount: payload.attachments.length,
-            attachmentSummary: payload.attachments.map((attachment) => ({
-                name: attachment.name,
-                mimeType: attachment.mimeType,
-                sizeBytes: attachment.sizeBytes,
-            })),
-            providerStatus: providerError.status,
-            providerCode: providerError.code,
-            errorMessage: providerError.message,
-            errorDetails: providerError.details,
-            stack: providerError.stack,
         });
-        if (providerError.status === 503 && payload.uid && payload.requestId) {
-            await recordGemini503(payload.uid, payload.requestId).catch(() => undefined);
+        try {
+            return await executeGeminiModel({
+                genAI,
+                payload,
+                modelId: FALLBACK_MODEL,
+                contextSummary,
+                history,
+                currentTurn,
+                estimatedInputTokens,
+            });
         }
-        throw error;
+        catch (fallbackError) {
+            await logGeminiFailure({
+                payload,
+                modelId: FALLBACK_MODEL,
+                error: fallbackError,
+            });
+            if (typeof fallbackError === 'object' && fallbackError !== null) {
+                Object.assign(fallbackError, {
+                    modelId: FALLBACK_MODEL,
+                    modelUsed: getModelUsed(FALLBACK_MODEL),
+                });
+            }
+            throw fallbackError;
+        }
     }
 };
 export const generatePlutoResponse = generateGeminiResponse;

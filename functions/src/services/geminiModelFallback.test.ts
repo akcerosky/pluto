@@ -57,18 +57,23 @@ test('Gemini success returns the primary model only', async () => {
 
   const result = await generateGeminiResponse(basePayload);
 
-  expect(result.modelUsed).toBe('flash');
+  expect(result.modelUsed).toBe('gemini-2.5-flash');
   expect(generateContent).toHaveBeenCalledTimes(1);
   expect(generateContent.mock.calls[0][0].model).toBe('gemini-2.5-flash');
 });
 
-test('Gemini 503 fails without model fallback', async () => {
-  generateContent.mockRejectedValueOnce(providerError(503));
+test('Gemini 503 falls back to flash-lite', async () => {
+  generateContent
+    .mockRejectedValueOnce(providerError(503))
+    .mockResolvedValueOnce(successResponse('Lite answer.'));
 
-  await expect(generateGeminiResponse(basePayload)).rejects.toMatchObject({ status: 503 });
+  const result = await generateGeminiResponse(basePayload);
 
-  expect(generateContent).toHaveBeenCalledTimes(1);
+  expect(result.modelUsed).toBe('gemini-2.5-flash-lite');
+  expect(result.modelId).toBe('gemini-2.5-flash-lite');
+  expect(generateContent).toHaveBeenCalledTimes(2);
   expect(generateContent.mock.calls[0][0].model).toBe('gemini-2.5-flash');
+  expect(generateContent.mock.calls[1][0].model).toBe('gemini-2.5-flash-lite');
 });
 
 test('429 fails fast without retry or fallback', async () => {
@@ -78,4 +83,20 @@ test('429 fails fast without retry or fallback', async () => {
 
   expect(generateContent).toHaveBeenCalledTimes(1);
   expect(generateContent.mock.calls[0][0].model).toBe('gemini-2.5-flash');
+});
+
+test('Gemini propagates flash-lite failure after retryable flash failure', async () => {
+  generateContent
+    .mockRejectedValueOnce(providerError(503))
+    .mockRejectedValueOnce(providerError(503));
+
+  await expect(generateGeminiResponse(basePayload)).rejects.toMatchObject({
+    status: 503,
+    modelId: 'gemini-2.5-flash-lite',
+    modelUsed: 'gemini-2.5-flash-lite',
+  });
+
+  expect(generateContent).toHaveBeenCalledTimes(2);
+  expect(generateContent.mock.calls[0][0].model).toBe('gemini-2.5-flash');
+  expect(generateContent.mock.calls[1][0].model).toBe('gemini-2.5-flash-lite');
 });
