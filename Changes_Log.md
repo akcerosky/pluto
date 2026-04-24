@@ -367,11 +367,21 @@
 - Added Bedrock secret/config support in `functions/src/config/secrets.ts`, `functions/src/config/env.ts`, and `functions/.env.example`.
 - Fixed the Nova provider endpoint to use the correct AWS Bedrock runtime hostname and switched the default Bedrock path to `BEDROCK_REGION=ap-south-1` with `BEDROCK_NOVA_MICRO_MODEL_ID=apac.amazon.nova-micro-v1:0`.
 
+## 2026-04-24
+
+### Gemini Reliability and Audit Tooling
+
+- Added a retryable Gemini model fallback in `functions/src/services/gemini.ts` so attachment requests start on `gemini-2.5-flash` and only fall back to `gemini-2.5-flash-lite` for retryable Gemini failures.
+- Kept Nova Micro as the primary text-only path while preserving provider isolation and clearer attempt metadata in `functions/src/services/ai/orchestrator.ts`, `functions/src/services/ai/providerTypes.ts`, and the compiled `functions/lib/services/ai/` output.
+- Improved summary handling and memory injection safety in `functions/src/services/ai/prompting.ts`, `functions/src/services/ai/providers/novaMicroProvider.ts`, and `src/components/Chat/ChatInterface.tsx`.
+- Added and updated coverage in `functions/src/services/geminiModelFallback.test.ts` and `functions/src/services/ai/orchestrator.test.ts`.
+- Added `scripts/auditAiChat.mjs` and generalized `scripts/auditAiChatDay.mjs` to audit Cloud Logging and Firestore request windows with refreshed Google OAuth access tokens from the local Firebase CLI login.
+
 ### Verification and Deployment
 
 - Ran and passed local verification: root lint, frontend production build, Functions TypeScript build, and Functions Jest tests (`40/40` tests, `12/12` suites).
 - Deployed Firebase Functions to `pluto-ef61b`, including the updated hybrid `aiChat` path in `asia-south1`.
-- Created branch `nova-hybrid`, committed the verified code as `6d75d89` with message `Add Nova hybrid routing with Gemini attachment fallback`, and pushed the branch to GitHub.
+- Committed the verified release changes on `nova-hybrid` as `be0e4c8` with message `Add Gemini Flash-Lite fallback and audit tooling`.
 - Deployed the frontend to EC2 from `nova-hybrid`, built successfully on the server, and reloaded Nginx.
 - Verified `https://pluto.akcero.ai` returned HTTP `200`.
 - Verified the EC2 app directory is now on branch `nova-hybrid` at commit `6d75d89`.
