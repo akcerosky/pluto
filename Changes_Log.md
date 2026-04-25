@@ -377,11 +377,29 @@
 - Added and updated coverage in `functions/src/services/geminiModelFallback.test.ts` and `functions/src/services/ai/orchestrator.test.ts`.
 - Added `scripts/auditAiChat.mjs` and generalized `scripts/auditAiChatDay.mjs` to audit Cloud Logging and Firestore request windows with refreshed Google OAuth access tokens from the local Firebase CLI login.
 
+## 2026-04-25
+
+### Firestore Chat Storage Migration
+
+- Migrated Pluto chat persistence from a single large `users/{uid}/appState/main` document to collection-backed storage under `users/{uid}/threads/{threadId}`, `users/{uid}/threads/{threadId}/messages/{messageId}`, `users/{uid}/projects/{projectId}`, and `users/{uid}/meta/migration`.
+- Added new frontend chat store hooks and serializers in `src/hooks/useThreads.ts`, `src/hooks/useMessages.ts`, `src/hooks/useProjects.ts`, and `src/lib/chatStore.ts`, while keeping the `AppContext` public API stable.
+- Updated `src/context/AppContext.tsx` to use lightweight `appState/main` sync metadata, persist `contextSummary` on thread metadata, page active-thread messages, and clean up empty local drafts instead of persisting them immediately.
+- Added the callable `deleteThread` handler in `functions/src/handlers/chatState.ts` and exported it from `functions/src/index.ts` so thread metadata and message subcollections can be removed safely from the backend.
+- Added the admin backfill script `functions/src/scripts/migrateChatData.ts` and corresponding compiled output, plus Firebase Admin bootstrap support for local refresh-token-backed script execution in `functions/src/lib/firebaseAdmin.ts`.
+- Updated `firestore.rules`, `src/lib/plutoApi.ts`, `src/components/Chat/ChatInterface.tsx`, `src/context/appContextTypes.ts`, and `src/types/index.ts` to support the new storage model and message-loading behavior.
+
+### Migration and Sidebar Cleanup
+
+- Deployed updated Firestore rules to `pluto-ef61b` and migrated the original user `EahOcjp4slbT6nj8YtgNktOySkD2`, reducing `appState/main` to lightweight metadata only.
+- Fixed the bulk migration scanner so it discovers users from legacy `appState/main` documents, then migrated the remaining legacy users with the backfill script.
+- Fixed several chat-state race conditions in `src/context/AppContext.tsx` so active empty drafts are not bounced back to the welcome screen while stale empty chats and deleted threads no longer linger in the sidebar.
+- Added automatic cleanup for old empty cloud thread docs by filtering `messageCount: 0` thread metadata from the UI and deleting stale empty thread records in the background.
+
 ### Verification and Deployment
 
-- Ran and passed local verification: root lint, frontend production build, Functions TypeScript build, and Functions Jest tests (`40/40` tests, `12/12` suites).
-- Deployed Firebase Functions to `pluto-ef61b`, including the updated hybrid `aiChat` path in `asia-south1`.
-- Committed the verified release changes on `nova-hybrid` as `be0e4c8` with message `Add Gemini Flash-Lite fallback and audit tooling`.
-- Deployed the frontend to EC2 from `nova-hybrid`, built successfully on the server, and reloaded Nginx.
-- Verified `https://pluto.akcero.ai` returned HTTP `200`.
-- Verified the EC2 app directory is now on branch `nova-hybrid` at commit `6d75d89`.
+- Ran and passed local verification: root `npm run lint`, root `npm run build`, Functions `npm run build`, and Functions Jest tests (`42/42` tests, `12/12` suites).
+- Deployed Firebase Functions to `pluto-ef61b`, including the new `deleteThread` callable and updated chat migration/runtime logic in `asia-south1`.
+- Committed the verified release changes on `nova-hybrid` as `0473d02` with message `Migrate chat storage to Firestore collections`.
+- Pushed `nova-hybrid` to GitHub and deployed the latest frontend to EC2 using `scripts/deploy-frontend-ec2.sh`.
+- Verified the EC2 app directory is on branch `nova-hybrid` at commit `0473d0249018fb0deee64547511b87a9ac5794ab`.
+- Verified the live site `https://pluto.akcero.ai` returned HTTP `200` after deployment.
