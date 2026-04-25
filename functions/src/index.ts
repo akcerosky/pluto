@@ -53,6 +53,9 @@ export const aiChat = lazySecureCallable(async () => (await import('./handlers/a
   minInstances: 1,
   timeoutSeconds: 120,
 });
+export const deleteThread = lazySecureCallable(
+  async () => (await import('./handlers/chatState.js')).deleteThreadHandler as CloudCallableHandler
+);
 
 export const billingCheckout = lazySecureCallable(
   async () => (await import('./handlers/billing.js')).billingCheckoutHandler as CloudCallableHandler,

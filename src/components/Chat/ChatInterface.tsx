@@ -190,6 +190,9 @@ export const ChatInterface = () => {
     activeThreadId,
     addMessageToThread,
     createThread,
+    hasOlderActiveThreadMessages,
+    isActiveThreadMessagesLoading,
+    loadOlderActiveThreadMessages,
     projects,
     activeProjectId,
     setActiveProjectId,
@@ -226,6 +229,7 @@ export const ChatInterface = () => {
   const footerInteractiveRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
+  const previousLastMessageIdRef = useRef<string | null>(null);
 
   const composerHasContent = input.trim().length > 0 || attachments.length > 0;
 
@@ -289,7 +293,44 @@ export const ChatInterface = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  useEffect(scrollToBottom, [activeThread?.messages, isLoading]);
+  useEffect(() => {
+    const currentLastMessageId = activeThread?.messages.at(-1)?.id ?? null;
+    const shouldScroll =
+      previousLastMessageIdRef.current === null ||
+      currentLastMessageId !== previousLastMessageIdRef.current ||
+      isLoading;
+
+    previousLastMessageIdRef.current = currentLastMessageId;
+
+    if (shouldScroll) {
+      scrollToBottom();
+    }
+  }, [activeThread?.messages, isLoading]);
+
+  useEffect(() => {
+    const currentMessagesContainer = messagesContainerRef.current;
+    if (!currentMessagesContainer) {
+      return undefined;
+    }
+
+    const handleLoadOlderOnScroll = () => {
+      if (
+        currentMessagesContainer.scrollTop <= 60 &&
+        hasOlderActiveThreadMessages &&
+        !isActiveThreadMessagesLoading
+      ) {
+        loadOlderActiveThreadMessages();
+      }
+    };
+
+    currentMessagesContainer.addEventListener('scroll', handleLoadOlderOnScroll, { passive: true });
+    return () =>
+      currentMessagesContainer.removeEventListener('scroll', handleLoadOlderOnScroll);
+  }, [
+    hasOlderActiveThreadMessages,
+    isActiveThreadMessagesLoading,
+    loadOlderActiveThreadMessages,
+  ]);
 
   useEffect(() => {
     const hidePanel = () => setIsComposerActive(false);

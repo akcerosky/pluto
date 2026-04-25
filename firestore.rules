@@ -13,6 +13,22 @@ service cloud.firestore {
       allow read, write: if isOwner(userId);
     }
 
+    match /users/{userId}/threads/{threadId} {
+      allow read, write: if isOwner(userId);
+
+      match /messages/{messageId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    match /users/{userId}/projects/{projectId} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /users/{userId}/meta/{document=**} {
+      allow read, write: if isOwner(userId);
+    }
+
     match /users/{userId}/subscriptionPublic/{document=**} {
       allow read: if isOwner(userId);
       allow write: if false;

@@ -24,6 +24,7 @@ export const aiChat = lazySecureCallable(async () => (await import('./handlers/a
     minInstances: 1,
     timeoutSeconds: 120,
 });
+export const deleteThread = lazySecureCallable(async () => (await import('./handlers/chatState.js')).deleteThreadHandler);
 export const billingCheckout = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingCheckoutHandler, { minInstances: 1 });
 export const billingVerifyPayment = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingVerifyPaymentHandler, { minInstances: 1 });
 export const billingHistory = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingHistoryHandler);

@@ -52,6 +52,19 @@ export interface Thread {
   contextSummary?: ThreadContextSummary;
 }
 
+export interface ThreadMetadata {
+  id: string;
+  title: string;
+  mode: ChatMode;
+  educationLevel: EducationLevel;
+  objective: string;
+  createdAt: number;
+  updatedAt: number;
+  projectId?: string;
+  contextSummary?: ThreadContextSummary;
+  messageCount: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -165,5 +178,40 @@ export const normalizeThreadContextSummary = (value: unknown): ThreadContextSumm
     summarizedExchangeCount: Math.max(0, Math.floor(Number(value.summarizedExchangeCount) || 0)),
     blockSize: Math.max(1, Math.floor(Number(value.blockSize) || 10)),
     updatedAt: Math.max(0, Math.floor(Number(value.updatedAt) || Date.now())),
+  };
+};
+
+export const normalizeThreadMetadata = (value: unknown): ThreadMetadata | null => {
+  if (!isRecord(value) || typeof value.id !== 'string' || typeof value.title !== 'string') {
+    return null;
+  }
+
+  const createdAt = Math.max(0, Math.floor(Number(value.createdAt) || 0));
+  const updatedAt = Math.max(createdAt, Math.floor(Number(value.updatedAt) || createdAt || Date.now()));
+  const messageCount = Math.max(0, Math.floor(Number(value.messageCount) || 0));
+  const rawMode = value.mode;
+  const mode: ChatMode =
+    rawMode === 'Homework' || rawMode === 'ExamPrep' || rawMode === 'Conversational'
+      ? rawMode
+      : 'Conversational';
+
+  return {
+    id: value.id,
+    title: value.title.trim() || 'New Chat',
+    mode,
+    educationLevel:
+      value.educationLevel === 'Elementary' ||
+      value.educationLevel === 'Middle School' ||
+      value.educationLevel === 'High School' ||
+      value.educationLevel === 'College/University' ||
+      value.educationLevel === 'Professional'
+        ? value.educationLevel
+        : 'High School',
+    objective: typeof value.objective === 'string' && value.objective.trim() ? value.objective : 'General Learning',
+    createdAt,
+    updatedAt,
+    projectId: typeof value.projectId === 'string' && value.projectId.trim() ? value.projectId : undefined,
+    contextSummary: normalizeThreadContextSummary(value.contextSummary),
+    messageCount,
   };
 };

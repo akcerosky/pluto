@@ -328,6 +328,15 @@ export const billingSubscriptionGet = async () => {
   return result.data;
 };
 
+export const deleteThread = async (payload: { threadId: string }) => {
+  const call = httpsCallable<typeof payload, { ok: true; threadId: string }>(
+    requireFunctions(),
+    'deleteThread'
+  );
+  const result = await call(payload);
+  return result.data;
+};
+
 export const billingSubscriptionCancel = async () => {
   const call = httpsCallable<undefined, { subscription: MeResponse['subscription'] }>(
     requireFunctions(),
