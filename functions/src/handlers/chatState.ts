@@ -11,36 +11,137 @@ const deleteThreadSchema = z.object({
 const threadRef = (uid: string, threadId: string) =>
   adminDb.collection('users').doc(uid).collection('threads').doc(threadId);
 
-const deleteCollectionInBatches = async (
-  collectionPath: FirebaseFirestore.CollectionReference<FirebaseFirestore.DocumentData>,
-  batchSize = 400
+const countMessages = async (
+  collectionRef: FirebaseFirestore.CollectionReference<FirebaseFirestore.DocumentData>,
+  pageSize = 400
 ) => {
+  let total = 0;
+  let lastDoc: FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData> | null = null;
+
   while (true) {
-    const snapshot = await collectionPath.limit(batchSize).get();
+    let query = collectionRef.orderBy('__name__').limit(pageSize);
+    if (lastDoc) {
+      query = query.startAfter(lastDoc);
+    }
+
+    const snapshot = await query.get();
     if (snapshot.empty) {
       break;
     }
 
-    const batch = adminDb.batch();
-    snapshot.docs.forEach((docSnapshot) => {
-      batch.delete(docSnapshot.ref);
-    });
-    await batch.commit();
+    total += snapshot.size;
+    lastDoc = snapshot.docs.at(-1) ?? null;
 
-    if (snapshot.size < batchSize) {
+    if (snapshot.size < pageSize) {
       break;
     }
   }
+
+  return total;
+};
+
+const deleteThreadRecursively = async (ref: FirebaseFirestore.DocumentReference) => {
+  let retriedWrites = 0;
+  let failedWrites = 0;
+
+  const bulkWriter = adminDb.bulkWriter();
+  bulkWriter.onWriteError((error) => {
+    const willRetry = error.failedAttempts < 3;
+    if (willRetry) {
+      retriedWrites += 1;
+    } else {
+      failedWrites += 1;
+    }
+
+    logger.warn('delete_thread_write_error', {
+      eventType: 'delete_thread_write_error',
+      path: error.documentRef.path,
+      code: error.code,
+      message: error.message,
+      failedAttempts: error.failedAttempts,
+      willRetry,
+    });
+
+    return willRetry;
+  });
+
+  await adminDb.recursiveDelete(ref, bulkWriter);
+  await bulkWriter.close();
+
+  return { retriedWrites, failedWrites };
 };
 
 export const deleteThreadHandler = async (request: CallableRequest<unknown>) => {
   const uid = assertAuth(request);
   const payload = deleteThreadSchema.parse(request.data ?? {});
   const ref = threadRef(uid, payload.threadId);
+  const messagesRef = ref.collection('messages');
+
+  logger.info('delete_thread_started', {
+    eventType: 'delete_thread_started',
+    uid,
+    threadId: payload.threadId,
+    threadPath: ref.path,
+  });
 
   try {
-    await deleteCollectionInBatches(ref.collection('messages'));
-    await ref.delete();
+    const [threadSnapshot, messageCount] = await Promise.all([
+      ref.get(),
+      countMessages(messagesRef),
+    ]);
+
+    logger.info('delete_thread_preflight', {
+      eventType: 'delete_thread_preflight',
+      uid,
+      threadId: payload.threadId,
+      threadExists: threadSnapshot.exists,
+      messageCount,
+    });
+
+    if (!threadSnapshot.exists) {
+      logger.info('delete_thread_missing', {
+        eventType: 'delete_thread_missing',
+        uid,
+        threadId: payload.threadId,
+      });
+
+      return {
+        ok: true as const,
+        threadId: payload.threadId,
+        deletedMessages: 0,
+        threadPreviouslyMissing: true,
+      };
+    }
+
+    const startedAt = Date.now();
+    const deletionResult = await deleteThreadRecursively(ref);
+    const remainingMessages = await countMessages(messagesRef);
+    const threadExistsAfterDelete = (await ref.get()).exists;
+
+    logger.info('delete_thread_completed', {
+      eventType: 'delete_thread_completed',
+      uid,
+      threadId: payload.threadId,
+      deletedMessagesEstimate: messageCount,
+      remainingMessages,
+      threadExistsAfterDelete,
+      retriedWrites: deletionResult.retriedWrites,
+      failedWrites: deletionResult.failedWrites,
+      latencyMs: Date.now() - startedAt,
+    });
+
+    if (threadExistsAfterDelete || remainingMessages > 0 || deletionResult.failedWrites > 0) {
+      logger.error('delete_thread_incomplete', {
+        eventType: 'delete_thread_incomplete',
+        uid,
+        threadId: payload.threadId,
+        remainingMessages,
+        threadExistsAfterDelete,
+        retriedWrites: deletionResult.retriedWrites,
+        failedWrites: deletionResult.failedWrites,
+      });
+      throw new HttpsError('internal', 'Unable to fully delete this thread right now.');
+    }
   } catch (error) {
     logger.error('delete_thread_failed', {
       eventType: 'delete_thread_failed',
@@ -49,7 +150,9 @@ export const deleteThreadHandler = async (request: CallableRequest<unknown>) => 
       errorMessage: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
     });
-    throw new HttpsError('internal', 'Unable to delete this thread right now.');
+    throw error instanceof HttpsError
+      ? error
+      : new HttpsError('internal', 'Unable to delete this thread right now.');
   }
 
   return {

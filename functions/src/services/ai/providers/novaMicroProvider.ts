@@ -8,12 +8,13 @@ import {
   buildSystemInstruction,
   clampSummaryText,
   getHistoryText,
+  startsWithLeakedMemoryPrefix,
+  stripLeadingLeakedMemoryBlock,
 } from '../prompting.js';
 import type { ProviderExecutor, ProviderRequest, ProviderResult } from '../providerTypes.js';
 import type { AiHistoryMessage, ThreadContextSummary, TokenUsage } from '../../../types/index.js';
 
 const DEFAULT_NOVA_MODEL_ID = 'amazon.nova-micro-v1:0';
-
 const sanitizeResponse = (text: string) => {
   const cleaned = (text || '').replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
   return cleaned || '';
@@ -166,6 +167,12 @@ const validateNovaText = (text: string) => {
     (error as Error & { code: string }).code = 'INVALID_RESPONSE';
     throw error;
   }
+
+  if (startsWithLeakedMemoryPrefix(text)) {
+    const error = new Error('Nova leaked internal memory context.');
+    (error as Error & { code: string }).code = 'INVALID_RESPONSE';
+    throw error;
+  }
 };
 
 const callNovaConverse = async ({
@@ -295,13 +302,34 @@ export const generateNovaMicroResponse = async (request: ProviderRequest): Promi
   );
   const contextSummary = await refreshContextSummary(request, systemInstruction);
   const providerRequest = { ...request, contextSummary, summaryCandidates: [] };
-  const { modelId, payload } = await callNovaConverse({
+  let response = await callNovaConverse({
     request: providerRequest,
     systemInstruction,
     contextSummary,
     maxOutputTokens: request.maxOutputTokens,
   });
-  const text = sanitizeResponse(extractConverseText(payload));
+  let text = sanitizeResponse(extractConverseText(response.payload));
+
+  if (startsWithLeakedMemoryPrefix(text)) {
+    logger.warn('nova_memory_leak_detected', {
+      eventType: 'nova_memory_leak_detected',
+      requestId: request.requestId ?? null,
+      modelId: response.modelId,
+    });
+    response = await callNovaConverse({
+      request: providerRequest,
+      systemInstruction,
+      contextSummary,
+      maxOutputTokens: request.maxOutputTokens,
+    });
+    const retriedText = sanitizeResponse(extractConverseText(response.payload));
+    if (startsWithLeakedMemoryPrefix(retriedText)) {
+      validateNovaText(retriedText);
+    }
+
+    text = sanitizeResponse(stripLeadingLeakedMemoryBlock(retriedText));
+  }
+
   validateNovaText(text);
 
   const estimatedUsage = buildEstimatedUsage({
@@ -314,7 +342,7 @@ export const generateNovaMicroResponse = async (request: ProviderRequest): Promi
     answer: text,
   });
   const normalizedUsage = normalizeTokenUsage({
-    providerUsage: extractUsage(payload),
+    providerUsage: extractUsage(response.payload),
     estimatedUsage,
     estimatedInputTokens: estimatedUsage.inputTokens,
     maxOutputTokens: request.maxOutputTokens,
@@ -326,7 +354,7 @@ export const generateNovaMicroResponse = async (request: ProviderRequest): Promi
     usage: normalizedUsage.usage,
     usageAnomaly: normalizedUsage.anomalyReason,
     provider: 'nova-micro',
-    modelId,
+    modelId: response.modelId,
     modelUsed: 'nova-micro',
     latencyMs: Date.now() - startedAt,
   };

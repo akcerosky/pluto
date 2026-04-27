@@ -6,6 +6,7 @@ import { Menu, Rocket } from 'lucide-react';
 import { sendEmailVerification } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
 import { getEmailVerificationActionCodeSettings } from '../../lib/authActionCode';
+import { runtimeLogger } from '../../lib/runtimeLogger';
 
 const useIsMobileShell = () => {
   const [isMobile, setIsMobile] = useState(false);
@@ -43,7 +44,7 @@ export const MainLayout = ({ children }: { children: ReactNode }) => {
       await sendEmailVerification(auth.currentUser, actionCodeSettings);
       setVerificationNotice('Verification email sent. Check your inbox for the latest link.');
     } catch (error) {
-      console.error(error);
+      runtimeLogger.warn('Unable to send verification email.', error);
       setVerificationNotice('Unable to send verification email right now. Please try again in a moment.');
     } finally {
       setIsSendingVerification(false);
@@ -60,7 +61,7 @@ export const MainLayout = ({ children }: { children: ReactNode }) => {
         setVerificationNotice('Still waiting for verification. Open the email link, then click refresh again.');
       }
     } catch (error) {
-      console.error(error);
+      runtimeLogger.warn('Could not refresh verification status.', error);
       setVerificationNotice('Could not refresh verification status right now.');
     }
   };

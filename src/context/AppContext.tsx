@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { onAuthStateChanged, signOut, type User as FirebaseUser } from 'firebase/auth';
-import { deleteField, getDoc, setDoc } from 'firebase/firestore';
+import { deleteField, getDoc, getDocFromServer, setDoc, writeBatch } from 'firebase/firestore';
 import { auth, db, hasFirebaseConfig } from '../lib/firebase';
 import { deleteThread as deleteThreadRemote, meGet } from '../lib/plutoApi';
 import {
@@ -37,6 +37,7 @@ import {
   threadDocRef,
   threadMessageDocRef,
 } from '../lib/chatStore';
+import { runtimeLogger } from '../lib/runtimeLogger';
 import { useMessages } from '../hooks/useMessages';
 import { useProjects } from '../hooks/useProjects';
 import { useThreads } from '../hooks/useThreads';
@@ -129,21 +130,38 @@ const mergeMessages = (...collections: Array<Message[] | undefined>) =>
     }, new Map()).values()
   ).sort((left, right) => left.timestamp - right.timestamp);
 
+const filterPendingMessages = (
+  messages: Message[] | undefined,
+  pendingMessageIds: Set<string> | undefined
+) => {
+  if (!messages?.length || !pendingMessageIds?.size) {
+    return [] as Message[];
+  }
+
+  return messages.filter((message) => pendingMessageIds.has(message.id));
+};
+
 const buildThreadFromMetadata = ({
   metadata,
   previousThread,
   activeMessages,
   isActive,
+  isActiveMessagesLoading,
+  pendingLocalMessages,
 }: {
   metadata: ThreadMetadata;
   previousThread?: Thread;
   activeMessages?: Message[];
   isActive: boolean;
+  isActiveMessagesLoading: boolean;
+  pendingLocalMessages?: Message[];
 }): Thread => ({
   ...metadata,
   contextSummary: contextSummaryFromThreadMetadata(metadata),
   messages: isActive
-    ? mergeMessages(previousThread?.messages, activeMessages)
+    ? isActiveMessagesLoading
+      ? previousThread?.messages ?? pendingLocalMessages ?? []
+      : mergeMessages(activeMessages, pendingLocalMessages)
     : previousThread?.messages ?? [],
 });
 
@@ -273,6 +291,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   );
   const threadsRef = useRef(threads);
   const projectsRef = useRef(projects);
+  const pendingMessageIdsRef = useRef<Map<string, Set<string>>>(new Map());
   const emptyThreadCleanupRef = useRef<Set<string>>(new Set());
   const [migrationState, setMigrationState] = useState<string | null>(null);
   const [migrationVersion, setMigrationVersion] = useState<number | undefined>(undefined);
@@ -421,6 +440,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [projects]);
 
   useEffect(() => {
+    if (!activeThreadId || activeThreadMessages.length === 0) {
+      return;
+    }
+
+    const pendingMessageIds = pendingMessageIdsRef.current.get(activeThreadId);
+    if (!pendingMessageIds?.size) {
+      return;
+    }
+
+    for (const message of activeThreadMessages) {
+      pendingMessageIds.delete(message.id);
+    }
+
+    if (pendingMessageIds.size === 0) {
+      pendingMessageIdsRef.current.delete(activeThreadId);
+    }
+  }, [activeThreadId, activeThreadMessages]);
+
+  useEffect(() => {
     if (!firebaseUid) {
       emptyThreadCleanupRef.current.clear();
       return;
@@ -438,7 +476,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     staleEmptyThreadIds.forEach((threadId) => {
       emptyThreadCleanupRef.current.add(threadId);
       void deleteThreadRemote({ threadId }).catch((error) => {
-        console.warn('Unable to clean up stale empty thread.', error);
+        runtimeLogger.warn('Unable to clean up stale empty thread.', error);
         emptyThreadCleanupRef.current.delete(threadId);
       });
     });
@@ -474,7 +512,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         try {
           await firebaseUser.reload();
         } catch (error) {
-          console.warn('Unable to refresh Firebase auth user.', error);
+          runtimeLogger.warn('Unable to refresh Firebase auth user.', error);
         }
 
         const freshUser = firebaseAuth.currentUser ?? firebaseUser;
@@ -496,7 +534,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         });
 
         void refreshServerState().catch((error) => {
-          console.warn('Unable to refresh Pluto server state.', error);
+          runtimeLogger.warn('Unable to refresh Pluto server state.', error);
         });
       })();
     });
@@ -601,7 +639,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           );
         }
       } catch (error) {
-        console.warn('Cloud sync load failed. Falling back to local state.', error);
+        runtimeLogger.warn('Cloud sync load failed. Falling back to local state.', error);
       } finally {
         if (!isCancelled) {
           setIsCloudHydrated(true);
@@ -648,6 +686,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           previousThread: previousMap.get(metadata.id),
           activeMessages: metadata.id === activeThreadId ? activeThreadMessages : undefined,
           isActive: metadata.id === activeThreadId,
+          isActiveMessagesLoading: metadata.id === activeThreadId ? isActiveThreadMessagesLoading : false,
+          pendingLocalMessages: filterPendingMessages(
+            previousMap.get(metadata.id)?.messages,
+            pendingMessageIdsRef.current.get(metadata.id)
+          ),
         })
       );
 
@@ -666,6 +709,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     cloudProjects,
     cloudThreadMetadata,
     isProjectsLoading,
+    isActiveThreadMessagesLoading,
     isThreadsLoading,
     migrationState,
     user,
@@ -690,14 +734,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       );
 
       if (estimateSerializedBytes(payload) > APP_STATE_SIZE_GUARD_BYTES) {
-        console.warn('Cloud sync save skipped because appState payload exceeded safety guard.', {
+        runtimeLogger.warn('Cloud sync save skipped because appState payload exceeded safety guard.', undefined, {
           sizeBytes: estimateSerializedBytes(payload),
         });
         return;
       }
 
       void setDoc(stateRef, payload, { merge: true }).catch((error) => {
-        console.warn('Cloud sync save failed. Local state still available.', error);
+        runtimeLogger.warn('Cloud sync save failed. Local state still available.', error);
       });
     }, 500);
 
@@ -805,7 +849,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const logout = useCallback(() => {
     if (auth) {
       void signOut(auth).catch((error) => {
-        console.warn('Firebase sign out failed.', error);
+        runtimeLogger.warn('Firebase sign out failed.', error);
       });
     }
     setUserState(null);
@@ -860,17 +904,33 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     [firebaseUid]
   );
 
-  const persistMessageDoc = useCallback(
-    async (threadId: string, message: Message) => {
+  const persistMessageAndThreadUpdate = useCallback(
+    async (threadId: string, message: Message, thread: Thread) => {
       if (!db || !firebaseUid) {
         return;
       }
 
-      await setDoc(
-        threadMessageDocRef(db, firebaseUid, threadId, message.id),
-        serializeMessage(message),
+      const messageRef = threadMessageDocRef(db, firebaseUid, threadId, message.id);
+      const batch = writeBatch(db);
+      batch.set(messageRef, serializeMessage(message), { merge: true });
+      batch.set(
+        threadDocRef(db, firebaseUid, thread.id),
+        stripUndefined(
+          serializeThreadMetadata({
+            ...thread,
+            messageCount: thread.messages.length,
+          })
+        ),
         { merge: true }
       );
+      await batch.commit();
+
+      if (message.role === 'assistant') {
+        const persistedMessageSnapshot = await getDocFromServer(messageRef);
+        if (!persistedMessageSnapshot.exists()) {
+          throw new Error('Assistant message write verification failed: Firestore did not return the message doc.');
+        }
+      }
     },
     [firebaseUid]
   );
@@ -919,7 +979,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }),
         { merge: true }
       ).catch((error) => {
-        console.warn('Unable to assign thread to project in Firestore.', error);
+        runtimeLogger.warn('Unable to assign thread to project in Firestore.', error);
       });
     }
   }, [firebaseUid]);
@@ -943,7 +1003,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
     void persistThreadMetadata(persistedThread).catch((error) => {
-      console.warn('Unable to persist thread metadata.', error);
+      runtimeLogger.warn('Unable to persist thread metadata.', error);
     });
   }, [persistThreadMetadata]);
 
@@ -960,7 +1020,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
     void deleteThreadRemote({ threadId: id }).catch((error) => {
-      console.warn('Unable to delete thread from Firestore.', error);
+      runtimeLogger.warn('Unable to delete thread from Firestore.', error);
       setThreads((prev) => [removedThread, ...prev].sort((left, right) => right.updatedAt - left.updatedAt));
       if (activeThreadId === id) {
         setActiveThreadId(id);
@@ -968,7 +1028,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     });
   }, [activeThreadId]);
 
-  const addMessageToThread = useCallback((threadId: string, message: Message) => {
+  const addMessageToThread = useCallback((
+    threadId: string,
+    message: Message,
+    options?: { persist?: boolean; retainUntilHydrated?: boolean }
+  ) => {
+    const shouldPersist = options?.persist ?? true;
+    const shouldRetainUntilHydrated = options?.retainUntilHydrated ?? false;
+    if (shouldPersist || shouldRetainUntilHydrated) {
+      const pendingMessageIds = pendingMessageIdsRef.current.get(threadId) ?? new Set<string>();
+      pendingMessageIds.add(message.id);
+      pendingMessageIdsRef.current.set(threadId, pendingMessageIds);
+    }
+
     let persistedThread: Thread | null = null;
     setThreads((prev) =>
       prev.map((thread) => {
@@ -985,17 +1057,58 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         return persistedThread;
       })
     );
-    if (!persistedThread) {
+      if (!persistedThread) {
+        return;
+      }
+
+    if (!shouldPersist) {
       return;
     }
 
-    void Promise.all([
-      persistMessageDoc(threadId, message),
-      persistThreadMetadata(persistedThread),
-    ]).catch((error) => {
-      console.warn('Unable to persist message/thread update.', error);
-    });
-  }, [persistMessageDoc, persistThreadMetadata]);
+    void persistMessageAndThreadUpdate(threadId, message, persistedThread)
+      .catch((error) => {
+        const messagePreview = getMessageText(message).slice(0, 120);
+        runtimeLogger.error('Unable to persist message/thread update atomically.', error, {
+          threadId,
+          messageId: message.id,
+          role: message.role,
+          mode: message.mode,
+          messagePreview,
+          threadMessageCount: persistedThread?.messages.length ?? null,
+        });
+
+        if (message.role === 'assistant') {
+          setThreads((prev) =>
+            prev.map((thread) => {
+              if (thread.id !== threadId) {
+                return thread;
+              }
+
+              const revertedMessages = thread.messages.filter(
+                (threadMessage) => threadMessage.id !== message.id
+              );
+
+              if (revertedMessages.length === thread.messages.length) {
+                return thread;
+              }
+
+              return {
+                ...thread,
+                messages: revertedMessages,
+                updatedAt: persistedThread?.updatedAt ?? thread.updatedAt,
+              };
+            })
+          );
+        }
+      })
+      .finally(() => {
+        const currentPendingMessageIds = pendingMessageIdsRef.current.get(threadId);
+        currentPendingMessageIds?.delete(message.id);
+        if (currentPendingMessageIds && currentPendingMessageIds.size === 0) {
+          pendingMessageIdsRef.current.delete(threadId);
+        }
+      });
+  }, [persistMessageAndThreadUpdate]);
 
   const createProject = useCallback(
     (name: string, color: string) => {
@@ -1015,7 +1128,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       };
       setProjects((prev) => [...prev, newProject]);
       void persistProjectDoc(newProject).catch((error) => {
-        console.warn('Unable to create project in Firestore.', error);
+        runtimeLogger.warn('Unable to create project in Firestore.', error);
       });
       return { ok: true };
     },

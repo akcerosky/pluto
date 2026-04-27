@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { deserializeMessage, threadMessagesCollectionRef } from '../lib/chatStore';
+import { runtimeLogger } from '../lib/runtimeLogger';
 import type { Message } from '../types';
 
 const MESSAGE_PAGE_SIZE = 50;
@@ -51,7 +52,11 @@ export const useMessages = (uid?: string | null, threadId?: string | null) => {
         });
       },
       (error) => {
-        console.warn('Message subscription failed.', error);
+        runtimeLogger.warn('Message subscription failed.', error, {
+          hook: 'useMessages',
+          threadId,
+          uid,
+        });
         setState({
           key: queryKey,
           messages: [],

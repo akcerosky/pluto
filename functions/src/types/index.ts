@@ -112,6 +112,8 @@ export interface AiChatPayload {
   contextSummary?: ThreadContextSummary;
   summaryCandidates?: AiHistoryMessage[];
   attachments: AiInlineAttachment[];
+  threadId: string;
+  assistantMessageId: string;
   requestId: string;
 }
 

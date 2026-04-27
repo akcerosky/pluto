@@ -38,7 +38,11 @@ export interface AppContextType {
   assignThreadToProject: (threadId: string, projectId: string | null) => void;
   updateThread: (id: string, data: Partial<Thread>) => void;
   deleteThread: (id: string) => void;
-  addMessageToThread: (threadId: string, message: Message) => void;
+  addMessageToThread: (
+    threadId: string,
+    message: Message,
+    options?: { persist?: boolean; retainUntilHydrated?: boolean }
+  ) => void;
   hasOlderActiveThreadMessages: boolean;
   isActiveThreadMessagesLoading: boolean;
   loadOlderActiveThreadMessages: () => void;

@@ -1,5 +1,6 @@
 import { httpsCallable } from 'firebase/functions';
 import { functions } from './firebase';
+import { runtimeLogger } from './runtimeLogger';
 import type { SubscriptionPlan } from '../config/subscription';
 import type { MessagePart, ThreadContextSummary } from '../types';
 import type { InlineAttachmentInput } from './attachments';
@@ -38,7 +39,7 @@ const logAiChatInfo = (...args: unknown[]) => {
 
 const logAiChatWarning = (...args: unknown[]) => {
   if (isDevelopmentLogEnabled) {
-    console.warn('[Pluto][aiChat]', ...args);
+    runtimeLogger.warn('[Pluto][aiChat]', undefined, { args });
   }
 };
 
@@ -173,6 +174,8 @@ export const aiChat = async (payload: {
   contextSummary?: ThreadContextSummary;
   summaryCandidates?: Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>;
   attachments: InlineAttachmentInput[];
+  threadId: string;
+  assistantMessageId: string;
   requestId: string;
   onRetrying?: (state: { attempt: number; delayMs: number; totalRetries: number }) => void;
 }) => {
@@ -193,6 +196,8 @@ export const aiChat = async (payload: {
     premiumModeCount: number;
     freePremiumModesRemainingToday: number | null;
     planConfig: MeResponse['planConfig'];
+    assistantMessageId: string;
+    assistantTimestamp: number;
     contextSummary?: ThreadContextSummary;
     usage?: {
       inputTokens: number;
@@ -262,7 +267,7 @@ export const aiChat = async (payload: {
     }
   }
 
-  console.error('[Pluto][aiChat] Exhausted retries', {
+  runtimeLogger.error('[Pluto][aiChat] Exhausted retries', lastError, {
     requestId: requestPayload.requestId,
     totalRetries: AI_CHAT_CLIENT_RETRY_DELAYS_MS.length,
     message: lastError instanceof Error ? lastError.message : String(lastError),

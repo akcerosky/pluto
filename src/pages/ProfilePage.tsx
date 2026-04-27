@@ -14,6 +14,7 @@ import {
   meUpdateProfile,
 } from '../lib/plutoApi';
 import { RAZORPAY_KEY_ID } from '../config/billing';
+import { runtimeLogger } from '../lib/runtimeLogger';
 import { formatTokenCount, formatTokenUsageSummary } from '../lib/tokenQuota';
 
 declare global {
@@ -98,7 +99,7 @@ export const ProfilePage = () => {
           freePremiumModesRemainingToday: subscription.freePremiumModesRemainingToday,
         });
       } catch (error) {
-        console.warn('Unable to load Pluto billing state.', error);
+        runtimeLogger.warn('Unable to load Pluto billing state.', error);
       }
     };
 

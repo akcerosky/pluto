@@ -12,10 +12,10 @@ import {
   Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ProjectsModal } from '../Modals/ProjectsModal';
+import { LazyProjectsModal } from '../Chat/LazyModePanels';
 import { formatTokenUsageSummary } from '../../lib/tokenQuota';
 
 interface SidebarProps {
@@ -69,6 +69,7 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
   const navigate = useNavigate();
   const effectiveCollapsed = isMobile ? false : isCollapsed;
   const usageResetTitle = getNextIstResetLabel();
+  const showDiscover = import.meta.env.VITE_APP_ENV !== 'production';
   const closeMobile = () => {
     if (isMobile) onCloseMobile?.();
   };
@@ -124,6 +125,7 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
           }}
         >
         <motion.button
+          data-testid="new-chat-button"
           whileHover={{ scale: 1.02, boxShadow: '0 0 20px var(--primary-glow)' }}
           whileTap={{ scale: 0.98 }}
           onClick={handleNewChat}
@@ -169,15 +171,17 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
           isCollapsed={effectiveCollapsed} 
           onClick={() => setIsProjectsOpen(true)}
         />
-         <SidebarLink 
-          icon={<Search size={20} />} 
-          label="Discover" 
-          isCollapsed={effectiveCollapsed} 
-          onClick={() => {
-            handleComingSoon('Discover');
-            closeMobile();
-          }}
-        />
+        {showDiscover ? (
+          <SidebarLink 
+            icon={<Search size={20} />} 
+            label="Discover" 
+            isCollapsed={effectiveCollapsed} 
+            onClick={() => {
+              handleComingSoon('Discover');
+              closeMobile();
+            }}
+          />
+        ) : null}
       </div>
 
       {!effectiveCollapsed && projects.length > 0 && (
@@ -240,6 +244,7 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
           {filteredThreads.map(thread => (
             <motion.div
               key={thread.id}
+              data-testid={`thread-item-${thread.id}`}
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
@@ -290,6 +295,8 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
               </div>
               {!effectiveCollapsed && activeThreadId === thread.id && (
                 <button 
+                  aria-label={`Delete thread ${thread.title}`}
+                  data-testid={`delete-thread-${thread.id}`}
                   onClick={(e) => { e.stopPropagation(); deleteThread(thread.id); }}
                   style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
                 >
@@ -461,10 +468,12 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
         <ChevronLeft size={14} style={{ transform: effectiveCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }} />
       </button>
 
-      <ProjectsModal 
-        isOpen={isProjectsOpen} 
-        onClose={() => setIsProjectsOpen(false)} 
-      />
+      <Suspense fallback={null}>
+        <LazyProjectsModal 
+          isOpen={isProjectsOpen} 
+          onClose={() => setIsProjectsOpen(false)} 
+        />
+      </Suspense>
     </motion.aside>
   );
 };

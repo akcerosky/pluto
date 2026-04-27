@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, ChangeEvent } from 'react';
 import { motion } from 'framer-motion';
 import { useApp } from '../../context/useApp';
@@ -30,14 +30,16 @@ import {
   FileText,
   RotateCcw,
 } from 'lucide-react';
-import { ProjectsModal } from '../Modals/ProjectsModal';
-import { ConversationalModeUI, HomeworkModeUI, ExamPrepUI } from '../Modes/ModeSpecializations';
-
-import ReactMarkdown from 'react-markdown';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
+import {
+  LazyAssistantMessageContent,
+  LazyConversationalModeUI,
+  LazyExamPrepUI,
+  LazyHomeworkModeUI,
+  LazyProjectsModal,
+} from './LazyModePanels';
 import { getPlutoResponse } from '../../hooks/useAI';
-import { estimateInlineRequestBytes, fileToBase64, type InlineAttachmentInput } from '../../lib/attachments';
+import type { InlineAttachmentInput } from '../../lib/attachments';
+import { runtimeLogger } from '../../lib/runtimeLogger';
 import { formatTokenCount } from '../../lib/tokenQuota';
 
 interface ComposerAttachment {
@@ -58,13 +60,13 @@ interface RetryState {
 interface FailedRequestState {
   threadId: string;
   userMessageId: string;
-  errorMessageId: string | null;
   prompt: string;
   mode: 'Conversational' | 'Homework' | 'ExamPrep';
   history: Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>;
   contextSummary?: ThreadContextSummary;
   summaryCandidates: Array<{ role: 'user' | 'assistant'; parts: MessagePart[] }>;
   attachments: InlineAttachmentInput[];
+  statusMessage?: string;
 }
 
 interface ActiveRequestState {
@@ -230,8 +232,16 @@ export const ChatInterface = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const previousLastMessageIdRef = useRef<string | null>(null);
+  const shouldForceRenderError =
+    import.meta.env.VITE_SMOKE_TESTS === 'true' &&
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('plutoThrowChatError') === '1';
 
   const composerHasContent = input.trim().length > 0 || attachments.length > 0;
+
+  if (shouldForceRenderError) {
+    throw new Error('Pluto smoke test forced ChatInterface render error.');
+  }
 
   const releaseAttachmentPreview = (attachment: ComposerAttachment) => {
     if (attachment.previewUrl) {
@@ -481,27 +491,21 @@ export const ChatInterface = () => {
       ? `Retrying ${retryState.attempt}/${retryState.totalRetries}${'.'.repeat(retryDotCount)}`
       : null;
 
-  const getChatErrorDisplayMessage = (error: unknown) => {
-    const code =
-      typeof error === 'object' && error !== null && 'code' in error
-        ? String((error as { code?: unknown }).code)
-        : '';
-    if (code === 'functions/already-exists') {
-      return 'Still processing, retrying...';
-    }
-    if (code === 'functions/resource-exhausted') {
-      return 'Too many requests. Please wait a moment and try again.';
-    }
-    if (code === 'functions/unavailable') {
-      return 'Pluto is temporarily busy. Please try again in a moment.';
-    }
-    if (code === 'functions/deadline-exceeded') {
-      return 'This took too long, but it may still finish. Please wait before retrying.';
-    }
-    return error instanceof Error ? error.message : 'Gravity glitch detected.';
+  const getChatErrorCode = (error: unknown) =>
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code)
+      : '';
+
+  const isTransientProcessingError = (error: unknown) => {
+    const code = getChatErrorCode(error);
+    return code === 'functions/already-exists' || code === 'functions/deadline-exceeded';
   };
 
-  const updateThreadMessages = (
+  const isPlutoErrorBubble = (message: Message) =>
+    message.role === 'assistant' &&
+    /^(Pluto Error:|Error:)/i.test(getMessageText(message));
+
+  const updateThreadMessages = useCallback((
     threadId: string,
     updater: (messages: Message[]) => Message[]
   ) => {
@@ -513,7 +517,48 @@ export const ChatInterface = () => {
     updateThread(threadId, {
       messages: updater(targetThread.messages),
     });
-  };
+  }, [threads, updateThread]);
+
+  useEffect(() => {
+    if (!failedRequest) {
+      return;
+    }
+
+    const thread = threads.find((candidate) => candidate.id === failedRequest.threadId);
+    if (!thread) {
+      return;
+    }
+
+    const userMessageIndex = thread.messages.findIndex((message) => message.id === failedRequest.userMessageId);
+    if (userMessageIndex < 0) {
+      return;
+    }
+
+    const realAssistantReply = thread.messages
+      .slice(userMessageIndex + 1)
+      .find((message) => message.role === 'assistant' && !isPlutoErrorBubble(message));
+
+    if (!realAssistantReply) {
+      return;
+    }
+
+    setFailedRequest((current) =>
+      current?.userMessageId === failedRequest.userMessageId ? null : current
+    );
+  }, [failedRequest, threads]);
+
+  const visibleMessages = useMemo(
+    () => {
+      const filteredMessages = activeThread?.messages.filter((message) => !isPlutoErrorBubble(message)) ?? [];
+      return Array.from(
+        filteredMessages.reduce<Map<string, Message>>((acc, message) => {
+          acc.set(message.id, message);
+          return acc;
+        }, new Map()).values()
+      ).sort((left, right) => left.timestamp - right.timestamp);
+    },
+    [activeThread]
+  );
 
   if (!activeThread) {
     return (
@@ -551,6 +596,7 @@ export const ChatInterface = () => {
           </p>
           <div className="chat-empty-modes" style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center' }}>
             <motion.button
+              data-testid="mode-exploration-button"
               whileHover={{ y: -5, background: 'rgba(138, 43, 226, 0.1)' }}
               onClick={() => createThread('Conversational', activeProjectId || undefined)}
               style={modeCardStyle}
@@ -559,6 +605,7 @@ export const ChatInterface = () => {
               <span>Exploration</span>
             </motion.button>
             <motion.button
+              data-testid="mode-homework-button"
               whileHover={{ y: -5, background: 'rgba(0, 210, 255, 0.1)' }}
               onClick={() =>
                 canUseMode('Homework')
@@ -581,6 +628,7 @@ export const ChatInterface = () => {
               </span>
             </motion.button>
             <motion.button
+              data-testid="mode-examprep-button"
               whileHover={{ y: -5, background: 'rgba(255, 0, 193, 0.1)' }}
               onClick={() =>
                 canUseMode('ExamPrep')
@@ -651,12 +699,13 @@ export const ChatInterface = () => {
       );
     }
 
-    try {
-      const aiResponse = await getPlutoResponse(
-        prompt,
-        user?.educationLevel || 'High School',
-        mode,
-        user?.objective || 'General Learning',
+      try {
+        const aiResponse = await getPlutoResponse(
+          threadId,
+          prompt,
+          user?.educationLevel || 'High School',
+          mode,
+          user?.objective || 'General Learning',
         history,
         contextSummary,
         summaryCandidates,
@@ -687,38 +736,36 @@ export const ChatInterface = () => {
       }
 
       const assistantMsg: Message = {
-        id: (Date.now() + 1).toString(),
+        id: aiResponse.assistantMessageId,
         role: 'assistant',
         parts: [createTextPart(aiResponse.answer)],
         mode,
-        timestamp: Date.now(),
+        timestamp: aiResponse.assistantTimestamp,
       };
-      addMessageToThread(threadId, assistantMsg);
+      addMessageToThread(threadId, assistantMsg, {
+        persist: false,
+        retainUntilHydrated: true,
+      });
     } catch (error: unknown) {
       setRetryState(null);
-      console.error('AI Error:', error);
-      const errorMessageId = (Date.now() + 1).toString();
+      runtimeLogger.warn('AI request failed.', error, {
+        mode: activeThread.mode,
+        threadId: activeThread.id,
+      });
+      const transientProcessingError = isTransientProcessingError(error);
       setFailedRequest({
         threadId,
         userMessageId,
-        errorMessageId,
         prompt,
         mode,
         history,
         contextSummary,
         summaryCandidates,
         attachments: inlineAttachments,
+        statusMessage: transientProcessingError
+          ? 'PLUTO IS GENERATING...'
+          : 'Pluto hit a temporary problem. You can retry this request.',
       });
-      const errorText = `Pluto Error: ${getChatErrorDisplayMessage(error)}`;
-
-      const errorMsg: Message = {
-        id: errorMessageId,
-        role: 'assistant',
-        parts: [createTextPart(errorText)],
-        mode,
-        timestamp: Date.now(),
-      };
-      addMessageToThread(threadId, errorMsg);
     } finally {
       setRetryState(null);
       setActiveRequest(null);
@@ -734,7 +781,6 @@ export const ChatInterface = () => {
     await submitAiRequest({
       threadId: failedRequest.threadId,
       userMessageId: failedRequest.userMessageId,
-      existingErrorMessageId: failedRequest.errorMessageId,
       prompt: failedRequest.prompt,
       mode: failedRequest.mode,
       history: failedRequest.history,
@@ -768,25 +814,30 @@ export const ChatInterface = () => {
       return;
     }
 
-    const inlineAttachments: InlineAttachmentInput[] = await Promise.all(
-      attachments.map(async (attachment) => ({
-        name: attachment.name,
-        mimeType: attachment.mimeType,
-        sizeBytes: attachment.sizeBytes,
-        base64Data: await fileToBase64(attachment.file),
-      }))
-    );
+    let inlineAttachments: InlineAttachmentInput[] = [];
+    if (attachments.length > 0) {
+      const { estimateInlineRequestBytes, fileToBase64 } = await import('../../lib/attachments');
 
-    const inlinePayloadBytes = estimateInlineRequestBytes({
-      prompt: trimmedInput,
-      attachments: inlineAttachments,
-    });
-
-    if (inlinePayloadBytes > planConfig.maxTotalAttachmentPayloadBytes) {
-      setPlanNotice(
-        'Attachments are too large to send inline. Reduce the number or size of files so the total request stays under 8 MB.'
+      inlineAttachments = await Promise.all(
+        attachments.map(async (attachment) => ({
+          name: attachment.name,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+          base64Data: await fileToBase64(attachment.file),
+        }))
       );
-      return;
+
+      const inlinePayloadBytes = estimateInlineRequestBytes({
+        prompt: trimmedInput,
+        attachments: inlineAttachments,
+      });
+
+      if (inlinePayloadBytes > planConfig.maxTotalAttachmentPayloadBytes) {
+        setPlanNotice(
+          'Attachments are too large to send inline. Reduce the number or size of files so the total request stays under 8 MB.'
+        );
+        return;
+      }
     }
 
     setPlanNotice(null);
@@ -923,14 +974,14 @@ export const ChatInterface = () => {
       </header>
 
       <div ref={messagesContainerRef} className="chat-messages" style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '32px' }}>
-        {activeThread.messages.length === 0 && (
+        {visibleMessages.length === 0 && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', opacity: 0.5 }}>
             <Sparkles size={48} color="var(--primary)" />
             <p>Starting a new {activeThread.mode} session...</p>
           </div>
         )}
 
-        {activeThread.messages.map((msg) => {
+        {visibleMessages.map((msg) => {
           const textContent = getMessageText(msg);
           const fileParts = msg.parts.filter(
             (part): part is ImagePart | FilePart => part.type === 'image' || part.type === 'file'
@@ -942,7 +993,13 @@ export const ChatInterface = () => {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               key={msg.id}
               className={`chat-message-row ${msg.role === 'user' ? 'chat-message-row-user' : 'chat-message-row-assistant'}`}
-              style={{ display: 'flex', gap: '16px', flexDirection: msg.role === 'user' ? 'row-reverse' : 'row', alignItems: 'flex-start', padding: '0 20px' }}
+              style={{
+                display: 'flex',
+                gap: msg.role === 'user' ? '10px' : '16px',
+                flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
+                alignItems: 'flex-start',
+                padding: '0 20px',
+              }}
             >
               <div
                 style={{
@@ -961,7 +1018,16 @@ export const ChatInterface = () => {
                 {msg.role === 'user' ? <User size={18} color="white" /> : <Rocket size={18} color="var(--secondary)" />}
               </div>
 
-              <div style={{ maxWidth: '75%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div
+                style={{
+                  width: 'fit-content',
+                  maxWidth: '75%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                  alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                }}
+              >
                 <div
                   className="markdown-content chat-bubble"
                   style={{
@@ -975,12 +1041,14 @@ export const ChatInterface = () => {
                     fontSize: '1rem',
                     boxShadow: '0 8px 30px rgba(0,0,0,0.2)',
                     position: 'relative',
+                    width: 'fit-content',
+                    maxWidth: '100%',
                   }}
                 >
                   {textContent ? (
-                    <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                      {textContent}
-                    </ReactMarkdown>
+                    <Suspense fallback={<div style={{ whiteSpace: 'pre-wrap' }}>{textContent}</div>}>
+                      <LazyAssistantMessageContent text={textContent} />
+                    </Suspense>
                   ) : null}
                   {fileParts.length > 0 ? (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: textContent ? '16px' : 0 }}>
@@ -1000,28 +1068,49 @@ export const ChatInterface = () => {
                       justifyContent: 'flex-end',
                     }}
                   >
-                    <button
-                      type="button"
-                      onClick={() => void handleRetryFailedRequest()}
-                      disabled={isLoading}
+                    <div
                       style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'flex-end',
                         gap: '8px',
-                        padding: '6px 12px',
-                        borderRadius: '999px',
-                        border: '1px solid rgba(255,255,255,0.14)',
-                        background: 'rgba(255,255,255,0.05)',
-                        color: 'var(--text-secondary)',
-                        fontSize: '0.78rem',
-                        fontWeight: 600,
-                        cursor: isLoading ? 'default' : 'pointer',
-                        opacity: isLoading ? 0.5 : 1,
                       }}
                     >
-                      <RotateCcw size={14} />
-                      Retry Request
-                    </button>
+                      {failedRequest.statusMessage && failedRequest.statusMessage !== 'PLUTO IS GENERATING...' ? (
+                        <div
+                          style={{
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.76rem',
+                            fontWeight: 600,
+                            opacity: 0.85,
+                          }}
+                        >
+                          {failedRequest.statusMessage}
+                        </div>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void handleRetryFailedRequest()}
+                        disabled={isLoading}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          padding: '6px 12px',
+                          borderRadius: '999px',
+                          border: '1px solid rgba(255,255,255,0.14)',
+                          background: 'rgba(255,255,255,0.05)',
+                          color: 'var(--text-secondary)',
+                          fontSize: '0.78rem',
+                          fontWeight: 600,
+                          cursor: isLoading ? 'default' : 'pointer',
+                          opacity: isLoading ? 0.5 : 1,
+                        }}
+                      >
+                        <RotateCcw size={14} />
+                        Retry Request
+                      </button>
+                    </div>
                   </div>
                 ) : null}
                 {msg.role === 'user' && activeRequest?.userMessageId === msg.id ? (
@@ -1052,13 +1141,13 @@ export const ChatInterface = () => {
             </motion.div>
           );
         })}
-        {isLoading && (
+        {(isLoading || Boolean(failedRequest?.statusMessage)) && (
           <motion.div className="chat-message-row chat-message-row-assistant" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', gap: '16px', alignItems: 'center', padding: '0 20px' }}>
             <div className="animate-thinking" style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--card-border)' }}>
               <Sparkles size={18} color="var(--primary)" />
             </div>
             <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '500', letterSpacing: '0.5px' }}>
-              {requestRetryLabel ?? 'PLUTO IS COMPOSING...'}
+              {requestRetryLabel ?? failedRequest?.statusMessage ?? 'PLUTO IS GENERATING...'}
             </div>
           </motion.div>
         )}
@@ -1078,9 +1167,11 @@ export const ChatInterface = () => {
               animate={{ opacity: 1, y: 0 }}
               style={{ padding: '0 12px', opacity: 0.92 }}
             >
-              {activeThread.mode === 'Conversational' && <ConversationalModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
-              {activeThread.mode === 'Homework' && <HomeworkModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
-              {activeThread.mode === 'ExamPrep' && <ExamPrepUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
+              <Suspense fallback={null}>
+                {activeThread.mode === 'Conversational' && <LazyConversationalModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
+                {activeThread.mode === 'Homework' && <LazyHomeworkModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
+                {activeThread.mode === 'ExamPrep' && <LazyExamPrepUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
+              </Suspense>
             </motion.div>
           ) : null}
 
@@ -1152,6 +1243,7 @@ export const ChatInterface = () => {
             </motion.button>
 
             <textarea
+              data-testid="chat-composer-input"
               ref={textareaRef}
               className="chat-textarea"
               rows={1}
@@ -1183,6 +1275,7 @@ export const ChatInterface = () => {
               }}
             />
             <motion.button
+              data-testid="chat-send-button"
               className="chat-send-button"
               whileHover={{ scale: 1.05, background: 'var(--secondary)' }}
               whileTap={{ scale: 0.95 }}
@@ -1223,7 +1316,9 @@ export const ChatInterface = () => {
         </div>
       </footer>
 
-      <ProjectsModal isOpen={isProjectsOpen} onClose={() => setIsProjectsOpen(false)} activeThreadId={activeThreadId} />
+      <Suspense fallback={null}>
+        <LazyProjectsModal isOpen={isProjectsOpen} onClose={() => setIsProjectsOpen(false)} activeThreadId={activeThreadId} />
+      </Suspense>
     </div>
   );
 };

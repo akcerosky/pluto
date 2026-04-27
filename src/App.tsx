@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AppProvider } from './context/AppContext';
 import { useApp } from './context/useApp';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { CookieConsentBanner } from './components/CookieConsentBanner';
+import { auth } from './lib/firebase';
 
 const LandingPage = lazy(() => import('./pages/LandingPage').then((module) => ({ default: module.LandingPage })));
 const AuthPages = lazy(() => import('./pages/AuthPages').then((module) => ({ default: module.AuthPages })));
@@ -40,8 +42,14 @@ const LazyRoute = ({ children }: { children: ReactNode }) => (
 
 const AppRoutes = () => {
   const { user } = useApp();
-  const canAccessApp = Boolean(user && user.emailVerified);
-  const needsVerification = Boolean(user && !user.emailVerified);
+  const isGoogleUser = Boolean(
+    auth?.currentUser?.providerData.some((provider) => provider.providerId === 'google.com')
+  );
+  // Firebase Google accounts are trusted identity providers and are typically marked verified.
+  // We still allow them through explicitly so a provider metadata edge case does not block chat access.
+  const isVerifiedUser = Boolean(user && (user.emailVerified || isGoogleUser));
+  const canAccessApp = isVerifiedUser;
+  const needsVerification = Boolean(user && !isVerifiedUser);
 
   return (
     <Routes>
@@ -99,6 +107,7 @@ function App() {
       <AppProvider>
         <Router>
           <AppRoutes />
+          <CookieConsentBanner />
         </Router>
       </AppProvider>
     </ErrorBoundary>

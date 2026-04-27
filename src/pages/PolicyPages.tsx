@@ -51,51 +51,33 @@ All concerns or communications relating to these Terms must be communicated to u
   privacy: {
     title: 'Privacy Policy',
     updated: 'Effective for Pluto users',
-    body: `This Privacy Policy describes how AKCERO PRIVATE LIMITED and its affiliates, collectively referred to as AKCERO PRIVATE LIMITED, we, our, or us, collect, use, share, protect, or otherwise process your personal data through https://pluto.akcero.ai, hereinafter referred to as the Platform.
+    body: `This Privacy Policy describes how AKCERO PRIVATE LIMITED, doing business through Pluto, collects, uses, stores, and shares personal data when you use https://pluto.akcero.ai and related Pluto services.
 
-You may be able to browse certain sections of the Platform without registering with us. We do not offer any product or service under this Platform outside India, and your personal data will primarily be stored and processed in India.
+We primarily collect account information you provide directly, such as your email address, display name, education level, learning objective, and authentication details managed through Firebase Authentication.
 
-By visiting this Platform, providing your information, or availing any product or service offered on the Platform, you expressly agree to be bound by this Privacy Policy, the Terms of Use, and applicable service or product terms and conditions. You also agree to be governed by the laws of India, including laws applicable to data protection and privacy. If you do not agree, please do not use or access our Platform.
+When you use Pluto chat features, we store your conversation data, including messages, uploaded attachments you choose to send, conversation summaries used for continuity, and related metadata such as timestamps, mode selection, and thread or project labels.
 
-We collect your personal data when you use our Platform, services, or otherwise interact with us during the course of our relationship. Information collected may include personal data provided during sign-up, registration, or Platform usage, such as name, date of birth, address, telephone or mobile number, email ID, and information shared as proof of identity or address.
+If you subscribe to a paid plan, we store subscription and billing records needed to manage your plan. This includes plan status, payment references, transaction records, and Razorpay subscription metadata. Pluto does not collect or store your full card number, card PIN, or banking password in its own database.
 
-Sensitive personal data may be collected with your consent, such as bank account information, credit or debit card details, other payment instrument information, biometric information, facial features, or physiological information where such features are opted for and available on the Platform, all in accordance with applicable laws.
+We also store product usage data needed to run the service, such as daily quota usage, token consumption, request logs, and support or abuse-prevention records.
 
-You always have the option not to provide information by choosing not to use a particular service or feature on the Platform. We may track your behaviour, preferences, and other information you choose to provide on the Platform. This information may be compiled and analysed on an aggregated basis.
+We use essential cookies and browser local storage to keep you signed in, preserve core Pluto state such as chat continuity and consent preferences, and support essential reliability monitoring needed to detect and fix production issues.
 
-We may collect information related to your transactions on the Platform and third-party business partner platforms. When a third-party business partner collects your personal data directly from you, you will be governed by their privacy policies. We are not responsible for such third-party privacy practices or content, and we request that you read their privacy policies before disclosing information.
+We use this information to create and secure your account, provide Pluto's tutoring features, personalize responses based on your selected education level and learning objective, enforce plan limits, process subscription events, respond to support issues, and improve reliability and safety.
 
-If you receive an email or call from a person or association claiming to be AKCERO PRIVATE LIMITED and seeking sensitive personal data such as debit or credit card PIN, net-banking password, or mobile banking password, please never provide such information. If you have already revealed such information, report it immediately to an appropriate law enforcement agency.
+We may share limited data with service providers that help us operate Pluto, such as Firebase and Google Cloud for authentication, database, hosting, and logging, Amazon Bedrock and Google Gemini for AI model responses, Razorpay for subscription billing, and Resend for transactional emails. Those providers process data only as needed to deliver the service.
 
-We use personal data to provide the services you request. To the extent we use your personal data for marketing, we will provide the ability to opt out. We use personal data to assist sellers and business partners in handling and fulfilling orders, enhancing customer experience, resolving disputes, troubleshooting problems, informing you about offers, products, services, and updates, customizing your experience, detecting and protecting against error, fraud, and criminal activity, enforcing terms and conditions, conducting marketing research, analysis, and surveys, and as otherwise described at the time of collection.
+We may also disclose information where required by law, to respond to valid legal requests, to investigate fraud or abuse, or to protect the rights, safety, and property of Pluto, our users, or the public.
 
-You understand that access to certain products or services may be affected if required permissions are not provided.
+We use reasonable technical and organizational safeguards to protect your data, but no internet-based service can guarantee absolute security. You are responsible for protecting access to your account credentials and devices.
 
-We may share personal data internally within our group entities, corporate entities, and affiliates to provide access to services and products offered by them. These entities and affiliates may market to you as a result of such sharing unless you explicitly opt out.
+You can access and update parts of your profile through the Pluto application. We may retain limited records where required for legal, billing, fraud-prevention, or dispute-resolution purposes.
 
-We may disclose personal data to third parties such as sellers, business partners, service providers, logistics partners, prepaid payment instrument issuers, third-party reward programs, and other payment options selected by you. Such disclosure may be required to provide access to services and products, comply with legal obligations, enforce user agreements, facilitate marketing and advertising, and prevent, detect, mitigate, or investigate fraudulent or illegal activities.
+We retain personal data only for as long as it is needed to operate Pluto, meet legal or billing obligations, prevent abuse, resolve disputes, or maintain necessary audit trails. We may keep aggregated or anonymized usage information for analytics and product improvement.
 
-We may disclose personal and sensitive personal data to government agencies or authorised law enforcement agencies if required by law or in good faith belief that disclosure is reasonably necessary to respond to subpoenas, court orders, or legal process. We may also disclose personal data to law enforcement offices, third-party rights owners, or others in good faith where necessary to enforce Terms of Use or Privacy Policy, respond to claims, or protect the rights, property, or safety of users or the public.
+Pluto may update this Privacy Policy from time to time. Continued use of the Platform after an update means you accept the revised policy. If changes are material, we may provide additional notice through the Platform or by email where appropriate.
 
-To protect personal data from unauthorised access, disclosure, loss, or misuse, we adopt reasonable security practices and procedures. Once information is in our possession or whenever you access your account information, we follow security guidelines to protect it against unauthorised access and offer secure server usage where applicable.
-
-However, transmission of information is not completely secure for reasons beyond our control. By using the Platform, you accept the security implications of data transmission over the internet and World Wide Web, which cannot always be guaranteed as completely secure. Users are responsible for protecting login and password records for their accounts.
-
-You may delete your account by visiting your profile and settings on the Platform. This action may result in losing all information related to your account. You may also write to us using the contact information provided below for assistance with such requests.
-
-We may refuse or delay account deletion in the event of any pending grievance, claim, shipment, or service. Once an account is deleted, you will lose access to it. We retain personal data no longer than required for the purpose for which it was collected or as required by applicable law. However, we may retain data where necessary to prevent fraud or future abuse, or for other legitimate purposes. We may retain anonymised data for analytical and research purposes.
-
-You may access, rectify, and update your personal data through the functionalities provided on the Platform.
-
-By visiting the Platform or providing your information, you consent to collection, use, storage, disclosure, and processing of your information in accordance with this Privacy Policy. If you disclose personal data relating to other people, you represent that you have authority to do so and permit us to use it in accordance with this Privacy Policy.
-
-You consent to us, including corporate entities, affiliates, lending partners, technology partners, marketing channels, business partners, and other third parties, contacting you through SMS, instant messaging apps, calls, or email for the purposes specified in this Privacy Policy.
-
-You may withdraw consent by writing to the Grievance Officer using the contact information provided below. Please mention "Withdrawal of consent for processing personal data" in the subject line. We may verify such requests before acting on them. Withdrawal of consent will not be retrospective and will be handled in accordance with the Terms of Use, this Privacy Policy, and applicable laws. If consent is withdrawn, we reserve the right to restrict or deny services for which we consider such information necessary.
-
-Please check this Privacy Policy periodically for changes. We may update it to reflect changes to information practices and may notify you about significant changes in the manner required under applicable laws.
-
-Grievance Officer details, designation, company address, contact phone, and support hours will be provided through the Platform contact information.`,
+If you have questions about this Privacy Policy, please use the contact information provided on the Platform.`,
   },
   refund: {
     title: 'Refund and Cancellation Policy',

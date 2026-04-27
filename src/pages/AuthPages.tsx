@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { DEFAULT_PLAN } from '../config/subscription';
 import { auth } from '../lib/firebase';
+import { runtimeLogger } from '../lib/runtimeLogger';
 import {
   getEmailVerificationActionCodeSettings,
   getPasswordResetActionCodeSettings,
@@ -151,7 +152,7 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
         openVerifyEmail();
       }
     } catch (err) {
-      console.error(err);
+      runtimeLogger.warn('Email/password authentication failed.', err, { mode });
       setError(getAuthErrorMessage(err));
     } finally {
       setIsLoading(false);
@@ -183,7 +184,7 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
       await sendPasswordResetEmail(auth, email.trim(), actionCodeSettings);
       setNotice('Password reset email sent. Check your inbox for the reset link.');
     } catch (err) {
-      console.error(err);
+      runtimeLogger.warn('Password reset email request failed.', err);
       setError(getAuthErrorMessage(err));
     } finally {
       setIsLoading(false);
@@ -205,7 +206,7 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
       setUser(toUserSession(credential.user));
       openFreshChat();
     } catch (err) {
-      console.error(err);
+      runtimeLogger.warn('Google sign-in failed.', err);
       setError(getAuthErrorMessage(err));
     } finally {
       setIsLoading(false);

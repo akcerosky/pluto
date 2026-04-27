@@ -14,6 +14,7 @@ import {
   Rocket,
 } from 'lucide-react';
 import { auth } from '../lib/firebase';
+import { runtimeLogger } from '../lib/runtimeLogger';
 
 const cardStyle = {
   width: '100%',
@@ -175,7 +176,7 @@ export const AuthActionPage = () => {
         setStatus('error');
         setMessage('This Pluto link type is not supported yet.');
       } catch (error) {
-        console.error(error);
+        runtimeLogger.warn('Auth action handling failed.', error, { mode });
         if (!isActive) return;
         setStatus('error');
         setMessage(
@@ -216,7 +217,7 @@ export const AuthActionPage = () => {
       setStatus('reset-success');
       setMessage('Password updated. You can sign in with your new password now.');
     } catch (error) {
-      console.error(error);
+      runtimeLogger.warn('Password reset confirmation failed.', error);
       setStatus('error');
       setMessage(getFriendlyResetError(error));
     } finally {

@@ -3,6 +3,7 @@ import type { InlineAttachmentInput } from '../lib/attachments';
 import type { MessagePart, ThreadContextSummary } from '../types';
 
 export async function getPlutoResponse(
+  threadId: string,
   prompt: string,
   educationLevel: string,
   mode: 'Conversational' | 'Homework' | 'ExamPrep',
@@ -16,8 +17,10 @@ export async function getPlutoResponse(
   }
 ) {
   const requestId = crypto.randomUUID();
+  const assistantMessageId = crypto.randomUUID();
 
   return aiChat({
+    threadId,
     prompt,
     educationLevel,
     mode,
@@ -26,6 +29,7 @@ export async function getPlutoResponse(
     contextSummary,
     summaryCandidates,
     attachments,
+    assistantMessageId,
     requestId,
     onRetrying: options?.onRetrying,
   });

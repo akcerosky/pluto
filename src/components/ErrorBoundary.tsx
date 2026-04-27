@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { runtimeLogger } from '../lib/runtimeLogger';
 
 interface ErrorBoundaryProps {
   children: ReactNode;
@@ -18,9 +19,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    if (import.meta.env.VITE_APP_ENV === 'development') {
-      console.error('Pluto UI error boundary caught an error', error, errorInfo);
-    }
+    runtimeLogger.error('Pluto UI error boundary caught an error.', error, {
+      componentStack: errorInfo.componentStack,
+    });
   }
 
   render() {
@@ -75,4 +76,3 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     );
   }
 }
-

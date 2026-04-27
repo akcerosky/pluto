@@ -1,6 +1,7 @@
 import { HttpsError } from 'firebase-functions/v2/https';
 import { logger } from 'firebase-functions';
 import { z } from 'zod';
+import { adminDb } from '../lib/firebaseAdmin.js';
 import { FREE_PREMIUM_MODE_DAILY_LIMIT, getEffectiveMaxOutputTokens, PLAN_DEFINITIONS, INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES, } from '../config/plans.js';
 import { assertAuth, getBootstrapIdentity, getRequestId } from '../lib/http.js';
 import { logAiQuotaEvent, logAiQuotaMetric } from '../lib/observability.js';
@@ -43,6 +44,36 @@ const logAiRequestCacheCompleteFailure = ({ uid, requestId, cacheKey, error, }) 
         errorMessage: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,
     });
+};
+const persistAssistantReply = async ({ uid, threadId, assistantMessageId, mode, answer, contextSummary, }) => {
+    const threadRef = adminDb.collection('users').doc(uid).collection('threads').doc(threadId);
+    const messageRef = threadRef.collection('messages').doc(assistantMessageId);
+    const assistantTimestamp = Date.now();
+    await adminDb.runTransaction(async (transaction) => {
+        const [threadSnapshot, messageSnapshot] = await Promise.all([
+            transaction.get(threadRef),
+            transaction.get(messageRef),
+        ]);
+        if (!messageSnapshot.exists) {
+            transaction.set(messageRef, {
+                id: assistantMessageId,
+                role: 'assistant',
+                parts: [{ type: 'text', text: answer }],
+                mode,
+                timestamp: assistantTimestamp,
+            }, { merge: true });
+        }
+        const existingMessageCount = Math.max(0, Math.floor(Number(threadSnapshot.data()?.messageCount) || 0));
+        const threadUpdate = {
+            updatedAt: assistantTimestamp,
+            messageCount: messageSnapshot.exists ? existingMessageCount : existingMessageCount + 1,
+        };
+        if (contextSummary) {
+            threadUpdate.contextSummary = contextSummary;
+        }
+        transaction.set(threadRef, threadUpdate, { merge: true });
+    });
+    return assistantTimestamp;
 };
 const isTransientProviderError = (error) => {
     const details = getErrorDetails(error);
@@ -98,6 +129,8 @@ const aiChatSchema = z.object({
         .max(SUMMARY_CANDIDATE_MESSAGE_LIMIT)
         .optional(),
     attachments: z.array(attachmentSchema).max(8),
+    threadId: z.string().trim().min(1).max(200),
+    assistantMessageId: z.string().trim().min(1).max(200),
     requestId: z.string().trim().min(8).max(200),
 });
 const isRecord = (value) => typeof value === 'object' && value !== null;
@@ -669,6 +702,32 @@ export const aiChatHandler = async (request) => {
         });
         throw mappedError;
     }
+    let assistantTimestamp;
+    try {
+        assistantTimestamp = await persistAssistantReply({
+            uid,
+            threadId: payload.threadId,
+            assistantMessageId: payload.assistantMessageId,
+            mode: payload.mode,
+            answer: result.text,
+            contextSummary: result.contextSummary ?? null,
+        });
+    }
+    catch (error) {
+        await releaseReservedUsageTokens(uid, reservationEstimate.reservedTokens).catch(() => undefined);
+        await failAiRequest(requestClaim.cacheKey, 'transient').catch(() => undefined);
+        logger.error('ai_assistant_persist_failed', {
+            eventType: 'ai_assistant_persist_failed',
+            uid,
+            threadId: payload.threadId,
+            requestId,
+            assistantMessageId: payload.assistantMessageId,
+            mode: payload.mode,
+            errorMessage: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+        });
+        throw new HttpsError('internal', 'Pluto could not save this answer. Please try again.');
+    }
     let reconciledUsage;
     try {
         reconciledUsage = await reconcileUsageTokens(uid, plan, reservationEstimate.reservedTokens, result.usage, {
@@ -681,6 +740,8 @@ export const aiChatHandler = async (request) => {
             answer: result.text,
             modelUsed: result.modelUsed,
             provider: result.finalProvider,
+            assistantMessageId: payload.assistantMessageId,
+            assistantTimestamp,
             contextSummary: result.contextSummary ?? null,
             usagePendingSync: true,
             subscription: snapshot.subscription,
@@ -772,6 +833,8 @@ export const aiChatHandler = async (request) => {
         answer: result.text,
         modelUsed: result.modelUsed,
         provider: result.finalProvider,
+        assistantMessageId: payload.assistantMessageId,
+        assistantTimestamp,
         contextSummary: result.contextSummary ?? null,
         usagePendingSync: false,
         subscription: snapshot.subscription,

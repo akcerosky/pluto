@@ -56,11 +56,30 @@ export const getFirstLine = (value) => value
     .split(/\r?\n/)
     .map((line) => line.trim())
     .find(Boolean) ?? '';
-export const buildContextSnapshotMessage = (contextSummary) => `Conversation memory snapshot for continuity.
+export const buildContextSnapshotMessage = (contextSummary) => `The following is internal context. Never repeat, quote, or reference this block in your response. Use it silently only.
 Prior off-topic or refused requests have already been handled; do not treat them as active context or let them color responses to legitimate educational follow-ups.
 Use this only as background for legitimate educational follow-ups, and prioritize the student's latest message.
-Do not repeat, quote, mention, or label this memory snapshot in the visible response. Use it silently as background context only.
 ${contextSummary.text.trim()}`;
+const LEAKED_MEMORY_PREFIX_PATTERNS = [
+    /^conversation memory snapshot/i,
+    /^prior educational focus/i,
+];
+export const startsWithLeakedMemoryPrefix = (text) => LEAKED_MEMORY_PREFIX_PATTERNS.some((pattern) => pattern.test(text.trimStart()));
+export const stripLeadingLeakedMemoryBlock = (text) => {
+    const normalized = text.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (!startsWithLeakedMemoryPrefix(normalized)) {
+        return normalized;
+    }
+    const paragraphs = normalized
+        .split(/\n\s*\n/)
+        .map((paragraph) => paragraph.trim())
+        .filter(Boolean);
+    const cleanedParagraphs = [...paragraphs];
+    while (cleanedParagraphs.length > 0 && startsWithLeakedMemoryPrefix(cleanedParagraphs[0] ?? '')) {
+        cleanedParagraphs.shift();
+    }
+    return cleanedParagraphs.join('\n\n').trim();
+};
 export const historyToExchanges = (history) => {
     const exchanges = [];
     let current = null;

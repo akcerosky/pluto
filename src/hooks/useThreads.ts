@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { onSnapshot, orderBy, query } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { deserializeThreadMetadata, threadCollectionRef } from '../lib/chatStore';
+import { runtimeLogger } from '../lib/runtimeLogger';
 import type { ThreadMetadata } from '../types';
 
 export const useThreads = (uid?: string | null) => {
@@ -34,7 +35,10 @@ export const useThreads = (uid?: string | null) => {
         });
       },
       (error) => {
-        console.warn('Thread subscription failed.', error);
+        runtimeLogger.warn('Thread subscription failed.', error, {
+          hook: 'useThreads',
+          uid: queryKey,
+        });
         setState({
           key: queryKey,
           threads: [],

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { onSnapshot, orderBy, query } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { deserializeProject, projectCollectionRef } from '../lib/chatStore';
+import { runtimeLogger } from '../lib/runtimeLogger';
 import type { Project } from '../types';
 
 export const useProjects = (uid?: string | null) => {
@@ -28,7 +29,10 @@ export const useProjects = (uid?: string | null) => {
         });
       },
       (error) => {
-        console.warn('Project subscription failed.', error);
+        runtimeLogger.warn('Project subscription failed.', error, {
+          hook: 'useProjects',
+          uid: queryKey,
+        });
         setState({
           key: queryKey,
           projects: [],

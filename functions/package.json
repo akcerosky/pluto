@@ -15,6 +15,9 @@
     "deploy": "firebase deploy --only functions",
     "set-admin": "tsx src/scripts/setAdminClaims.ts",
     "migrate-chat": "tsx src/scripts/migrateChatData.ts",
+    "smoke:billing-email": "tsx src/scripts/smokeBillingEmail.ts",
+    "smoke:delete-thread": "tsx src/scripts/smokeDeleteThread.ts",
+    "smoke:nova-fallback": "tsx src/scripts/smokeNovaFallback.ts",
     "test": "jest --runInBand",
     "test:coverage": "jest --coverage"
   },

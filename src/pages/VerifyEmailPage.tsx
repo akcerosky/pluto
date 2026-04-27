@@ -5,6 +5,7 @@ import { Mail, RefreshCw, Rocket } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { useApp } from '../context/useApp';
 import { getEmailVerificationActionCodeSettings } from '../lib/authActionCode';
+import { runtimeLogger } from '../lib/runtimeLogger';
 
 export const VerifyEmailPage = () => {
   const { user, updateUser, startNewChat } = useApp();
@@ -31,7 +32,7 @@ export const VerifyEmailPage = () => {
       await sendEmailVerification(auth.currentUser, actionCodeSettings);
       setNotice('Verification email sent. Check your inbox for the latest link.');
     } catch (error) {
-      console.error(error);
+      runtimeLogger.warn('Unable to resend verification email.', error);
       setNotice('Unable to send verification email right now. Please try again in a moment.');
     } finally {
       setIsSending(false);
@@ -62,7 +63,7 @@ export const VerifyEmailPage = () => {
 
       setNotice('Still waiting - please make sure you clicked the link in the email.');
     } catch (error) {
-      console.error(error);
+      runtimeLogger.warn('Unable to refresh email verification status.', error);
       setNotice('Could not refresh verification status right now.');
     } finally {
       setIsRefreshing(false);

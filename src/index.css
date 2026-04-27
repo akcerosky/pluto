@@ -161,8 +161,16 @@ textarea {
 }
 
 .chat-bubble {
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
+}
+
+.chat-message-row-user .chat-bubble {
+  min-inline-size: max-content;
+}
+
+.chat-message-row-user .chat-bubble > * {
+  min-inline-size: 0;
 }
 
 .chat-textarea::placeholder {
@@ -531,6 +539,10 @@ textarea {
     padding: 12px 14px !important;
     border-radius: 14px !important;
     font-size: 0.9rem !important;
+  }
+
+  .chat-message-row-user .chat-bubble {
+    min-inline-size: min(150px, calc(100vw - 150px));
   }
 
   .markdown-content h1 { font-size: 1.22rem; }
@@ -1050,8 +1062,17 @@ input:focus, select:focus {
   color: var(--text-secondary);
 }
 
-.katex-display {
+.markdown-content .katex-display {
   margin: 1em 0;
   overflow-x: auto;
   overflow-y: hidden;
+  text-align: left;
+}
+
+.markdown-content li > .katex-display {
+  margin-left: 0;
+}
+
+.markdown-content .katex-display > .katex {
+  text-align: left;
 }

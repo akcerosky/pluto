@@ -1,6 +1,6 @@
 # Pluto
 
-Pluto is an AI tutoring app built with React, Firebase, Gemini, and Razorpay. The frontend keeps chat threads and project organization in Firestore, while billing, usage enforcement, and AI access are handled by Firebase Cloud Functions.
+Pluto is an AI tutoring app built with React, Firebase, Gemini, Amazon Nova, and Razorpay. Chat threads, messages, projects, and lightweight client session metadata are stored in Firestore, while billing, usage enforcement, deletion workflows, and AI access are handled by Firebase Cloud Functions.
 
 ## Architecture
 
@@ -14,15 +14,16 @@ Core decisions in the current stack:
 - Razorpay is the only billing provider
 - Gemini calls are server-side only
 - plan authority and daily quota enforcement are server-side
+- assistant replies are persisted server-side before success is returned to the client
 - callable Functions require Firebase Auth and App Check
 - webhook handling stays on HTTP Functions with Razorpay signature verification
 - all daily usage resets at `00:00 IST`
 
 ## Plans
 
-- Free - 10 AI requests/day
-- Plus - INR 299/month, 100 AI requests/day
-- Pro - INR 599/month, unlimited AI requests/day
+- Free - INR 0, 25,000 tokens/day, Conversational mode plus 3 Homework / Exam Prep uses/day
+- Plus - INR 299/month, 250,000 tokens/day, image attachments enabled
+- Pro - INR 599/month, 1,000,000 tokens/day, image and PDF attachments enabled
 
 Usage is stored in Firestore as:
 
@@ -50,6 +51,10 @@ Client-managed:
 
 ```text
 users/{uid}/appState/main
+users/{uid}/threads/{threadId}
+users/{uid}/threads/{threadId}/messages/{messageId}
+users/{uid}/projects/{projectId}
+users/{uid}/meta/migration
 ```
 
 Server-managed:
@@ -91,6 +96,7 @@ VITE_FIREBASE_FUNCTIONS_REGION=asia-south1
 VITE_RAZORPAY_KEY_ID=rzp_test_xxxxx
 VITE_API_BASE_URL=
 VITE_APP_ENV=development
+VITE_SENTRY_DSN=
 ```
 
 Notes:
@@ -98,6 +104,7 @@ Notes:
 - `VITE_RAZORPAY_KEY_ID` is the public Razorpay key used by Checkout
 - `VITE_API_BASE_URL` can stay empty when using Firebase Hosting + callable Functions
 - localhost development supports Firebase App Check debug token flow
+- Sentry initializes only when `VITE_APP_ENV=production`
 
 4. Run the frontend:
 
@@ -151,10 +158,18 @@ These secrets are bound to the callable Functions and Razorpay webhook at deploy
 npm run build
 ```
 
-7. Run the current smoke tests:
+7. Run the current tests:
 
 ```bash
 npm run test
+```
+
+8. Optional smoke helpers:
+
+```bash
+npm run smoke:delete-thread
+npm run smoke:nova-fallback
+npm run smoke:billing-email
 ```
 
 ## Firebase Console Requirements
@@ -277,7 +292,11 @@ Important behavior:
 
 Clients can:
 
-- read/write only their own `users/{uid}/appState/**`
+- read/write only their own lightweight chat state collections:
+  - `users/{uid}/appState/**`
+  - `users/{uid}/threads/**`
+  - `users/{uid}/projects/**`
+  - `users/{uid}/meta/**`
 - read only their own `users/{uid}/profile/**`
 - read only their own `users/{uid}/subscriptionPublic/**`
 
@@ -295,7 +314,7 @@ All sensitive writes happen through Firebase Admin SDK in Cloud Functions.
 ## Current Limitations / Follow-Ups
 
 - Account deletion is not implemented yet
-- Bundle size is still large and should be code-split before a polished production launch
+- `AssistantMessageContent` / Firebase vendor chunks are still the largest frontend bundles and should be reduced further
 - Local Node is expected to be upgraded to `20.19+` or `22.12+` for Vite parity
 - `firebase-functions` in `functions/package.json` is behind latest and should be upgraded carefully
 
