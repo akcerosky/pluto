@@ -395,11 +395,25 @@
 - Fixed several chat-state race conditions in `src/context/AppContext.tsx` so active empty drafts are not bounced back to the welcome screen while stale empty chats and deleted threads no longer linger in the sidebar.
 - Added automatic cleanup for old empty cloud thread docs by filtering `messageCount: 0` thread metadata from the UI and deleting stale empty thread records in the background.
 
-### Verification and Deployment
+## 2026-04-27
 
-- Ran and passed local verification: root `npm run lint`, root `npm run build`, Functions `npm run build`, and Functions Jest tests (`42/42` tests, `12/12` suites).
-- Deployed Firebase Functions to `pluto-ef61b`, including the new `deleteThread` callable and updated chat migration/runtime logic in `asia-south1`.
-- Committed the verified release changes on `nova-hybrid` as `0473d02` with message `Migrate chat storage to Firestore collections`.
-- Pushed `nova-hybrid` to GitHub and deployed the latest frontend to EC2 using `scripts/deploy-frontend-ec2.sh`.
-- Verified the EC2 app directory is on branch `nova-hybrid` at commit `0473d0249018fb0deee64547511b87a9ac5794ab`.
+### AI Persistence, Safety, and Observability
+
+- Hardened Nova prompt handling and response validation in `functions/src/services/ai/prompting.ts` and `functions/src/services/ai/providers/novaMicroProvider.ts` to reduce internal memory-context leakage and added regression coverage in `functions/src/services/ai/providers/novaMicroProvider.test.ts`.
+- Moved assistant reply persistence into the `aiChat` Function in `functions/src/handlers/ai.ts`, updating `functions/src/types/index.ts`, `src/hooks/useAI.ts`, `src/lib/plutoApi.ts`, and `src/context/AppContext.tsx` so assistant messages are written server-side before success is returned.
+- Added structured frontend runtime logging in `src/lib/runtimeLogger.ts`, Sentry bootstrap in `src/instrument.ts` / `src/main.tsx`, and production-safe error handling updates across auth, profile, layout, and chat surfaces.
+
+### Chat Storage, Smoke Coverage, and UI Polish
+
+- Added backend smoke helpers and coverage for delete-thread cleanup, Nova fallback, and billing email paths in `functions/src/scripts/`, `functions/src/handlers/chatState.test.ts`, and the compiled `functions/lib/` output.
+- Added browser smoke scaffolding in `playwright.config.ts` and `smoke/` plus UI test hooks in `src/components/Layout/Sidebar.tsx` and `src/components/Chat/ChatInterface.tsx`.
+- Improved frontend chat rendering with lazy mode panels, lazy assistant content, cookie consent, duplicate-message dedupe, better mobile bubble spacing, and KaTeX / markdown rendering fixes across `src/components/Chat/AssistantMessageContent.tsx`, `src/components/Chat/LazyModePanels.tsx`, `src/components/CookieConsentBanner.tsx`, `src/components/Chat/ChatInterface.tsx`, and `src/index.css`.
+- Hid the Discover tab in production while keeping it available in development via `src/components/Layout/Sidebar.tsx`.
+
+### Documentation and Release Verification
+
+- Updated `README.md`, `.env.example`, and `src/pages/PolicyPages.tsx` to reflect the current Firestore chat model, Sentry env wiring, and revised policy wording.
+- Ran and passed verification: root `npm run lint`, root `npm run build`, Functions `npm run build`, and Functions Jest tests (`48/48` tests, `14/14` suites).
+- Deployed Firebase Functions to `pluto-ef61b` and pushed branch `nova-hybrid` at commit `0c570be` (`Ship Pluto chat persistence and launch polish`).
+- Deployed the latest frontend from GitHub to EC2 using `scripts/deploy-frontend-ec2.sh` with branch `nova-hybrid`.
 - Verified the live site `https://pluto.akcero.ai` returned HTTP `200` after deployment.
