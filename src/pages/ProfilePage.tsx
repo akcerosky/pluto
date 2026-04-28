@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import * as Sentry from '@sentry/react';
 import { CheckCircle2, GraduationCap, LogOut, Mail, Save, Target, User } from 'lucide-react';
 import { useApp } from '../context/useApp';
 import type { EducationLevel } from '../context/appContextTypes';
@@ -483,6 +484,16 @@ export const ProfilePage = () => {
             <button onClick={handleSave} disabled={isSaving} style={primaryButtonStyle(isSaving)}>
               <Save size={18} />
               {isSaving ? 'Saving...' : isSaved ? 'Saved!' : 'Save Changes'}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                Sentry.captureException(new Error('Pluto Sentry production test'));
+                setBillingNotice('Sentry test event sent.');
+              }}
+              style={secondaryButtonStyle}
+            >
+              Send Sentry Test
             </button>
             <button onClick={logout} style={dangerButtonStyle}>
               <LogOut size={18} />
