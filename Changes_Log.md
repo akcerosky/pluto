@@ -410,10 +410,36 @@
 - Improved frontend chat rendering with lazy mode panels, lazy assistant content, cookie consent, duplicate-message dedupe, better mobile bubble spacing, and KaTeX / markdown rendering fixes across `src/components/Chat/AssistantMessageContent.tsx`, `src/components/Chat/LazyModePanels.tsx`, `src/components/CookieConsentBanner.tsx`, `src/components/Chat/ChatInterface.tsx`, and `src/index.css`.
 - Hid the Discover tab in production while keeping it available in development via `src/components/Layout/Sidebar.tsx`.
 
-### Documentation and Release Verification
+## 2026-04-28
 
-- Updated `README.md`, `.env.example`, and `src/pages/PolicyPages.tsx` to reflect the current Firestore chat model, Sentry env wiring, and revised policy wording.
-- Ran and passed verification: root `npm run lint`, root `npm run build`, Functions `npm run build`, and Functions Jest tests (`48/48` tests, `14/14` suites).
-- Deployed Firebase Functions to `pluto-ef61b` and pushed branch `nova-hybrid` at commit `0c570be` (`Ship Pluto chat persistence and launch polish`).
-- Deployed the latest frontend from GitHub to EC2 using `scripts/deploy-frontend-ec2.sh` with branch `nova-hybrid`.
-- Verified the live site `https://pluto.akcero.ai` returned HTTP `200` after deployment.
+### Audit Fixes and Release Hardening
+
+- Added the production Sentry DSN to the local deployment env flow in `.env.production` and pushed the updated frontend env to EC2 during deployment.
+- Kept Sentry browser loading production-only while moving heavy Sentry runtime code out of the main app bundle.
+- Added Firestore collection-group single-field index configuration for `subscriptionPublic.status` in `firestore.indexes.json` and wired it through `firebase.json`.
+- Updated billing cancellation behavior so `cancelAtPeriodEnd: true` keeps the public subscription status `active` until the actual end-of-period cancellation event.
+- Tightened Privacy Policy wording so attachment handling now accurately states that file contents are sent directly to the AI provider and only attachment metadata is retained in chat history.
+- Documented that `RAZORPAY_KEY_ID` is intentionally public and added a production warning for `VITE_FIREBASE_APP_CHECK_DEBUG_TOKEN` in `.env.example`.
+
+### Frontend Performance and Verification Handoff
+
+- Split markdown/math rendering and runtime logging further so all production frontend chunks now stay below `300 kB`.
+- Added a dedicated markdown-renderer lazy chunk and moved runtime logging / Sentry loader work out of the main chat path.
+- Fixed the verified-user handoff from `/verify-email` to `/chat` by:
+  - warming auth tokens before `meGet`
+  - gating `/chat` and `/profile` behind cloud/subscription hydration
+  - deferring fresh-thread creation until hydration is complete
+  - allowing verified users to continue into chat even if the prefetch warm-up path hits a transient failure
+
+### Verification and Deployment
+
+- Deployed Firestore indexes to `pluto-ef61b`.
+- Deployed Firebase Functions verification pass to `pluto-ef61b` and confirmed all unchanged functions were safely skipped.
+- Verified the live EC2 Nginx site config still points to `/var/www/pluto/dist` and includes `try_files $uri $uri/ /index.html`.
+- Deployed the latest frontend from GitHub branch `nova-hybrid` to EC2 and reloaded Nginx successfully.
+- Verified the production email-verification handoff with a real smoke run:
+  - fresh signup
+  - verification email received
+  - verification link opened
+  - `I verified` clicked on `https://pluto.akcero.ai/verify-email`
+  - user reached `https://pluto.akcero.ai/chat` with the composer visible
