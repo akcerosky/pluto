@@ -219,7 +219,7 @@ export const billingSubscriptionCancelHandler = async (request: CallableRequest<
   const snapshot = await getMeSnapshot(uid, getBootstrapIdentity(request));
   await updateSubscriptionFromRazorpay(uid, {
     plan: snapshot.subscription.plan,
-    status: 'cancelled',
+    status: 'active',
     subscriptionId: privateSubscription.providerSubscriptionId,
     paymentId: privateSubscription.providerPaymentId,
     currentPeriodStart: privateSubscription.currentPeriodStart,

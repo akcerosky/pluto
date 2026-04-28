@@ -1,36 +1,6 @@
+import { captureSentryException } from './sentryBrowser';
+
 const isDevelopment = import.meta.env.DEV || import.meta.env.VITE_APP_ENV === 'development';
-
-const toError = (message: string, error?: unknown) => {
-  if (error instanceof Error) {
-    return error;
-  }
-
-  return new Error(message);
-};
-
-const captureProductionError = async (
-  message: string,
-  error?: unknown,
-  extras?: Record<string, unknown>
-) => {
-  const Sentry = await import('@sentry/react');
-  Sentry.withScope((scope) => {
-    scope.setTag('runtime_logger', 'true');
-    scope.setExtra('message', message);
-
-    if (extras) {
-      for (const [key, value] of Object.entries(extras)) {
-        scope.setExtra(key, value);
-      }
-    }
-
-    if (error !== undefined && !(error instanceof Error)) {
-      scope.setExtra('errorValue', String(error));
-    }
-
-    Sentry.captureException(toError(message, error));
-  });
-};
 
 export const runtimeLogger = {
   info: (...args: unknown[]) => {
@@ -53,6 +23,6 @@ export const runtimeLogger = {
       return;
     }
 
-    void captureProductionError(message, error, extras);
+    void captureSentryException(message, error, extras);
   },
 };

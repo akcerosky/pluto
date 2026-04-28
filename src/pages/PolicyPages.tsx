@@ -55,7 +55,9 @@ All concerns or communications relating to these Terms must be communicated to u
 
 We primarily collect account information you provide directly, such as your email address, display name, education level, learning objective, and authentication details managed through Firebase Authentication.
 
-When you use Pluto chat features, we store your conversation data, including messages, uploaded attachments you choose to send, conversation summaries used for continuity, and related metadata such as timestamps, mode selection, and thread or project labels.
+When you use Pluto chat features, we store your conversation data, including messages, conversation summaries used for continuity, and related metadata such as timestamps, mode selection, and thread or project labels.
+
+When you upload images or documents in chat, the file content is sent directly to our AI provider for processing and is not stored on our servers. Only metadata (filename, file type, size) is retained as part of your chat history.
 
 If you subscribe to a paid plan, we store subscription and billing records needed to manage your plan. This includes plan status, payment references, transaction records, and Razorpay subscription metadata. Pluto does not collect or store your full card number, card PIN, or banking password in its own database.
 

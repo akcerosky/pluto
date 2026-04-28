@@ -1,6 +1,8 @@
-import ReactMarkdown from 'react-markdown';
-import remarkMath from 'remark-math';
-import rehypeKatex from 'rehype-katex';
+import { lazy, Suspense } from 'react';
+
+const AssistantMarkdownRenderer = lazy(() =>
+  import('./AssistantMarkdownRenderer').then((module) => ({ default: module.AssistantMarkdownRenderer }))
+);
 
 const normalizeMathDelimiters = (text: string) =>
   text
@@ -53,8 +55,12 @@ const indentDisplayMathWithinListItems = (text: string) => {
   return normalizedLines.join('\n');
 };
 
-export const AssistantMessageContent = ({ text }: { text: string }) => (
-  <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-    {indentDisplayMathWithinListItems(normalizeMathDelimiters(text))}
-  </ReactMarkdown>
-);
+export const AssistantMessageContent = ({ text }: { text: string }) => {
+  const normalizedText = indentDisplayMathWithinListItems(normalizeMathDelimiters(text));
+
+  return (
+    <Suspense fallback={<div style={{ whiteSpace: 'pre-wrap' }}>{normalizedText}</div>}>
+      <AssistantMarkdownRenderer text={normalizedText} />
+    </Suspense>
+  );
+};
