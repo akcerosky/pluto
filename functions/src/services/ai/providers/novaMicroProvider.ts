@@ -6,6 +6,7 @@ import {
   buildFallbackSummary,
   buildSummaryPrompt,
   buildSystemInstruction,
+  buildTurnSpecificInstruction,
   clampSummaryText,
   getHistoryText,
   startsWithLeakedMemoryPrefix,
@@ -300,11 +301,16 @@ export const generateNovaMicroResponse = async (request: ProviderRequest): Promi
     request.objective,
     request.plan
   );
+  const turnSpecificInstruction = buildTurnSpecificInstruction({
+    mode: request.mode,
+    prompt: request.prompt,
+    history: request.history,
+  });
   const contextSummary = await refreshContextSummary(request, systemInstruction);
   const providerRequest = { ...request, contextSummary, summaryCandidates: [] };
   let response = await callNovaConverse({
     request: providerRequest,
-    systemInstruction,
+    systemInstruction: [systemInstruction, turnSpecificInstruction].filter(Boolean).join('\n\n'),
     contextSummary,
     maxOutputTokens: request.maxOutputTokens,
   });
@@ -318,7 +324,7 @@ export const generateNovaMicroResponse = async (request: ProviderRequest): Promi
     });
     response = await callNovaConverse({
       request: providerRequest,
-      systemInstruction,
+      systemInstruction: [systemInstruction, turnSpecificInstruction].filter(Boolean).join('\n\n'),
       contextSummary,
       maxOutputTokens: request.maxOutputTokens,
     });

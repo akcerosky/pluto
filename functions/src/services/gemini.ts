@@ -9,6 +9,7 @@ import {
   buildFallbackSummary,
   buildSummaryPrompt,
   buildSystemInstruction,
+  buildTurnSpecificInstruction,
   clampSummaryText,
   getHistoryText,
   historyToExchanges,
@@ -343,12 +344,16 @@ const executeGeminiModel = async ({
       contextSummary,
     }),
     config: {
-      systemInstruction: buildSystemInstruction(
-        payload.educationLevel,
-        payload.mode,
-        payload.objective,
-        payload.plan
-      ),
+      systemInstruction: [
+        buildSystemInstruction(payload.educationLevel, payload.mode, payload.objective, payload.plan),
+        buildTurnSpecificInstruction({
+          mode: payload.mode,
+          prompt: payload.prompt,
+          history: payload.history,
+        }),
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
       maxOutputTokens: payload.maxOutputTokens,
     },
   });

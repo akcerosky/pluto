@@ -3,7 +3,7 @@ import { logger } from 'firebase-functions';
 import { requireEnv } from '../config/env.js';
 import { recordGemini503 } from './gemini503Monitor.js';
 import { buildEstimatedUsage, estimateAiInputTokens, normalizeTokenUsage } from './tokenUsage.js';
-import { buildContextSnapshotMessage, buildFallbackSummary, buildSummaryPrompt, buildSystemInstruction, clampSummaryText, getHistoryText, historyToExchanges, SUMMARY_BLOCK_SIZE_EXCHANGES, } from './ai/prompting.js';
+import { buildContextSnapshotMessage, buildFallbackSummary, buildSummaryPrompt, buildSystemInstruction, buildTurnSpecificInstruction, clampSummaryText, getHistoryText, historyToExchanges, SUMMARY_BLOCK_SIZE_EXCHANGES, } from './ai/prompting.js';
 const FILLER_PREFIXES = [
     'sure, ',
     'sure. ',
@@ -261,7 +261,16 @@ const executeGeminiModel = async ({ genAI, payload, modelId, contextSummary, his
             contextSummary,
         }),
         config: {
-            systemInstruction: buildSystemInstruction(payload.educationLevel, payload.mode, payload.objective, payload.plan),
+            systemInstruction: [
+                buildSystemInstruction(payload.educationLevel, payload.mode, payload.objective, payload.plan),
+                buildTurnSpecificInstruction({
+                    mode: payload.mode,
+                    prompt: payload.prompt,
+                    history: payload.history,
+                }),
+            ]
+                .filter(Boolean)
+                .join('\n\n'),
             maxOutputTokens: payload.maxOutputTokens,
         },
     });

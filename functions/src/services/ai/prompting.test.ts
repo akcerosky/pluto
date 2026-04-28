@@ -1,4 +1,4 @@
-import { buildSystemInstruction, OFF_TOPIC_REFUSAL } from './prompting.js';
+import { buildSystemInstruction, buildTurnSpecificInstruction, OFF_TOPIC_REFUSAL } from './prompting.js';
 
 test('homework mode instructions strongly enforce hint-first tutoring', () => {
   const instruction = buildSystemInstruction(
@@ -41,4 +41,46 @@ test('off-topic refusal remains explicit in the system instruction', () => {
   );
 
   expect(instruction).toContain(OFF_TOPIC_REFUSAL);
+});
+
+test('homework follow-up asking for the full answer stays locked to hint-only mode', () => {
+  const instruction = buildTurnSpecificInstruction({
+    mode: 'Homework',
+    prompt: 'give complete answer',
+    history: [
+      {
+        role: 'user',
+        parts: [{ type: 'text', text: 'solve 2x^2+3x+4=0' }],
+      },
+      {
+        role: 'assistant',
+        parts: [{ type: 'text', text: '💡 Hint: Use the quadratic formula and identify a, b, and c first.' }],
+      },
+    ],
+  });
+
+  expect(instruction).toContain('TURN-SPECIFIC HOMEWORK ENFORCEMENT');
+  expect(instruction).toContain('The latest student message is asking for the answer directly.');
+  expect(instruction).toContain('Do NOT provide the complete solution or final answer in this turn.');
+  expect(instruction).toContain('If the student has not already shown two genuine attempts with working, a full solution is forbidden.');
+});
+
+test('homework turn-specific instruction recognizes when no full solution has been earned yet', () => {
+  const instruction = buildTurnSpecificInstruction({
+    mode: 'Homework',
+    prompt: 'I am stuck after the first hint',
+    history: [
+      {
+        role: 'user',
+        parts: [{ type: 'text', text: 'Find the roots of x^2 - 5x + 6 = 0' }],
+      },
+      {
+        role: 'assistant',
+        parts: [{ type: 'text', text: '💡 Hint: Think about factoring into two binomials.' }],
+      },
+    ],
+  });
+
+  expect(instruction).toContain('The student has not yet earned a full worked solution.');
+  expect(instruction).toContain("Stay in hint-first tutoring mode");
 });

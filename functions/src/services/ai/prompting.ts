@@ -69,6 +69,85 @@ ${toneLine}
 </response_organization>`;
 };
 
+const DIRECT_ANSWER_REQUEST_PATTERNS = [
+  /\bjust give me the answer\b/i,
+  /\bgive (?:me )?(?:the )?(?:complete|full|final) answer\b/i,
+  /\bgive (?:me )?(?:the )?(?:complete|full) solution\b/i,
+  /\bsolve (?:it|this|the whole thing)\b/i,
+  /\banswer it for me\b/i,
+];
+
+const ATTEMPT_SIGNAL_PATTERNS = [
+  /\bi tried\b/i,
+  /\bmy work\b/i,
+  /\bmy steps\b/i,
+  /\bi got\b/i,
+  /\bi think\b/i,
+  /\bhere'?s what i did\b/i,
+  /\bsubstitute\b/i,
+  /\bfactor\b/i,
+  /\bdiscriminant\b/i,
+  /\b=\s*[-+]?[\dA-Za-z]/,
+];
+
+export const isDirectAnswerRequest = (text: string) =>
+  DIRECT_ANSWER_REQUEST_PATTERNS.some((pattern) => pattern.test(text));
+
+export const looksLikeStudentAttempt = (text: string) =>
+  ATTEMPT_SIGNAL_PATTERNS.some((pattern) => pattern.test(text));
+
+export const buildTurnSpecificInstruction = ({
+  mode,
+  prompt,
+  history,
+}: {
+  mode: string;
+  prompt: string;
+  history: AiHistoryMessage[];
+}) => {
+  if (mode !== 'Homework') {
+    return '';
+  }
+
+  const normalizedPrompt = prompt.trim();
+  const priorUserTexts = history
+    .filter((message) => message.role === 'user')
+    .map((message) => getHistoryText(message))
+    .map((text) => text.trim())
+    .filter(Boolean);
+
+  const directAnswerRequest = isDirectAnswerRequest(normalizedPrompt);
+  const priorAttemptCount = priorUserTexts.filter((text) => looksLikeStudentAttempt(text)).length;
+  const totalStudentTurns = priorUserTexts.length + (normalizedPrompt ? 1 : 0);
+
+  const lines = [
+    'TURN-SPECIFIC HOMEWORK ENFORCEMENT:',
+    `- Prior student attempt count with visible working: ${priorAttemptCount}.`,
+    `- Total student turns in this problem so far: ${totalStudentTurns}.`,
+  ];
+
+  if (directAnswerRequest) {
+    lines.push(
+      '- The latest student message is asking for the answer directly.',
+      '- Do NOT provide the complete solution or final answer in this turn.',
+      '- Reply with exactly one hint or one next step only, and keep the student doing the work.',
+      '- If the student has not already shown two genuine attempts with working, a full solution is forbidden.'
+    );
+  } else if (priorAttemptCount < 2) {
+    lines.push(
+      '- The student has not yet earned a full worked solution.',
+      '- Stay in hint-first tutoring mode and reveal at most one next step beyond the student\'s current progress.'
+    );
+  } else {
+    lines.push(
+      '- Even if the student has attempted multiple times, only reveal a full solution if they are still completely unable to proceed.',
+      '- If you reveal a solution, keep it concise and finish with: "Now try a similar problem on your own".'
+    );
+  }
+
+  return lines.join('\n');
+};
+
 export const SUMMARY_BLOCK_SIZE_EXCHANGES = 10;
 export const SUMMARY_MAX_TEXT_CHARS = 4000;
 export const SUMMARY_FALLBACK_CHARS = 500;

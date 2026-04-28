@@ -1,7 +1,7 @@
 import { logger } from 'firebase-functions';
 import { env, requireEnv } from '../../../config/env.js';
 import { buildEstimatedUsage, normalizeTokenUsage } from '../../tokenUsage.js';
-import { buildContextSnapshotMessage, buildFallbackSummary, buildSummaryPrompt, buildSystemInstruction, clampSummaryText, getHistoryText, startsWithLeakedMemoryPrefix, stripLeadingLeakedMemoryBlock, } from '../prompting.js';
+import { buildContextSnapshotMessage, buildFallbackSummary, buildSummaryPrompt, buildSystemInstruction, buildTurnSpecificInstruction, clampSummaryText, getHistoryText, startsWithLeakedMemoryPrefix, stripLeadingLeakedMemoryBlock, } from '../prompting.js';
 const DEFAULT_NOVA_MODEL_ID = 'amazon.nova-micro-v1:0';
 const sanitizeResponse = (text) => {
     const cleaned = (text || '').replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
@@ -224,11 +224,16 @@ export const isRetryableNovaError = (error) => {
 export const generateNovaMicroResponse = async (request) => {
     const startedAt = Date.now();
     const systemInstruction = buildSystemInstruction(request.educationLevel, request.mode, request.objective, request.plan);
+    const turnSpecificInstruction = buildTurnSpecificInstruction({
+        mode: request.mode,
+        prompt: request.prompt,
+        history: request.history,
+    });
     const contextSummary = await refreshContextSummary(request, systemInstruction);
     const providerRequest = { ...request, contextSummary, summaryCandidates: [] };
     let response = await callNovaConverse({
         request: providerRequest,
-        systemInstruction,
+        systemInstruction: [systemInstruction, turnSpecificInstruction].filter(Boolean).join('\n\n'),
         contextSummary,
         maxOutputTokens: request.maxOutputTokens,
     });
@@ -241,7 +246,7 @@ export const generateNovaMicroResponse = async (request) => {
         });
         response = await callNovaConverse({
             request: providerRequest,
-            systemInstruction,
+            systemInstruction: [systemInstruction, turnSpecificInstruction].filter(Boolean).join('\n\n'),
             contextSummary,
             maxOutputTokens: request.maxOutputTokens,
         });
