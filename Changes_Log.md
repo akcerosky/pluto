@@ -431,15 +431,11 @@
   - deferring fresh-thread creation until hydration is complete
   - allowing verified users to continue into chat even if the prefetch warm-up path hits a transient failure
 
-### Verification and Deployment
+### Chat Stability and Prompt Guard Release
 
-- Deployed Firestore indexes to `pluto-ef61b`.
-- Deployed Firebase Functions verification pass to `pluto-ef61b` and confirmed all unchanged functions were safely skipped.
-- Verified the live EC2 Nginx site config still points to `/var/www/pluto/dist` and includes `try_files $uri $uri/ /index.html`.
-- Deployed the latest frontend from GitHub branch `nova-hybrid` to EC2 and reloaded Nginx successfully.
-- Verified the production email-verification handoff with a real smoke run:
-  - fresh signup
-  - verification email received
-  - verification link opened
-  - `I verified` clicked on `https://pluto.akcero.ai/verify-email`
-  - user reached `https://pluto.akcero.ai/chat` with the composer visible
+- Fixed a frontend hydration glitch in `src/context/AppContext.tsx` where normal thread/project updates were re-triggering full cloud hydration and briefly replacing the chat screen with `Loading Pluto...` during message send/receive.
+- Stabilized the `/chat` experience so normal request/response activity now stays inside the chat shell and continues to show the in-chat generation state instead of the full-screen loading fallback.
+- Hardened Homework mode follow-up behavior in `functions/src/services/ai/prompting.ts` so direct requests like “give complete answer” remain hint-first unless the student has genuinely earned a full solution.
+- Narrowed the off-topic refusal rule so clearly educational requests like asking for a solution, a worked example, answer checking, or formula help are never mislabeled as unrelated.
+- Added regression coverage for both the Homework follow-up guard and the narrowed off-topic behavior in `functions/src/services/ai/prompting.test.ts`.
+- Pushed branch `nova-hybrid`, confirmed Firebase Functions in `pluto-ef61b` matched the committed backend state, deployed the latest frontend from GitHub to EC2, reloaded Nginx, and verified `https://pluto.akcero.ai` returned `200 OK` with the updated `dist/index.html` timestamp.
