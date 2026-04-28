@@ -33,7 +33,7 @@ export const VerifyEmailPage = () => {
       navigate('/chat', { replace: true });
     } catch (error) {
       runtimeLogger.warn('Unable to warm Pluto workspace after email verification.', error);
-      setNotice('Your email is verified, but Pluto is still syncing your workspace. Please try again.');
+      navigate('/chat', { replace: true });
     } finally {
       setIsCompletingAccess(false);
     }
