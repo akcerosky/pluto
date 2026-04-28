@@ -303,6 +303,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const emptyThreadCleanupRef = useRef<Set<string>>(new Set());
   const [migrationState, setMigrationState] = useState<string | null>(null);
   const [migrationVersion, setMigrationVersion] = useState<number | undefined>(undefined);
+  const [shouldAutoCreateFreshThread, setShouldAutoCreateFreshThread] = useState(() =>
+    consumeFreshChatViewRequest()
+  );
 
   const currentPlan: SubscriptionPlan = user?.plan ?? DEFAULT_PLAN;
   const planConfig = PLAN_CONFIGS[currentPlan];
@@ -426,6 +429,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const startNewChat = useCallback(() => {
     requestFreshChatView();
+    setShouldAutoCreateFreshThread(true);
     setActiveThreadId(null);
     setActiveProjectId(null);
   }, []);
@@ -593,7 +597,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           getDoc(stateRef),
           getDoc(migrationRef),
         ]);
-        const shouldStartNewChat = consumeFreshChatViewRequest();
 
         if (isCancelled) {
           return;
@@ -632,7 +635,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           setProjects(appState.projects);
         }
 
-        if (shouldStartNewChat) {
+        if (shouldAutoCreateFreshThread) {
           setActiveThreadId(null);
         } else if (
           appState &&
@@ -660,7 +663,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       isCancelled = true;
     };
-  }, [cloudProjects, cloudThreadMetadata, user, user?.id]);
+  }, [cloudProjects, cloudThreadMetadata, shouldAutoCreateFreshThread, user, user?.id]);
 
   useEffect(() => {
     if (!user || isThreadsLoading || isProjectsLoading) {
@@ -971,6 +974,29 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     [currentPlan, user]
   );
 
+  useEffect(() => {
+    if (
+      !user ||
+      !shouldAutoCreateFreshThread ||
+      !isCloudHydrated ||
+      !isSubscriptionHydrated ||
+      activeThreadId !== null
+    ) {
+      return;
+    }
+
+    createThread('Conversational', activeProjectId || undefined);
+    setShouldAutoCreateFreshThread(false);
+  }, [
+    activeProjectId,
+    activeThreadId,
+    createThread,
+    isCloudHydrated,
+    isSubscriptionHydrated,
+    shouldAutoCreateFreshThread,
+    user,
+  ]);
+
   const assignThreadToProject = useCallback((threadId: string, projectId: string | null) => {
     const updatedAt = Date.now();
     setThreads((prev) =>
@@ -1173,6 +1199,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setActiveProjectId,
       currentPlan,
       planConfig,
+      isCloudHydrated,
       isSubscriptionHydrated,
       usageTodayTokens,
       dailyTokenLimit,
@@ -1197,6 +1224,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       createProject,
       createThread,
       currentPlan,
+      isCloudHydrated,
       dailyTokenLimit,
       estimatedMessagesLeft,
       freePremiumModesRemainingToday,

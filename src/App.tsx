@@ -41,7 +41,7 @@ const LazyRoute = ({ children }: { children: ReactNode }) => (
 );
 
 const AppRoutes = () => {
-  const { user } = useApp();
+  const { isCloudHydrated, isSubscriptionHydrated, user } = useApp();
   const isGoogleUser = Boolean(
     auth?.currentUser?.providerData.some((provider) => provider.providerId === 'google.com')
   );
@@ -68,13 +68,17 @@ const AppRoutes = () => {
         path="/chat" 
         element={
           canAccessApp ? (
-            <LazyRoute>
-              <ErrorBoundary>
-                <MainLayout>
-                  <ChatInterface />
-                </MainLayout>
-              </ErrorBoundary>
-            </LazyRoute>
+            isSubscriptionHydrated && isCloudHydrated ? (
+              <LazyRoute>
+                <ErrorBoundary>
+                  <MainLayout>
+                    <ChatInterface />
+                  </MainLayout>
+                </ErrorBoundary>
+              </LazyRoute>
+            ) : (
+              <RouteFallback />
+            )
           ) : (
             <Navigate to={needsVerification ? '/verify-email' : '/login'} replace />
           )
@@ -84,11 +88,15 @@ const AppRoutes = () => {
         path="/profile" 
         element={
           canAccessApp ? (
-            <LazyRoute>
-              <MainLayout>
-                <ProfilePage />
-              </MainLayout>
-            </LazyRoute>
+            isSubscriptionHydrated && isCloudHydrated ? (
+              <LazyRoute>
+                <MainLayout>
+                  <ProfilePage />
+                </MainLayout>
+              </LazyRoute>
+            ) : (
+              <RouteFallback />
+            )
           ) : (
             <Navigate to={needsVerification ? '/verify-email' : '/login'} replace />
           )

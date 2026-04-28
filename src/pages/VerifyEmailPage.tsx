@@ -1,27 +1,43 @@
 import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { sendEmailVerification } from 'firebase/auth';
-import { Mail, RefreshCw, Rocket } from 'lucide-react';
+import { LoaderCircle, Mail, RefreshCw, Rocket } from 'lucide-react';
 import { auth } from '../lib/firebase';
 import { useApp } from '../context/useApp';
 import { getEmailVerificationActionCodeSettings } from '../lib/authActionCode';
 import { runtimeLogger } from '../lib/runtimeLogger';
 
 export const VerifyEmailPage = () => {
-  const { user, updateUser, startNewChat } = useApp();
+  const { refreshServerState, startNewChat, updateUser, user } = useApp();
   const navigate = useNavigate();
   const [notice, setNotice] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isCompletingAccess, setIsCompletingAccess] = useState(false);
 
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  if (user.emailVerified) {
-    startNewChat();
-    return <Navigate to="/chat" replace />;
-  }
+  const completeVerifiedAccess = async () => {
+    if (isCompletingAccess) {
+      return;
+    }
+
+    setIsCompletingAccess(true);
+    setNotice('Email verified. Loading your Pluto workspace...');
+
+    try {
+      startNewChat();
+      await refreshServerState();
+      navigate('/chat', { replace: true });
+    } catch (error) {
+      runtimeLogger.warn('Unable to warm Pluto workspace after email verification.', error);
+      setNotice('Your email is verified, but Pluto is still syncing your workspace. Please try again.');
+    } finally {
+      setIsCompletingAccess(false);
+    }
+  };
 
   const handleResend = async () => {
     if (!auth?.currentUser) return;
@@ -44,6 +60,11 @@ export const VerifyEmailPage = () => {
     setIsRefreshing(true);
     setNotice(null);
     try {
+      if (user.emailVerified) {
+        await completeVerifiedAccess();
+        return;
+      }
+
       for (let attempt = 0; attempt < 10; attempt += 1) {
         await auth.currentUser?.reload();
         await auth.currentUser?.getIdToken(true);
@@ -51,8 +72,7 @@ export const VerifyEmailPage = () => {
         const verified = fresh?.emailVerified === true;
         updateUser({ emailVerified: verified });
         if (verified) {
-          startNewChat();
-          navigate('/chat', { replace: true });
+          await completeVerifiedAccess();
           return;
         }
 
@@ -171,7 +191,7 @@ export const VerifyEmailPage = () => {
           <button
             type="button"
             onClick={handleRefresh}
-            disabled={isRefreshing}
+            disabled={isRefreshing || isCompletingAccess}
             style={{
               padding: '12px 18px',
               borderRadius: '10px',
@@ -186,9 +206,14 @@ export const VerifyEmailPage = () => {
             }}
           >
             <RefreshCw size={16} />
-            {isRefreshing ? 'Checking...' : 'I verified'}
+            {isRefreshing || isCompletingAccess ? 'Checking...' : user.emailVerified ? 'Continue to Pluto' : 'I verified'}
           </button>
         </div>
+        {isCompletingAccess && (
+          <div style={{ marginTop: '18px', display: 'flex', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+            <LoaderCircle size={18} className="animate-spin" />
+          </div>
+        )}
       </div>
     </div>
   );

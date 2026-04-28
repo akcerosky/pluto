@@ -58,6 +58,7 @@ export interface AppContextType {
 
   currentPlan: SubscriptionPlan;
   planConfig: PlanConfig;
+  isCloudHydrated: boolean;
   isSubscriptionHydrated: boolean;
   usageTodayTokens: number;
   dailyTokenLimit: number;
