@@ -125,6 +125,7 @@ export const AuthActionPage = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState<number | null>(null);
 
   const params = useMemo(() => new URLSearchParams(window.location.search), []);
   const mode = params.get('mode');
@@ -194,6 +195,25 @@ export const AuthActionPage = () => {
     };
   }, [loginDestination, mode, oobCode, verifyDestination]);
 
+  useEffect(() => {
+    if (status !== 'reset-success' || mode !== 'resetPassword' || redirectCountdown === null) {
+      return;
+    }
+
+    if (redirectCountdown <= 0) {
+      window.location.assign(loginDestination);
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setRedirectCountdown((current) => (current === null ? current : current - 1));
+    }, 1000);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [loginDestination, mode, redirectCountdown, status]);
+
   const handlePasswordReset = async () => {
     if (!auth || !oobCode) return;
 
@@ -212,10 +232,12 @@ export const AuthActionPage = () => {
     setIsSubmitting(true);
     try {
       await confirmPasswordReset(auth, oobCode, password);
+      setRedirectCountdown(2);
       setStatus('reset-success');
-      setMessage('Password updated. You can sign in with your new password now.');
+      setMessage('Password updated. Redirecting to login...');
     } catch (error) {
       runtimeLogger.warn('Password reset confirmation failed.', error);
+      setRedirectCountdown(null);
       setStatus('error');
       setMessage(getFriendlyResetError(error));
     } finally {
@@ -257,24 +279,35 @@ export const AuthActionPage = () => {
   }
 
   if (status === 'reset-success') {
+    const successMessage =
+      mode === 'resetPassword' && redirectCountdown !== null
+        ? `${message} Redirecting in ${redirectCountdown}...`
+        : message;
+
     return (
-      <StatusShell tone="default" title="All set" message={message}>
-        <a
-          href={mode === 'resetPassword' ? loginDestination : verifyDestination}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '12px 18px',
-            borderRadius: '10px',
-            background: 'var(--primary)',
-            color: 'white',
-            textDecoration: 'none',
-            fontWeight: 700,
-          }}
-        >
-          {mode === 'resetPassword' ? 'Go to login' : 'Back to Pluto'}
-        </a>
+      <StatusShell
+        tone="default"
+        title={mode === 'resetPassword' ? 'Password updated' : 'All set'}
+        message={successMessage}
+      >
+        {mode !== 'resetPassword' && (
+          <a
+            href={verifyDestination}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '12px 18px',
+              borderRadius: '10px',
+              background: 'var(--primary)',
+              color: 'white',
+              textDecoration: 'none',
+              fontWeight: 700,
+            }}
+          >
+            Back to Pluto
+          </a>
+        )}
       </StatusShell>
     );
   }

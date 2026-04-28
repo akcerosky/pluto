@@ -26,8 +26,10 @@ export const hasFirebaseConfig = Object.values(firebaseConfig).every(
 );
 
 const app = hasFirebaseConfig ? getApps()[0] ?? initializeApp(firebaseConfig) : null;
+const isAuthActionPage =
+  typeof window !== 'undefined' && window.location.pathname.startsWith('/__/auth/action');
 
-if (app && appCheckSiteKey) {
+if (app && appCheckSiteKey && !isAuthActionPage) {
   if (isDevelopment && typeof self !== 'undefined') {
     (self as AppCheckDebugGlobal).FIREBASE_APPCHECK_DEBUG_TOKEN =
       appCheckDebugToken || true;
