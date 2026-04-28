@@ -36,6 +36,21 @@ const RouteFallback = () => (
   </div>
 );
 
+const ShellRouteFallback = () => (
+  <div
+    style={{
+      flex: 1,
+      display: 'grid',
+      placeItems: 'center',
+      background: 'var(--background)',
+      color: 'var(--foreground)',
+      fontWeight: 700,
+    }}
+  >
+    Loading Pluto...
+  </div>
+);
+
 const LazyRoute = ({ children }: { children: ReactNode }) => (
   <Suspense fallback={<RouteFallback />}>{children}</Suspense>
 );
@@ -68,17 +83,17 @@ const AppRoutes = () => {
         path="/chat" 
         element={
           canAccessApp ? (
-            isSubscriptionHydrated && isCloudHydrated ? (
-              <LazyRoute>
-                <ErrorBoundary>
-                  <MainLayout>
+            <LazyRoute>
+              <ErrorBoundary>
+                <MainLayout>
+                  {isSubscriptionHydrated && isCloudHydrated ? (
                     <ChatInterface />
-                  </MainLayout>
-                </ErrorBoundary>
-              </LazyRoute>
-            ) : (
-              <RouteFallback />
-            )
+                  ) : (
+                    <ShellRouteFallback />
+                  )}
+                </MainLayout>
+              </ErrorBoundary>
+            </LazyRoute>
           ) : (
             <Navigate to={needsVerification ? '/verify-email' : '/login'} replace />
           )
@@ -88,15 +103,11 @@ const AppRoutes = () => {
         path="/profile" 
         element={
           canAccessApp ? (
-            isSubscriptionHydrated && isCloudHydrated ? (
-              <LazyRoute>
-                <MainLayout>
-                  <ProfilePage />
-                </MainLayout>
-              </LazyRoute>
-            ) : (
-              <RouteFallback />
-            )
+            <LazyRoute>
+              <MainLayout>
+                <ProfilePage />
+              </MainLayout>
+            </LazyRoute>
           ) : (
             <Navigate to={needsVerification ? '/verify-email' : '/login'} replace />
           )
