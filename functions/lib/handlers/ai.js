@@ -10,6 +10,7 @@ import { executeHybridAiRequest } from '../services/ai/orchestrator.js';
 import { acquireAiRequest, completeAiRequest, failAiRequest, throwCachedAiError, } from '../services/aiRequestCache.js';
 import { checkAndRecordAiRateLimit } from '../services/aiRateLimit.js';
 import { estimateAiInputTokenBreakdown, MESSAGE_OVERHEAD_TOKENS, estimateReservedTokens, } from '../services/tokenUsage.js';
+import { OFF_TOPIC_REFUSAL, shouldRefuseGeneralTopicRequest } from '../services/ai/prompting.js';
 const SHARED_HISTORY_WINDOW = 16;
 const RECENT_HISTORY_TOKEN_BUDGET = 4000;
 const SUMMARY_CANDIDATE_MESSAGE_LIMIT = 20;
@@ -380,6 +381,9 @@ export const aiChatHandler = async (request) => {
         : [];
     if (!payload.prompt.trim() && payload.attachments.length === 0) {
         throw new HttpsError('invalid-argument', 'Write a message or attach a file before sending.');
+    }
+    if (payload.prompt.trim() && shouldRefuseGeneralTopicRequest(payload.prompt)) {
+        throw new HttpsError('permission-denied', OFF_TOPIC_REFUSAL);
     }
     if (!planConfig.allowedModes.includes(payload.mode) &&
         !(plan === 'Free' && isPremiumMode && (snapshot.freePremiumModesRemainingToday ?? 0) > 0)) {

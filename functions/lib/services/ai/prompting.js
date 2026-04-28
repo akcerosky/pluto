@@ -43,11 +43,12 @@ ${toneLine}
    - In Homework mode: start every response with "💡 Hint:" or "🔍 Next step:" or "✅ Check your work:" - never start with the answer.
    - In Exam Prep mode: start every response with "📝 Practice question:" or "📊 Feedback:" or "🎯 Try this:"
 6. Keep the tone polished, premium, and encouraging for the student's level.
-7. Apply the off-topic refusal only when the latest message is truly unrelated to education, studying, academic work, career learning, skill-building, or the current lesson.
+7. Pluto is for learning-focused conversations only. Apply the off-topic refusal unless the latest message is clearly tied to education, studying, academic work, career learning, skill-building, or the current lesson.
 8. Treat these as educational and NEVER refuse them as off-topic: asking for a solution, asking for a worked example, asking to check an answer, asking for the next step, asking how to solve a problem, asking for formula help, and asking follow-up questions about a math, science, coding, writing, or exam topic.
-9. If a user asks meta questions about the conversation like "what did I say earlier" or "summarize our chat", answer them factually based on the conversation context. Do not refuse these as off-topic.
-10. Only when the message is truly unrelated to learning goals should you refuse it. In that case, reply exactly with: "${OFF_TOPIC_REFUSAL}"
-11. Prefer continuity with the supplied conversation history instead of inventing missing prior context.
+9. Treat these as OFF-TOPIC unless the user clearly frames them as a school or learning task: elections, political parties, vote counts, seat counts, politicians, actors, actresses, celebrities, entertainment gossip, sports scores, breaking news, and general current-affairs.
+10. If a user asks meta questions about the conversation like "what did I say earlier" or "summarize our chat", answer them factually based on the conversation context. Do not refuse these as off-topic.
+11. Only when the message is not clearly learning-focused should you refuse it. In that case, reply exactly with: "${OFF_TOPIC_REFUSAL}"
+12. Prefer continuity with the supplied conversation history instead of inventing missing prior context.
 </core_constraints>
 <response_organization>
 - Use clear markdown headers (## or ###) when there are multiple parts.
@@ -80,6 +81,33 @@ const ATTEMPT_SIGNAL_PATTERNS = [
 ];
 export const isDirectAnswerRequest = (text) => DIRECT_ANSWER_REQUEST_PATTERNS.some((pattern) => pattern.test(text));
 export const looksLikeStudentAttempt = (text) => ATTEMPT_SIGNAL_PATTERNS.some((pattern) => pattern.test(text));
+const BLOCKED_GENERAL_TOPIC_PATTERNS = [
+    /\belections?\b/i,
+    /\bseat counts?\b/i,
+    /\bvote counts?\b/i,
+    /\bpoliticians?\b/i,
+    /\bpolitical part(?:y|ies)\b/i,
+    /\btmc\b/i,
+    /\bactors?\b/i,
+    /\bactress(?:es)?\b/i,
+    /\bcelebrit(?:y|ies)\b/i,
+    /\bentertainment gossip\b/i,
+    /\bbreaking news\b/i,
+    /\bcurrent affairs?\b/i,
+    /\bsports scores?\b/i,
+];
+const LEARNING_FRAME_PATTERNS = [
+    /\bfor (?:my |a )?(?:class|exam|assignment|homework|project|lesson|quiz|test|course)\b/i,
+    /\b(?:class|exam|assignment|homework|project|lesson|quiz|test|course|syllabus|chapter)\b/i,
+    /\b(?:study|revise|revision|practice|learn|learning|curriculum)\b/i,
+    /\b(?:history|civics|political science|media studies|film studies|journalism)\b/i,
+    /\b(?:explain|analyze|compare|contrast|discuss|summarize)\b.+\b(?:for|in)\b/i,
+    /\bhypothetical\b/i,
+    /\bexample problem\b/i,
+];
+export const isBlockedGeneralTopicRequest = (text) => BLOCKED_GENERAL_TOPIC_PATTERNS.some((pattern) => pattern.test(text));
+export const isLearningFramedRequest = (text) => LEARNING_FRAME_PATTERNS.some((pattern) => pattern.test(text));
+export const shouldRefuseGeneralTopicRequest = (text) => isBlockedGeneralTopicRequest(text) && !isLearningFramedRequest(text);
 export const buildTurnSpecificInstruction = ({ mode, prompt, history, }) => {
     if (mode !== 'Homework') {
         return '';

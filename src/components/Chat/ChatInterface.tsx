@@ -496,10 +496,17 @@ export const ChatInterface = () => {
       ? String((error as { code?: unknown }).code)
       : '';
 
+  const getChatErrorMessage = (error: unknown) =>
+    typeof error === 'object' && error !== null && 'message' in error
+      ? String((error as { message?: unknown }).message)
+      : 'Pluto hit a temporary problem. You can retry this request.';
+
   const isTransientProcessingError = (error: unknown) => {
     const code = getChatErrorCode(error);
     return code === 'functions/already-exists' || code === 'functions/deadline-exceeded';
   };
+
+  const isBlockedPromptError = (error: unknown) => getChatErrorCode(error) === 'functions/permission-denied';
 
   const isPlutoErrorBubble = (message: Message) =>
     message.role === 'assistant' &&
@@ -752,6 +759,20 @@ export const ChatInterface = () => {
         mode: activeThread.mode,
         threadId: activeThread.id,
       });
+      if (isBlockedPromptError(error)) {
+        const refusalMsg: Message = {
+          id: `${userMessageId}-refusal`,
+          role: 'assistant',
+          parts: [createTextPart(getChatErrorMessage(error))],
+          mode,
+          timestamp: Date.now(),
+        };
+        addMessageToThread(threadId, refusalMsg);
+        setFailedRequest((current) =>
+          current?.userMessageId === userMessageId ? null : current
+        );
+        return;
+      }
       const transientProcessingError = isTransientProcessingError(error);
       setFailedRequest({
         threadId,
@@ -764,7 +785,7 @@ export const ChatInterface = () => {
         attachments: inlineAttachments,
         statusMessage: transientProcessingError
           ? 'PLUTO IS GENERATING...'
-          : 'Pluto hit a temporary problem. You can retry this request.',
+          : getChatErrorMessage(error),
       });
     } finally {
       setRetryState(null);

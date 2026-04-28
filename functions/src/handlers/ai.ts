@@ -30,6 +30,7 @@ import {
   MESSAGE_OVERHEAD_TOKENS,
   estimateReservedTokens,
 } from '../services/tokenUsage.js';
+import { OFF_TOPIC_REFUSAL, shouldRefuseGeneralTopicRequest } from '../services/ai/prompting.js';
 import type {
   AiHistoryMessage,
   AiInlineAttachment,
@@ -564,6 +565,10 @@ export const aiChatHandler = async (request: CallableRequest<unknown>) => {
 
   if (!payload.prompt.trim() && payload.attachments.length === 0) {
     throw new HttpsError('invalid-argument', 'Write a message or attach a file before sending.');
+  }
+
+  if (payload.prompt.trim() && shouldRefuseGeneralTopicRequest(payload.prompt)) {
+    throw new HttpsError('permission-denied', OFF_TOPIC_REFUSAL);
   }
 
   if (

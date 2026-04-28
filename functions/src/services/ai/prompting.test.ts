@@ -1,4 +1,10 @@
-import { buildSystemInstruction, buildTurnSpecificInstruction, OFF_TOPIC_REFUSAL } from './prompting.js';
+import {
+  buildSystemInstruction,
+  buildTurnSpecificInstruction,
+  isLearningFramedRequest,
+  shouldRefuseGeneralTopicRequest,
+  OFF_TOPIC_REFUSAL,
+} from './prompting.js';
 
 test('homework mode instructions strongly enforce hint-first tutoring', () => {
   const instruction = buildSystemInstruction(
@@ -56,7 +62,35 @@ test('off-topic rule explicitly preserves educational solution requests', () => 
   expect(instruction).toContain('asking for a worked example');
   expect(instruction).toContain('asking to check an answer');
   expect(instruction).toContain('asking how to solve a problem');
-  expect(instruction).toContain('Only when the message is truly unrelated to learning goals should you refuse it');
+  expect(instruction).toContain('Only when the message is not clearly learning-focused should you refuse it');
+});
+
+test('off-topic rule explicitly blocks elections and celebrity queries unless framed as study tasks', () => {
+  const instruction = buildSystemInstruction(
+    'High School',
+    'Conversational',
+    'General Learning',
+    'Pro'
+  );
+
+  expect(instruction).toContain('Treat these as OFF-TOPIC unless the user clearly frames them as a school or learning task');
+  expect(instruction).toContain('elections');
+  expect(instruction).toContain('seat counts');
+  expect(instruction).toContain('actors');
+  expect(instruction).toContain('actresses');
+  expect(instruction).toContain('celebrities');
+  expect(instruction).toContain('general current-affairs');
+});
+
+test('server-side general-topic refusal blocks celebrity and election prompts without study framing', () => {
+  expect(shouldRefuseGeneralTopicRequest('tell me about actress samatha')).toBe(true);
+  expect(shouldRefuseGeneralTopicRequest('What is the number of seats won by tmc?')).toBe(true);
+});
+
+test('server-side general-topic refusal allows explicitly school-framed requests', () => {
+  expect(isLearningFramedRequest('Explain elections for my civics class')).toBe(true);
+  expect(shouldRefuseGeneralTopicRequest('Explain elections for my civics class')).toBe(false);
+  expect(shouldRefuseGeneralTopicRequest('Compare two actors for my media studies assignment')).toBe(false);
 });
 
 test('homework follow-up asking for the full answer stays locked to hint-only mode', () => {
