@@ -47,6 +47,14 @@ const START_NEW_CHAT_KEY = `${STORAGE_KEY}_start_new_chat`;
 const estimatePromptTokens = (value: string) => Math.max(1, Math.ceil(value.trim().length / 4));
 const APP_STATE_SIZE_GUARD_BYTES = 900 * 1024;
 
+const getDailyQuotaExceededMessage = (plan: SubscriptionPlan) => {
+  if (plan === 'Pro') {
+    return 'You reached the Pro daily token limit for today. Please wait for the 00:00 IST reset.';
+  }
+
+  return `You reached the ${plan} daily token limit for today. Upgrade to continue or wait for the 00:00 IST reset.`;
+};
+
 const getNextIstMidnightMs = (from = new Date()) => {
   const istParts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',
@@ -816,20 +824,23 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         };
       }
 
+      if (remainingTodayTokens <= 0) {
+        return {
+          ok: false,
+          reason: getDailyQuotaExceededMessage(currentPlan),
+        };
+      }
+
       if (
         estimatePromptTokens(trimmedMessage || ' ') + planConfig.maxOutputTokensPerRequest >
         remainingTodayTokens
       ) {
         return {
           ok: false,
-          reason: 'You do not have enough tokens remaining for this request today.',
-        };
-      }
-
-      if (remainingTodayTokens <= 0) {
-        return {
-          ok: false,
-          reason: `You reached the ${currentPlan} daily token limit for today. Upgrade or wait for the 00:00 IST reset.`,
+          reason:
+            currentPlan === 'Pro'
+              ? 'You do not have enough tokens remaining for this request today. Please wait for the 00:00 IST reset.'
+              : `You do not have enough tokens remaining for this request today. Upgrade to continue or wait for the 00:00 IST reset.`,
         };
       }
 

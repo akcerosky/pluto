@@ -9,9 +9,24 @@ import { formatTokenCount } from '../lib/tokenQuota';
 
 export const LandingPage = () => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const { user } = useApp();
+  const { user, currentPlan } = useApp();
   const primaryCtaTarget = user ? '/chat' : '/signup';
   const pricingCtaTarget = user ? '/profile' : '/signup';
+  const visiblePlans = Object.values(PLAN_CONFIGS).filter((plan) => {
+    if (!user) {
+      return true;
+    }
+
+    if (currentPlan === 'Pro') {
+      return plan.id === 'Pro';
+    }
+
+    if (currentPlan === 'Plus') {
+      return plan.id !== 'Free';
+    }
+
+    return true;
+  });
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
@@ -224,24 +239,21 @@ export const LandingPage = () => {
           <p style={{ color: 'var(--text-secondary)', textAlign: 'center', marginBottom: '28px' }}>
             Start free each day, then upgrade to Plus or Pro for larger token budgets and advanced learning modes.
           </p>
-          <div
-            style={{
-              margin: '0 auto 22px',
-              maxWidth: '860px',
-              borderRadius: '14px',
-              padding: '12px 16px',
-              background: 'rgba(245, 158, 11, 0.08)',
-              border: '1px solid rgba(245, 158, 11, 0.35)',
-              color: '#fbbf24',
-              fontSize: '0.9rem',
-              textAlign: 'center',
-            }}
-          >
-            Freemium rule: Free includes a daily token quota. Once you run out of tokens, upgrade to Plus or Pro to keep learning the same day.
-          </div>
           <div className="landing-pricing-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '16px' }}>
-            {Object.values(PLAN_CONFIGS).map((plan) => (
-              <div key={plan.id} className="glass-card pricing-card" style={{ padding: '24px', border: plan.id === 'Plus' ? '1px solid rgba(138, 43, 226, 0.55)' : '1px solid var(--glass-border)' }}>
+            {visiblePlans.map((plan) => {
+              const isCurrentPlan = user && plan.id === currentPlan;
+              return (
+              <div
+                key={plan.id}
+                className="glass-card pricing-card"
+                style={{
+                  padding: '24px',
+                  border: plan.id === 'Plus' ? '1px solid rgba(138, 43, 226, 0.55)' : '1px solid var(--glass-border)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  height: '100%',
+                }}
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
                   <h3 style={{ fontSize: '1.3rem', fontWeight: 800 }}>{plan.id}</h3>
                   <div style={{ color: '#f59e0b', fontWeight: 700 }}>{plan.price}</div>
@@ -255,7 +267,7 @@ export const LandingPage = () => {
                     </div>
                   ))}
                 </div>
-                <div style={{ marginTop: '16px' }}>
+                <div style={{ marginTop: 'auto', paddingTop: '16px' }}>
                   <Link
                     to={pricingCtaTarget}
                     style={{
@@ -266,18 +278,19 @@ export const LandingPage = () => {
                       padding: '10px 12px',
                       borderRadius: '10px',
                       textDecoration: 'none',
-                      background: plan.id === 'Plus' ? 'linear-gradient(45deg, var(--primary), #6a1b9a)' : 'rgba(255,255,255,0.06)',
-                      border: plan.id === 'Plus' ? 'none' : '1px solid rgba(255,255,255,0.12)',
+                      background: 'linear-gradient(45deg, var(--primary), #6a1b9a)',
+                      border: 'none',
                       color: 'white',
                       fontWeight: 700,
                       fontSize: '0.85rem',
+                      opacity: isCurrentPlan ? 0.82 : 1,
                     }}
                   >
-                    {user ? (plan.id === 'Free' ? 'Open Free Plan' : `Manage ${plan.id}`) : plan.id === 'Free' ? 'Start Free' : `Choose ${plan.id}`}
+                    {isCurrentPlan ? 'Current Plan' : `Subscribe ${plan.id}`}
                   </Link>
                 </div>
               </div>
-            ))}
+            )})}
           </div>
           <div
             className="glass-card pricing-table-card"

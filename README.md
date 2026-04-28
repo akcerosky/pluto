@@ -104,7 +104,7 @@ Notes:
 - `VITE_RAZORPAY_KEY_ID` is the public Razorpay key used by Checkout
 - `VITE_API_BASE_URL` can stay empty when using Firebase Hosting + callable Functions
 - localhost development supports Firebase App Check debug token flow
-- Sentry initializes only when `VITE_APP_ENV=production`
+- Sentry initializes only when `VITE_APP_ENV=production` and `VITE_SENTRY_DSN` is set
 
 4. Run the frontend:
 
@@ -191,6 +191,7 @@ App Check:
 
 - Production uses reCAPTCHA v3
 - Local development can use an App Check debug token
+- Pluto skips App Check initialization on `__/auth/action` pages such as password reset and email verification actions
 
 ## Admin Bootstrap
 
@@ -313,10 +314,8 @@ All sensitive writes happen through Firebase Admin SDK in Cloud Functions.
 
 ## Current Limitations / Follow-Ups
 
-- Account deletion is not implemented yet
 - `AssistantMessageContent` / Firebase vendor chunks are still the largest frontend bundles and should be reduced further
 - Local Node is expected to be upgraded to `20.19+` or `22.12+` for Vite parity
-- `firebase-functions` in `functions/package.json` is behind latest and should be upgraded carefully
 
 ## Notes
 

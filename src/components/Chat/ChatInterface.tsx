@@ -1154,10 +1154,10 @@ export const ChatInterface = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      <footer className="chat-footer" style={{ padding: '24px 20px', width: '100%', maxWidth: '850px', margin: '0 auto', zIndex: 10 }}>
+      <footer className="chat-footer" style={{ padding: '24px 20px 8px', width: '100%', maxWidth: '850px', margin: '0 auto', zIndex: 10 }}>
         <div
           ref={footerInteractiveRef}
-          style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}
+          style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
           onMouseLeave={() => setIsComposerActive(false)}
         >
           {isComposerActive ? (
@@ -1310,7 +1310,7 @@ export const ChatInterface = () => {
               <span>This mode is locked on {currentPlan}. Upgrade to Plus or Pro.</span>
             </div>
           )}
-          <p style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-secondary)', opacity: 0.6, marginTop: '8px', paddingBottom: '10px' }}>
+          <p style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-secondary)', opacity: 0.6, marginTop: '0', paddingBottom: '0', lineHeight: 1.2 }}>
             Pluto Intelligence may be wrong. Verification recommended.
           </p>
         </div>

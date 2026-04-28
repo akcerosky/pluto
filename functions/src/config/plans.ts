@@ -44,7 +44,7 @@ export const PLAN_DEFINITIONS: Record<SubscriptionPlan, PlanDefinition> = {
     maxOutputTokensPerRequest: 1_000,
     averageTokensPerMessage: 2_000,
     maxInputChars: 500,
-    allowedModes: ['Conversational'],
+    allowedModes: ['Conversational', 'Homework', 'ExamPrep'],
     attachmentsEnabled: false,
     allowedAttachmentKinds: [],
     maxAttachmentBytes: 0,

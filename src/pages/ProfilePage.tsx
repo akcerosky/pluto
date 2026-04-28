@@ -71,6 +71,7 @@ export const ProfilePage = () => {
   const [billingNotice, setBillingNotice] = useState<string | null>(null);
   const [billingPlanLoading, setBillingPlanLoading] = useState<SubscriptionPlan | null>(null);
   const [subscriptionStatus, setSubscriptionStatus] = useState<'pending' | 'active' | 'cancelled' | 'paused' | 'expired'>('active');
+  const [subscriptionProvider, setSubscriptionProvider] = useState<'free' | 'razorpay'>('free');
   const [cancelAtPeriodEnd, setCancelAtPeriodEnd] = useState(false);
   const [endDate, setEndDate] = useState<string | null>(null);
   const [history, setHistory] = useState<Array<Record<string, unknown>>>([]);
@@ -86,6 +87,7 @@ export const ProfilePage = () => {
       try {
         const [subscription, paymentHistory] = await Promise.all([billingSubscriptionGet(), billingHistory()]);
         setSubscriptionStatus(subscription.subscription.status);
+        setSubscriptionProvider(subscription.subscription.provider);
         setCancelAtPeriodEnd(subscription.subscription.cancelAtPeriodEnd);
         setEndDate(subscription.subscription.endDate);
         setHistory(paymentHistory.history);
@@ -194,6 +196,7 @@ export const ProfilePage = () => {
           await refreshServerState();
           const subscription = await billingSubscriptionGet();
           setSubscriptionStatus(subscription.subscription.status);
+          setSubscriptionProvider(subscription.subscription.provider);
           setCancelAtPeriodEnd(subscription.subscription.cancelAtPeriodEnd);
           setEndDate(subscription.subscription.endDate);
           applyServerSnapshot({
@@ -228,6 +231,7 @@ export const ProfilePage = () => {
     try {
       const response = await billingSubscriptionCancel();
       setSubscriptionStatus(response.subscription.status);
+      setSubscriptionProvider(response.subscription.provider);
       setCancelAtPeriodEnd(response.subscription.cancelAtPeriodEnd);
       setEndDate(response.subscription.endDate);
       setBillingNotice('Your Razorpay subscription has been set to cancel at the end of the current billing cycle.');
@@ -241,6 +245,7 @@ export const ProfilePage = () => {
     try {
       const response = await billingSubscriptionResume();
       setSubscriptionStatus(response.subscription.status);
+      setSubscriptionProvider(response.subscription.provider);
       setCancelAtPeriodEnd(response.subscription.cancelAtPeriodEnd);
       setEndDate(response.subscription.endDate);
       setBillingNotice('Your Razorpay subscription has resumed.');
@@ -325,6 +330,7 @@ export const ProfilePage = () => {
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '10px',
+                      height: '100%',
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -347,7 +353,10 @@ export const ProfilePage = () => {
                     <button
                       onClick={() => startPlanChange(plan.id)}
                       disabled={isCurrent || billingPlanLoading === plan.id}
-                      style={primaryButtonStyle(isCurrent || billingPlanLoading === plan.id)}
+                      style={{
+                        ...primaryButtonStyle(isCurrent || billingPlanLoading === plan.id),
+                        marginTop: 'auto',
+                      }}
                     >
                       {isCurrent ? 'Current Plan' : billingPlanLoading === plan.id ? 'Opening Razorpay...' : `Subscribe ${plan.id}`}
                     </button>
@@ -357,12 +366,12 @@ export const ProfilePage = () => {
             </div>
 
             <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '18px' }}>
-              {subscriptionStatus === 'active' && !cancelAtPeriodEnd && (
+              {subscriptionProvider === 'razorpay' && subscriptionStatus === 'active' && !cancelAtPeriodEnd && (
                 <button onClick={handleCancelSubscription} style={mutedDangerButtonStyle}>
                   Cancel Renewal
                 </button>
               )}
-              {subscriptionStatus === 'paused' && (
+              {subscriptionProvider === 'razorpay' && subscriptionStatus === 'paused' && (
                 <button onClick={handleResumeSubscription} style={resumeButtonStyle}>
                   Resume Renewal
                 </button>
@@ -457,6 +466,7 @@ export const ProfilePage = () => {
                 <div style={inputContainerStyle}>
                   <GraduationCap size={18} style={iconStyle} />
                   <select
+                    className="profile-select"
                     value={educationLevel}
                     onChange={(e) => setEducationLevel(e.target.value as EducationLevel)}
                     style={profileInputStyle}

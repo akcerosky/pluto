@@ -35,6 +35,12 @@ const getCachedErrorFromHttpsError = (error) => ({
     code: error.code,
     message: error.message,
 });
+const getDailyQuotaExceededMessage = (plan) => {
+    if (plan === 'Pro') {
+        return 'You reached the Pro daily token limit for today. Please wait for the 00:00 IST reset.';
+    }
+    return `You reached the ${plan} daily token limit for today. Upgrade to continue or wait for the 00:00 IST reset.`;
+};
 const logAiRequestCacheCompleteFailure = ({ uid, requestId, cacheKey, error, }) => {
     logger.error('ai_request_cache_complete_failed', {
         eventType: 'ai_request_cache_complete_failed',
@@ -538,7 +544,7 @@ export const aiChatHandler = async (request) => {
             reservedTokens: reservationEstimate.reservedTokens,
             remainingBefore: snapshot.remainingTodayTokens,
         });
-        throw new HttpsError('resource-exhausted', 'You do not have enough tokens remaining for this request today.');
+        throw new HttpsError('resource-exhausted', getDailyQuotaExceededMessage(plan));
     }
     const requestClaim = await acquireAiRequest(uid, requestId);
     if (requestClaim.state === 'completed') {
@@ -604,7 +610,7 @@ export const aiChatHandler = async (request) => {
                 reservedTokens: reservationEstimate.reservedTokens,
                 remainingBefore: snapshot.remainingTodayTokens,
             });
-            const quotaError = new HttpsError('resource-exhausted', 'You do not have enough tokens remaining for this request today.');
+            const quotaError = new HttpsError('resource-exhausted', getDailyQuotaExceededMessage(plan));
             await failAiRequest(requestClaim.cacheKey, 'permanent', getCachedErrorFromHttpsError(quotaError)).catch(() => undefined);
             throw quotaError;
         }

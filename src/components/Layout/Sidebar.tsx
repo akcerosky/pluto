@@ -14,7 +14,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { Suspense, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { LazyProjectsModal } from '../Chat/LazyModePanels';
 import { formatTokenUsageSummary } from '../../lib/tokenQuota';
 
@@ -67,6 +67,7 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
   const [isUsageResetVisible, setIsUsageResetVisible] = useState(false);
   const usageResetRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const location = useLocation();
   const effectiveCollapsed = isMobile ? false : isCollapsed;
   const usageResetTitle = getNextIstResetLabel();
   const showDiscover = import.meta.env.VITE_APP_ENV !== 'production';
@@ -410,7 +411,7 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
               icon={<Settings size={18} />} 
               label="Settings" 
               onClick={() => {
-                navigate('/profile');
+                navigate(location.pathname === '/profile' ? '/chat' : '/profile');
                 closeMobile();
               }}
             />

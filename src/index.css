@@ -845,6 +845,21 @@ input:focus, select:focus {
   outline: none;
 }
 
+select,
+.profile-select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: rgba(255, 255, 255, 0.03);
+  color: var(--foreground);
+}
+
+select option,
+.profile-select option {
+  background: #0f1020;
+  color: #ffffff;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }
