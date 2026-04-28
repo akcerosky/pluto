@@ -104,8 +104,7 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
     }
   }, [user, openFreshChat, openVerifyEmail]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async () => {
     setIsLoading(true);
     setError(null);
     setNotice(null);
@@ -335,7 +334,7 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
             <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }} />
           </div>
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <input 
               required
               type="email" 
@@ -389,7 +388,8 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
               </button>
             )}
             <button 
-              type="submit" 
+              type="button"
+              onClick={() => void handleSubmit()}
               disabled={isLoading}
               style={{
                 width: '100%',
@@ -411,7 +411,7 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
             >
               {isLoading ? <Loader2 className="animate-spin" size={20} /> : 'Continue'}
             </button>
-          </form>
+          </div>
 
           <div style={{ marginTop: '24px', fontSize: '0.9rem', color: '#888' }}>
             {mode === 'login' ? (
