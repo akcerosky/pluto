@@ -361,17 +361,22 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const refreshServerState = useCallback(async () => {
-    if (!auth?.currentUser) return;
+    const authUser = auth?.currentUser;
+    if (!authUser) return;
     setIsSubscriptionHydrated(false);
     try {
+      await authUser.reload();
+      await authUser.getIdToken(true);
+
       const response = await meGet();
+      const freshAuthUser = auth?.currentUser ?? authUser;
       const usageSnapshot = normalizeUsageSnapshot(response.subscription.plan, response);
       setUserState(
         normalizeUser({
           id: response.user.id,
           name: response.user.name,
           email: response.user.email,
-          emailVerified: auth.currentUser?.emailVerified ?? false,
+          emailVerified: freshAuthUser.emailVerified ?? false,
           avatar: response.user.avatar,
           educationLevel: normalizeEducationLevel(response.user.educationLevel),
           objective: response.user.objective,
