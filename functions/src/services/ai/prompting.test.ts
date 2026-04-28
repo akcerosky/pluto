@@ -43,6 +43,22 @@ test('off-topic refusal remains explicit in the system instruction', () => {
   expect(instruction).toContain(OFF_TOPIC_REFUSAL);
 });
 
+test('off-topic rule explicitly preserves educational solution requests', () => {
+  const instruction = buildSystemInstruction(
+    'High School',
+    'Homework',
+    'Algebra',
+    'Pro'
+  );
+
+  expect(instruction).toContain('Treat these as educational and NEVER refuse them as off-topic');
+  expect(instruction).toContain('asking for a solution');
+  expect(instruction).toContain('asking for a worked example');
+  expect(instruction).toContain('asking to check an answer');
+  expect(instruction).toContain('asking how to solve a problem');
+  expect(instruction).toContain('Only when the message is truly unrelated to learning goals should you refuse it');
+});
+
 test('homework follow-up asking for the full answer stays locked to hint-only mode', () => {
   const instruction = buildTurnSpecificInstruction({
     mode: 'Homework',

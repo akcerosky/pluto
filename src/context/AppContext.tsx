@@ -299,6 +299,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   );
   const threadsRef = useRef(threads);
   const projectsRef = useRef(projects);
+  const cloudThreadMetadataRef = useRef<ThreadMetadata[]>([]);
+  const cloudProjectsRef = useRef<Project[]>([]);
   const pendingMessageIdsRef = useRef<Map<string, Set<string>>>(new Map());
   const emptyThreadCleanupRef = useRef<Set<string>>(new Set());
   const [migrationState, setMigrationState] = useState<string | null>(null);
@@ -457,6 +459,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, [projects]);
 
   useEffect(() => {
+    cloudThreadMetadataRef.current = cloudThreadMetadata;
+  }, [cloudThreadMetadata]);
+
+  useEffect(() => {
+    cloudProjectsRef.current = cloudProjects;
+  }, [cloudProjects]);
+
+  useEffect(() => {
     if (!activeThreadId || activeThreadMessages.length === 0) {
       return;
     }
@@ -586,7 +596,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     let isCancelled = false;
 
     const loadCloudState = async () => {
-      if (!user || !db || !hasFirebaseConfig) {
+      if (!firebaseUid || !db || !hasFirebaseConfig) {
         setIsCloudHydrated(true);
         setMigrationState(null);
         setMigrationVersion(undefined);
@@ -595,9 +605,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       setIsCloudHydrated(false);
       try {
-        const resolvedUid = auth?.currentUser?.uid ?? user.id;
-        const stateRef = appStateDocRef(db, resolvedUid);
-        const migrationRef = migrationDocRef(db, resolvedUid);
+        const stateRef = appStateDocRef(db, firebaseUid);
+        const migrationRef = migrationDocRef(db, firebaseUid);
         const [snapshot, migrationSnapshot] = await Promise.all([
           getDoc(stateRef),
           getDoc(migrationRef),
@@ -624,8 +633,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const cloudUpdatedAt = appState?.updatedAt ?? 0;
         const localUpdatedAt = getLocalStateUpdatedAt(threadsRef.current, projectsRef.current);
         const localHasState = threadsRef.current.length > 0 || projectsRef.current.length > 0;
-        const collectionsHaveData = cloudThreadMetadata.length > 0 || cloudProjects.length > 0;
-        const cloudThreadsForSelection: Thread[] = cloudThreadMetadata.map((metadata) => ({
+        const latestCloudThreadMetadata = cloudThreadMetadataRef.current;
+        const latestCloudProjects = cloudProjectsRef.current;
+        const collectionsHaveData =
+          latestCloudThreadMetadata.length > 0 || latestCloudProjects.length > 0;
+        const cloudThreadsForSelection: Thread[] = latestCloudThreadMetadata.map((metadata) => ({
           ...metadata,
           messages: [],
         }));
@@ -668,7 +680,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return () => {
       isCancelled = true;
     };
-  }, [cloudProjects, cloudThreadMetadata, shouldAutoCreateFreshThread, user, user?.id]);
+  }, [firebaseUid, shouldAutoCreateFreshThread]);
 
   useEffect(() => {
     if (!user || isThreadsLoading || isProjectsLoading) {
