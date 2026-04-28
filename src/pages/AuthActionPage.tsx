@@ -194,9 +194,7 @@ export const AuthActionPage = () => {
     };
   }, [loginDestination, mode, oobCode, verifyDestination]);
 
-  const handlePasswordReset = async (event: React.FormEvent) => {
-    event.preventDefault();
-
+  const handlePasswordReset = async () => {
     if (!auth || !oobCode) return;
 
     if (password.length < 8) {
@@ -338,7 +336,7 @@ export const AuthActionPage = () => {
           </p>
         )}
 
-        <form onSubmit={handlePasswordReset} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ position: 'relative' }}>
             <input
               required
@@ -394,7 +392,8 @@ export const AuthActionPage = () => {
           />
 
           <button
-            type="submit"
+            type="button"
+            onClick={() => void handlePasswordReset()}
             disabled={isSubmitting}
             style={{
               width: '100%',
@@ -410,7 +409,7 @@ export const AuthActionPage = () => {
           >
             {isSubmitting ? 'Updating...' : 'Update password'}
           </button>
-        </form>
+        </div>
       </div>
     </div>
   );
