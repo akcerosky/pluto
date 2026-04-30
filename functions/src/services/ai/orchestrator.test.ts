@@ -186,3 +186,32 @@ test('completion logs include modelUsed and failure errors carry model metadata'
     retryEligible: true,
   });
 });
+
+test('homework mode guards complete solutions with a generic redirect', async () => {
+  geminiExecute.mockResolvedValueOnce({
+    ...successResult('gemini', 'gemini-2.5-flash', 'gemini-2.5-flash'),
+    text: `Complete Solution:
+1. Identify the parts
+2. Work them out
+3. Final answer`,
+  });
+
+  const result = await executeHybridAiRequest({
+    ...baseRequest,
+    mode: 'Homework',
+    prompt: 'help me solve this',
+    attachments: [
+      {
+        name: 'question.png',
+        mimeType: 'image/png',
+        sizeBytes: 100,
+        base64Data: 'QQ==',
+      },
+    ],
+    history: [],
+  });
+
+  expect(result.text).toBe(
+    "💡 Let's work through this together step by step. What do you know about this problem so far? Try starting with the first part."
+  );
+});

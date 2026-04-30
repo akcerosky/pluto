@@ -21,6 +21,51 @@ const sanitizeResponse = (text: string) => {
   return cleaned || '';
 };
 
+const normalizeForSimilarity = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[^\w\s]/g, '')
+    .trim();
+
+const buildCharacterBigrams = (text: string) => {
+  const normalized = normalizeForSimilarity(text);
+  if (normalized.length < 2) {
+    return new Set(normalized ? [normalized] : []);
+  }
+
+  const bigrams = new Set<string>();
+  for (let index = 0; index < normalized.length - 1; index += 1) {
+    bigrams.add(normalized.slice(index, index + 2));
+  }
+  return bigrams;
+};
+
+const getSimilarityScore = (left: string, right: string) => {
+  const leftBigrams = buildCharacterBigrams(left);
+  const rightBigrams = buildCharacterBigrams(right);
+
+  if (leftBigrams.size === 0 || rightBigrams.size === 0) {
+    return 0;
+  }
+
+  let overlap = 0;
+  for (const bigram of leftBigrams) {
+    if (rightBigrams.has(bigram)) {
+      overlap += 1;
+    }
+  }
+
+  return (2 * overlap) / (leftBigrams.size + rightBigrams.size);
+};
+
+const getLatestAssistantText = (history: AiHistoryMessage[]) =>
+  [...history]
+    .reverse()
+    .filter((message) => message.role === 'assistant')
+    .map((message) => getMessageText(message))
+    .find((text) => text.trim().length > 0) ?? '';
+
 const getProviderErrorDetails = (error: unknown) => {
   if (!(typeof error === 'object' && error !== null)) {
     return {
@@ -334,6 +379,23 @@ export const generateNovaMicroResponse = async (request: ProviderRequest): Promi
     }
 
     text = sanitizeResponse(stripLeadingLeakedMemoryBlock(retriedText));
+  }
+
+  const previousAssistantText = getLatestAssistantText(request.history);
+  if (previousAssistantText && getSimilarityScore(text, previousAssistantText) > 0.9) {
+    response = await callNovaConverse({
+      request: providerRequest,
+      systemInstruction: [
+        systemInstruction,
+        turnSpecificInstruction,
+        'Your previous response was identical to your last answer. The student needs a DIFFERENT response. Give more scaffolding, ask a smaller question, or use a different explanation, but do not give the complete solution in Homework mode.',
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+      contextSummary,
+      maxOutputTokens: request.maxOutputTokens,
+    });
+    text = sanitizeResponse(extractConverseText(response.payload));
   }
 
   validateNovaText(text);

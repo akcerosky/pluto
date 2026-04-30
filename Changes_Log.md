@@ -439,3 +439,27 @@
 - Narrowed the off-topic refusal rule so clearly educational requests like asking for a solution, a worked example, answer checking, or formula help are never mislabeled as unrelated.
 - Added regression coverage for both the Homework follow-up guard and the narrowed off-topic behavior in `functions/src/services/ai/prompting.test.ts`.
 - Pushed branch `nova-hybrid`, confirmed Firebase Functions in `pluto-ef61b` matched the committed backend state, deployed the latest frontend from GitHub to EC2, reloaded Nginx, and verified `https://pluto.akcero.ai` returned `200 OK` with the updated `dist/index.html` timestamp.
+
+## 2026-04-30
+
+### Homework Mode Guard Simplification
+
+- Reworked Homework mode policy in `functions/src/services/ai/prompting.ts` so the backend no longer injects hardcoded quadratic-specific tutoring text.
+- Replaced the previous stage-based Homework fallback with a generic, subject-agnostic turn-instruction builder for:
+  - first-turn tutoring
+  - direct-answer requests without student work
+  - student-attempt follow-ups
+- Simplified `enforceHomeworkResponsePolicy` into a true post-response safety net that only intercepts complete-solution leakage and otherwise leaves Nova's guided response untouched.
+- Removed the earlier repeated-request unlock path so Homework mode never grants a full worked solution through backend policy.
+- Kept Nova duplicate-response retry behavior but updated the retry instruction so Homework mode asks for a different scaffolded response instead of suggesting a full solution.
+
+### Homework Mode Verification
+
+- Rewrote Homework-mode regression coverage in:
+  - `functions/src/services/ai/prompting.test.ts`
+  - `functions/src/services/ai/orchestrator.test.ts`
+  - `functions/src/services/ai/providers/novaMicroProvider.test.ts`
+- Verified the updated backend with:
+  - `npm.cmd test -- prompting.test.ts orchestrator.test.ts novaMicroProvider.test.ts`
+  - `npm.cmd run build`
+- Deployed the updated Firebase Functions to project `pluto-ef61b`, including `aiChat(asia-south1)`.

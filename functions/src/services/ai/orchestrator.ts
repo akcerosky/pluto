@@ -1,6 +1,7 @@
 import { logger } from 'firebase-functions';
 import { geminiProvider } from './providers/geminiProvider.js';
 import { novaMicroProvider, isRetryableNovaError } from './providers/novaMicroProvider.js';
+import { enforceHomeworkResponsePolicy } from './prompting.js';
 import { selectPrimaryProvider } from './router.js';
 import type {
   AiProvider,
@@ -280,8 +281,15 @@ export const executeHybridAiRequest = async (request: ProviderRequest): Promise<
           totalRetryCount: retryCount,
           totalLatencyMs: Date.now() - totalStartedAt,
         });
+        const guardedText = enforceHomeworkResponsePolicy({
+          mode: request.mode,
+          prompt: request.prompt,
+          history: request.history,
+          answer: finalResult.text,
+        });
         return {
           ...finalResult,
+          text: guardedText,
           primaryProvider,
           finalProvider: finalResult.provider,
           fallbackTriggered: false,
@@ -333,8 +341,16 @@ export const executeHybridAiRequest = async (request: ProviderRequest): Promise<
     totalLatencyMs: Date.now() - totalStartedAt,
   });
 
+  const guardedText = enforceHomeworkResponsePolicy({
+    mode: request.mode,
+    prompt: request.prompt,
+    history: request.history,
+    answer: finalResult.text,
+  });
+
   return {
     ...finalResult,
+    text: guardedText,
     primaryProvider,
     finalProvider,
     fallbackTriggered,

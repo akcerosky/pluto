@@ -33,13 +33,14 @@ ${toneLine}
 1. Tailor language, pacing, and difficulty strictly to the ${educationLevel} level.
 2. If mode is Conversational: guide the student step by step using a Socratic approach. Be helpful without rushing to hand over the full answer when reasoning can be developed.
 3. HOMEWORK MODE - STRICT RULES:
-   - NEVER give the complete solution or final answer on the first request, even if the student asks directly.
-   - On the first attempt: give ONE hint only - identify what concept or formula applies, nothing more.
-   - If the student is stuck after the first hint: give the next step only, not the full solution.
+   - NEVER give the complete solution, final answer, or fully worked-out solution in Homework mode.
+   - On the first turn about a problem: identify the problem type, name the method or formula needed, and ask one specific question to get the student started.
+   - Do not solve anything or show any calculation on the first turn.
+   - If the student asks for the answer without showing work: acknowledge the frustration briefly, do not give the answer, restate the current question with slightly more scaffolding, and ask for only the first step.
    - If the student has genuinely attempted the problem and shows their working: give targeted feedback on their attempt.
-   - Only reveal the complete solution if: (a) the student has attempted at least twice AND (b) is still completely unable to proceed.
-   - After any solution reveal, always ask: "Now try a similar problem on your own"
-   - If the student asks "just give me the answer": respond with "I know it's tempting, but working through it builds real understanding. Here's a hint to get you started:" then give one hint.
+   - Never reveal the final numeric answer, the final expression, or a complete derivation. Keep the student responsible for the final step.
+   - Even after multiple student follow-ups, stay in coaching mode: offer only one hint, one next step, or one check of their work per turn.
+   - If the student asks "just give me the answer": respond with "I know it feels like I'm being unhelpful, but you'll remember this much better if you work through it. Let's try just this one part:" then ask one specific small question.
    - Never solve more than one step ahead of where the student currently is.
 4. EXAM PREP MODE - STRICT RULES:
    - Default behavior is to generate practice questions, NOT to explain concepts.
@@ -67,7 +68,7 @@ ${toneLine}
 - Use **bold** text for key terms, equations, formulas, or takeaways.
 - Keep paragraphs short and easy to scan.
 - Make answers feel neat, structured, and study-friendly.
-- In Homework mode, keep the response to one hint, one next step, or one work-check unless the student has already attempted multiple times.
+- In Homework mode, keep the response to one hint, one next step, or one work-check only. Do not end with the final answer.
 - In Exam Prep mode, ask or mark before teaching whenever possible.
 </response_organization>`;
 };
@@ -76,28 +77,25 @@ const DIRECT_ANSWER_REQUEST_PATTERNS = [
   /\bjust give me the answer\b/i,
   /\bgive (?:me )?(?:the )?(?:complete|full|final) answer\b/i,
   /\bgive (?:me )?(?:the )?(?:complete|full) solution\b/i,
-  /\bsolve (?:it|this|the whole thing)\b/i,
+  /\btell me the answer\b/i,
+  /\bshow me the answer\b/i,
+  /\bjust tell me\b/i,
+  /\bi don'?t know\b/i,
+  /\bi'?m stuck\b/i,
   /\banswer it for me\b/i,
 ];
 
 const ATTEMPT_SIGNAL_PATTERNS = [
   /\bi tried\b/i,
-  /\bmy work\b/i,
-  /\bmy steps\b/i,
+  /\bmy (?:work|steps|answer|paragraph|equation|draft)\b/i,
   /\bi got\b/i,
   /\bi think\b/i,
   /\bhere'?s what i did\b/i,
-  /\bsubstitute\b/i,
-  /\bfactor\b/i,
-  /\bdiscriminant\b/i,
-  /\b=\s*[-+]?[\dA-Za-z]/,
+  /\bhere'?s my\b/i,
+  /\bI wrote\b/i,
+  /[A-Za-z]\s*=\s*[-+]?(?:\d+|\w+)/,
+  /\d+\s*[=+\-*/^]\s*[-+]?(?:\d+|[A-Za-z(])/,
 ];
-
-export const isDirectAnswerRequest = (text: string) =>
-  DIRECT_ANSWER_REQUEST_PATTERNS.some((pattern) => pattern.test(text));
-
-export const looksLikeStudentAttempt = (text: string) =>
-  ATTEMPT_SIGNAL_PATTERNS.some((pattern) => pattern.test(text));
 
 const BLOCKED_GENERAL_TOPIC_PATTERNS = [
   /\belections?\b/i,
@@ -125,6 +123,23 @@ const LEARNING_FRAME_PATTERNS = [
   /\bexample problem\b/i,
 ];
 
+const COMPLETE_SOLUTION_MARKERS = [
+  'Complete Solution:',
+  'Final Solution:',
+  'Full Solution:',
+  'Here is the answer:',
+  'Here is the solution:',
+  'The answer is:',
+  'The solution is:',
+  'Step-by-step solution:',
+];
+
+export const isDirectAnswerRequest = (text: string) =>
+  DIRECT_ANSWER_REQUEST_PATTERNS.some((pattern) => pattern.test(text));
+
+export const looksLikeStudentAttempt = (text: string) =>
+  ATTEMPT_SIGNAL_PATTERNS.some((pattern) => pattern.test(text));
+
 export const isBlockedGeneralTopicRequest = (text: string) =>
   BLOCKED_GENERAL_TOPIC_PATTERNS.some((pattern) => pattern.test(text));
 
@@ -133,6 +148,65 @@ export const isLearningFramedRequest = (text: string) =>
 
 export const shouldRefuseGeneralTopicRequest = (text: string) =>
   isBlockedGeneralTopicRequest(text) && !isLearningFramedRequest(text);
+
+export const getHistoryText = (message: AiHistoryMessage) =>
+  message.parts
+    .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join('\n\n');
+
+const hasCompleteSolutionMarker = (answer: string) =>
+  COMPLETE_SOLUTION_MARKERS.some((marker) => answer.includes(marker));
+
+const hasThreeSequentialCalculationLines = (answer: string) => {
+  const lines = answer
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  let sequentialCalcLines = 0;
+  for (const line of lines) {
+    if (/[=]/.test(line) && /[\dA-Za-z()[\]+\-*/^]/.test(line)) {
+      sequentialCalcLines += 1;
+      if (sequentialCalcLines >= 3) {
+        return true;
+      }
+    } else if (/^\d+\.\s+/.test(line)) {
+      sequentialCalcLines += 1;
+      if (sequentialCalcLines >= 3) {
+        return true;
+      }
+    } else {
+      sequentialCalcLines = 0;
+    }
+  }
+
+  return false;
+};
+
+export const enforceHomeworkResponsePolicy = ({
+  mode,
+  answer,
+}: {
+  mode: string;
+  prompt: string;
+  history: AiHistoryMessage[];
+  answer: string;
+}): string => {
+  if (mode !== 'Homework') {
+    return answer;
+  }
+
+  const hasCompleteSolution =
+    hasCompleteSolutionMarker(answer) || hasThreeSequentialCalculationLines(answer);
+
+  if (!hasCompleteSolution) {
+    return answer;
+  }
+
+  return "💡 Let's work through this together step by step. What do you know about this problem so far? Try starting with the first part.";
+};
 
 export const buildTurnSpecificInstruction = ({
   mode,
@@ -154,48 +228,62 @@ export const buildTurnSpecificInstruction = ({
     .map((text) => text.trim())
     .filter(Boolean);
 
+  const hasPriorAttempt = priorUserTexts.some((text) => looksLikeStudentAttempt(text));
+  const hasCurrentAttempt = looksLikeStudentAttempt(normalizedPrompt);
+  const hasAttemptedWork = hasPriorAttempt || hasCurrentAttempt;
   const directAnswerRequest = isDirectAnswerRequest(normalizedPrompt);
-  const priorAttemptCount = priorUserTexts.filter((text) => looksLikeStudentAttempt(text)).length;
-  const totalStudentTurns = priorUserTexts.length + (normalizedPrompt ? 1 : 0);
 
-  const lines = [
-    'TURN-SPECIFIC HOMEWORK ENFORCEMENT:',
-    `- Prior student attempt count with visible working: ${priorAttemptCount}.`,
-    `- Total student turns in this problem so far: ${totalStudentTurns}.`,
-  ];
-
-  if (directAnswerRequest) {
-    lines.push(
-      '- The latest student message is asking for the answer directly.',
-      '- Do NOT provide the complete solution or final answer in this turn.',
-      '- Reply with exactly one hint or one next step only, and keep the student doing the work.',
-      '- If the student has not already shown two genuine attempts with working, a full solution is forbidden.'
-    );
-  } else if (priorAttemptCount < 2) {
-    lines.push(
-      '- The student has not yet earned a full worked solution.',
-      '- Stay in hint-first tutoring mode and reveal at most one next step beyond the student\'s current progress.'
-    );
-  } else {
-    lines.push(
-      '- Even if the student has attempted multiple times, only reveal a full solution if they are still completely unable to proceed.',
-      '- If you reveal a solution, keep it concise and finish with: "Now try a similar problem on your own".'
-    );
+  if (history.length === 0) {
+    return [
+      'HOMEWORK TURN INSTRUCTION - FIRST TURN:',
+      'This is the first turn. Do NOT solve the problem.',
+      '1. Identify what type of problem this is.',
+      '2. Name the method, formula, or approach the student should use.',
+      '3. Ask ONE specific starter question to get the student thinking.',
+      '4. Use 💡 Hint: prefix.',
+      '5. FULL_ANSWER_PERMISSION: false.',
+    ].join('\n');
   }
 
-  return lines.join('\n');
+  if (directAnswerRequest && !hasAttemptedWork) {
+    return [
+      'HOMEWORK TURN INSTRUCTION - DIRECT ANSWER REQUEST:',
+      'The student asked for the answer without showing any work.',
+      '1. Acknowledge their frustration briefly in one sentence.',
+      '2. Do NOT give the answer.',
+      '3. Repeat the previous question with slightly more scaffolding.',
+      '4. Ask them to try just the very first calculation or step.',
+      '5. Use 💡 Hint: prefix.',
+      '6. FULL_ANSWER_PERMISSION: false.',
+    ].join('\n');
+  }
+
+  if (hasAttemptedWork) {
+    return [
+      'HOMEWORK TURN INSTRUCTION - STUDENT SHOWED WORK:',
+      'The student attempted something.',
+      '1. Confirm what is correct.',
+      '2. Point out any error without fixing it — just say what to check.',
+      '3. Ask them to try the next specific step only.',
+      '4. Use ✅ Check your work: or 🔍 Next step: prefix.',
+      '5. FULL_ANSWER_PERMISSION: false.',
+    ].join('\n');
+  }
+
+  return [
+    'HOMEWORK TURN INSTRUCTION - FOLLOW-UP WITHOUT WORK:',
+    'The student has not shown work yet.',
+    '1. Restate the current starter question.',
+    '2. Add one small scaffolding detail.',
+    '3. Ask them to try just the first part.',
+    '4. Use 💡 Hint: prefix.',
+    '5. FULL_ANSWER_PERMISSION: false.',
+  ].join('\n');
 };
 
 export const SUMMARY_BLOCK_SIZE_EXCHANGES = 10;
 export const SUMMARY_MAX_TEXT_CHARS = 4000;
 export const SUMMARY_FALLBACK_CHARS = 500;
-
-export const getHistoryText = (message: AiHistoryMessage) =>
-  message.parts
-    .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
-    .map((part) => part.text.trim())
-    .filter(Boolean)
-    .join('\n\n');
 
 export const getSummaryCandidateText = (message: AiHistoryMessage) =>
   [
