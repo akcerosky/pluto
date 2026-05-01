@@ -360,10 +360,11 @@ export const AuthPages = ({ mode }: { mode: 'login' | 'signup' }) => {
 const inputStyle = {
   width: '100%',
   padding: '14px 16px',
-  background: 'var(--input-bg)',
-  border: '1px solid var(--border-color)',
-  borderRadius: '12px',
+  background: 'var(--glass-bg)',
+  border: '1px solid var(--glass-border)',
+  borderRadius: '14px',
   color: 'var(--text-primary)',
   fontSize: '1rem',
   outline: 'none',
+  backdropFilter: 'blur(20px)',
 };

@@ -74,7 +74,7 @@ export const MainLayout = ({ children }: { children: ReactNode }) => {
       height: '100vh', 
       width: '100vw', 
       overflow: 'hidden',
-      background: 'var(--background)',
+      background: 'transparent',
       color: 'var(--foreground)'
     }}>
       <div className="mobile-topbar mobile-only">
@@ -119,9 +119,9 @@ export const MainLayout = ({ children }: { children: ReactNode }) => {
           <div
             style={{
               padding: '12px 20px',
-              borderBottom: '1px solid var(--border-color)',
-              background: 'var(--warning-soft)',
-              color: 'var(--warning)',
+              borderBottom: '1px solid var(--glass-border)',
+              background: 'color-mix(in srgb, var(--warning-soft) 74%, var(--glass-bg-strong))',
+              color: 'var(--text-primary)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -132,7 +132,7 @@ export const MainLayout = ({ children }: { children: ReactNode }) => {
             <div style={{ fontSize: '0.92rem' }}>
               Verify your email to secure your Pluto account and keep recovery options available.
               {verificationNotice && (
-                <span style={{ marginLeft: '10px', color: 'var(--warning)' }}>{verificationNotice}</span>
+                <span style={{ marginLeft: '10px', color: 'var(--text-secondary)' }}>{verificationNotice}</span>
               )}
             </div>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>

@@ -463,3 +463,13 @@
   - `npm.cmd test -- prompting.test.ts orchestrator.test.ts novaMicroProvider.test.ts`
   - `npm.cmd run build`
 - Deployed the updated Firebase Functions to project `pluto-ef61b`, including `aiChat(asia-south1)`.
+
+## 2026-05-01
+
+### Glassmorphism Redesign and UI Polish
+
+- Reworked Pluto around an Apple-inspired glassmorphism system across landing, chat, sidebar, settings, auth, policy, and modal surfaces using shared glass tokens and midnight-indigo dark-theme tuning.
+- Updated the global theme system in `src/index.css` to use `#533afd` as the primary brand color, denser dark glass surfaces, calmer indigo backgrounds, and refined blur/border/shadow treatments.
+- Refined chat interactions in `src/components/Chat/ChatInterface.tsx` with a floating composer dock, improved mobile header collapse behavior, prompt-bar-driven coaching widgets, and better mobile placement/visibility rules for dock overlays.
+- Polished sidebar and profile behavior in `src/components/Layout/Sidebar.tsx` and `src/pages/ProfilePage.tsx`, including compact settings access, improved dark-mode icon visibility, cleaner profile actions, and learning-profile control styling.
+- Fixed multiple landing-page presentation issues in `src/pages/LandingPage.tsx`, including making the hero cyan gradient stage span the full viewport width and aligning the marketing surface with the updated glass system.

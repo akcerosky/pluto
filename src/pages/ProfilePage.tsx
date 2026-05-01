@@ -300,8 +300,9 @@ export const ProfilePage = () => {
                 flexWrap: 'wrap',
                 padding: '18px',
                 borderRadius: '18px',
-                border: '1px solid var(--card-border)',
-                background: 'var(--surface-1)',
+                border: '1px solid var(--glass-border)',
+                background: 'var(--glass-bg)',
+                backdropFilter: 'blur(20px)',
               }}
             >
               <div>
@@ -340,8 +341,9 @@ export const ProfilePage = () => {
                 style={{
                   marginBottom: '14px',
                   color: 'var(--text-primary)',
-                  background: 'var(--surface-2)',
-                  border: '1px solid var(--card-border)',
+                  background: 'var(--glass-bg-medium)',
+                  border: '1px solid var(--glass-border)',
+                  backdropFilter: 'blur(20px)',
                   borderRadius: '10px',
                   padding: '10px 12px',
                   fontSize: '0.85rem',
@@ -359,13 +361,15 @@ export const ProfilePage = () => {
                     key={plan.id}
                     style={{
                       borderRadius: '16px',
-                      border: isCurrent ? '1px solid var(--primary-border)' : '1px solid var(--card-border)',
-                      background: isCurrent ? 'var(--primary-soft)' : 'var(--surface-1)',
+                      border: isCurrent ? '1px solid var(--primary-border)' : '1px solid var(--glass-border)',
+                      background: isCurrent ? 'color-mix(in srgb, rgba(108, 63, 197, 0.18) 76%, var(--glass-bg-strong))' : 'var(--glass-bg)',
                       padding: '18px',
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '10px',
                       height: '100%',
+                      backdropFilter: 'blur(20px)',
+                      boxShadow: 'var(--glass-inner-glow), var(--glass-shadow)',
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -451,8 +455,9 @@ export const ProfilePage = () => {
                         alignItems: 'center',
                         padding: '12px 14px',
                         borderRadius: '12px',
-                        border: '1px solid var(--card-border)',
-                        background: 'var(--surface-1)',
+                        border: '1px solid var(--glass-border)',
+                        background: 'var(--glass-bg)',
+                        backdropFilter: 'blur(20px)',
                       }}
                     >
                       <div>
@@ -550,35 +555,11 @@ export const ProfilePage = () => {
               <Save size={18} />
               {isSaving ? 'Saving...' : isSaved ? 'Saved!' : 'Save Changes'}
             </button>
-          </div>
-
-          <section className="profile-section" style={sectionStyle}>
-            <h2 style={sectionTitleStyle}>Danger Zone</h2>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '16px',
-                flexWrap: 'wrap',
-                padding: '18px',
-                borderRadius: '18px',
-                border: '1px solid color-mix(in srgb, var(--danger) 28%, var(--card-border))',
-                background: 'color-mix(in srgb, var(--danger-soft) 58%, var(--surface-1))',
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 700, marginBottom: '4px', color: 'var(--text-primary)' }}>Logout</div>
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                  End this Pluto session on this device.
-                </p>
-              </div>
               <button onClick={logout} style={dangerButtonStyle}>
-              <LogOut size={18} />
+                <LogOut size={18} />
                 Logout Session
               </button>
-            </div>
-          </section>
+          </div>
         </div>
       </div>
     </div>
@@ -586,10 +567,12 @@ export const ProfilePage = () => {
 };
 
 const sectionStyle: React.CSSProperties = {
-  background: 'var(--card-bg)',
+  background: 'var(--glass-bg-strong)',
   padding: '32px',
   borderRadius: '24px',
-  border: '1px solid var(--card-border)',
+  border: '1px solid var(--glass-border-strong)',
+  boxShadow: 'var(--glass-inner-glow), var(--glass-shadow-lg)',
+  backdropFilter: 'blur(40px)',
 };
 
 const sectionTitleStyle: React.CSSProperties = {
@@ -626,26 +609,30 @@ const iconStyle: React.CSSProperties = {
   left: '16px',
   top: '50%',
   transform: 'translateY(-50%)',
-  opacity: 0.5,
+  color: 'color-mix(in srgb, var(--text-secondary) 78%, white 22%)',
+  opacity: 0.92,
+  pointerEvents: 'none',
 };
 
 const profileInputStyle: React.CSSProperties = {
   width: '100%',
   padding: '14px 14px 14px 48px',
-  background: 'var(--input-bg)',
-  border: '1px solid var(--card-border)',
-  borderRadius: '12px',
+  background: 'color-mix(in srgb, var(--surface-2) 88%, transparent)',
+  border: '1px solid color-mix(in srgb, var(--glass-border-strong) 74%, transparent)',
+  borderRadius: '16px',
   color: 'var(--text-primary)',
   fontSize: '0.95rem',
   outline: 'none',
+  backdropFilter: 'blur(14px)',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.03), inset 0 -1px 0 rgba(0,0,0,0.2)',
 };
 
 const primaryButtonStyle = (disabled?: boolean): React.CSSProperties => ({
   padding: '12px 24px',
   borderRadius: '12px',
-  background: 'var(--primary)',
+  background: 'var(--action-bg)',
   color: 'var(--user-bubble-text)',
-  border: 'none',
+  border: '1px solid var(--action-border)',
   fontWeight: '700',
   display: 'flex',
   alignItems: 'center',
@@ -653,16 +640,18 @@ const primaryButtonStyle = (disabled?: boolean): React.CSSProperties => ({
   gap: '10px',
   cursor: disabled ? 'not-allowed' : 'pointer',
   opacity: disabled ? 0.7 : 1,
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18), 0 12px 28px rgba(108,63,197,0.34)',
 });
 
 const secondaryButtonStyle: React.CSSProperties = {
   padding: '10px 16px',
   borderRadius: '10px',
-  background: 'var(--surface-2)',
+  background: 'var(--glass-bg)',
   color: 'var(--text-primary)',
-  border: '1px solid var(--card-border)',
+  border: '1px solid var(--glass-border)',
   fontWeight: 600,
   cursor: 'pointer',
+  backdropFilter: 'blur(20px)',
 };
 
 const mutedDangerButtonStyle: React.CSSProperties = {
@@ -681,18 +670,20 @@ const resumeButtonStyle: React.CSSProperties = {
 
 const selectOptionStyle: React.CSSProperties = {
   color: 'var(--text-primary)',
-  background: 'var(--card-bg)',
+  background: 'var(--surface-2)',
 };
 
 const dangerButtonStyle: React.CSSProperties = {
   padding: '12px 24px',
   borderRadius: '12px',
-  background: 'var(--danger-soft)',
+  background: 'color-mix(in srgb, var(--danger-soft) 78%, var(--glass-bg))',
   color: 'var(--danger)',
   border: '1px solid color-mix(in srgb, var(--danger) 36%, transparent)',
   fontWeight: '700',
   display: 'flex',
   alignItems: 'center',
   gap: '10px',
+  backdropFilter: 'blur(20px)',
+  cursor: 'pointer',
 };
 

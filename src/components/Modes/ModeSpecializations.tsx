@@ -38,7 +38,7 @@ export const ConversationalModeUI = ({ educationLevel, onActionClick }: ModeUIPr
                 : 'I will guide you with questions, examples, and step-by-step understanding.'}
           </p>
         </div>
-        <div style={{ width: '1px', background: 'var(--border-color)' }} />
+        <div style={{ width: '1px', background: 'var(--glass-border)' }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '0.9rem' }}>
             {isElementary ? <Zap size={16} color="var(--primary)" /> : <Search size={16} color="var(--primary)" />}

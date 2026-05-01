@@ -122,7 +122,7 @@ export const PolicyPage = ({ type }: { type: PolicyKey }) => {
   const policy = policies[type];
 
   return (
-    <main className="policy-shell" style={{ minHeight: '100vh', background: 'var(--background)', color: 'var(--foreground)', padding: '48px 20px' }}>
+    <main className="policy-shell" style={{ minHeight: '100vh', background: 'transparent', color: 'var(--foreground)', padding: '48px 20px' }}>
       <section className="policy-section" style={{ maxWidth: '960px', margin: '0 auto' }}>
         <Link to="/" style={{ color: 'var(--primary)', textDecoration: 'none', fontWeight: 700 }}>
           Back to Pluto
@@ -138,7 +138,7 @@ export const PolicyPage = ({ type }: { type: PolicyKey }) => {
         </header>
 
         <article
-          className="glass-card policy-card"
+          className="glass-shell policy-card"
           style={{
             padding: 'clamp(24px, 5vw, 48px)',
             borderRadius: '16px',

@@ -74,21 +74,21 @@ export const Sidebar = ({
       style={{
         height: '100%',
         background: 'var(--sidebar-gradient)',
-        borderRight: '1px solid var(--border-color)',
+        borderRight: '1px solid var(--glass-border)',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
         zIndex: 20,
-        boxShadow: 'var(--panel-shadow)',
-        backdropFilter: 'blur(16px)',
+        boxShadow: 'var(--glass-shadow-lg)',
+        backdropFilter: 'blur(20px)',
       }}
     >
       <div
         style={{
           padding: '24px 18px 18px',
-          borderBottom: '1px solid var(--border-color)',
+          borderBottom: '1px solid var(--glass-border)',
           position: 'relative',
-          background: 'var(--brand-gradient-soft)',
+          background: 'color-mix(in srgb, var(--glass-bg) 78%, rgba(108, 63, 197, 0.08))',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : 0 }}>
@@ -103,7 +103,7 @@ export const Sidebar = ({
               padding: effectiveCollapsed ? '0 14px' : '0 16px',
               borderRadius: '16px',
               justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-              boxShadow: 'var(--panel-shadow)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.16), 0 12px 28px rgba(108, 63, 197, 0.32)',
               flex: 1,
             }}
           >
@@ -180,8 +180,10 @@ export const Sidebar = ({
                   gap: '12px',
                   padding: '10px 12px',
                   borderRadius: '14px',
-                  background: isActive ? 'var(--primary-soft)' : 'transparent',
-                  border: `1px solid ${isActive ? 'var(--primary-border)' : 'transparent'}`,
+                  background: isActive
+                    ? 'color-mix(in srgb, rgba(108, 63, 197, 0.2) 70%, var(--glass-bg-active))'
+                    : 'var(--glass-bg-subtle)',
+                  border: `1px solid ${isActive ? 'color-mix(in srgb, var(--primary) 38%, var(--glass-border))' : 'var(--glass-border)'}`,
                   color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
                   cursor: 'pointer',
                   width: '100%',
@@ -316,11 +318,12 @@ export const Sidebar = ({
         style={{
           marginTop: 'auto',
           padding: '14px 18px',
-          borderTop: '1px solid var(--border-color)',
+          borderTop: '1px solid var(--glass-border)',
           display: 'flex',
           flexDirection: 'column',
           gap: '8px',
-          background: 'color-mix(in srgb, var(--bg-secondary) 66%, transparent)',
+          background: 'var(--glass-bg-medium)',
+          backdropFilter: 'blur(20px)',
         }}
       >
         <button
@@ -340,9 +343,9 @@ export const Sidebar = ({
             maxHeight: '52px',
             padding: effectiveCollapsed ? '0' : '10px 12px',
             borderRadius: '16px',
-            background: 'var(--surface-1)',
-            border: '1px solid var(--card-border)',
-            boxShadow: 'var(--card-shadow)',
+            background: effectiveCollapsed ? 'transparent' : 'var(--glass-bg)',
+            border: effectiveCollapsed ? '1px solid transparent' : '1px solid var(--glass-border)',
+            boxShadow: effectiveCollapsed ? 'none' : 'var(--glass-inner-glow), var(--glass-shadow)',
             textAlign: 'left',
           }}
         >
@@ -360,6 +363,7 @@ export const Sidebar = ({
                 fontWeight: '800',
                 fontSize: '0.82rem',
                 border: '1px solid var(--action-border)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.16)',
                 flexShrink: 0,
               }}
             >
@@ -406,10 +410,11 @@ export const Sidebar = ({
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: 'var(--surface-2)',
-                border: '1px solid var(--card-border)',
+                background: 'var(--glass-bg-subtle)',
+                border: '1px solid var(--glass-border)',
                 color: 'var(--text-secondary)',
                 flex: '0 0 auto',
+                backdropFilter: 'blur(12px)',
               }}
             >
               <Settings size={15} />
@@ -449,14 +454,15 @@ export const Sidebar = ({
           width: '24px',
           height: '24px',
           borderRadius: '999px',
-          background: 'var(--card-bg)',
-          border: '1px solid var(--border-color)',
+          background: 'var(--glass-bg)',
+          border: '1px solid var(--glass-border)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           color: 'var(--text-secondary)',
           zIndex: 30,
-          boxShadow: 'var(--card-shadow)',
+          boxShadow: 'var(--glass-shadow)',
+          backdropFilter: 'blur(12px)',
         }}
       >
         <ChevronLeft

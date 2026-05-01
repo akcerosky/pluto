@@ -60,9 +60,10 @@ export const LandingPage = () => {
           left: 0,
           right: 0,
           zIndex: 50,
-          background: 'color-mix(in srgb, var(--bg-primary) 76%, transparent)',
-          backdropFilter: 'blur(30px)',
-          borderBottom: '1px solid var(--border-color)',
+          background: 'var(--glass-bg-strong)',
+          backdropFilter: 'blur(40px)',
+          borderBottom: '1px solid var(--glass-border)',
+          boxShadow: 'var(--glass-inner-glow), var(--glass-shadow)',
         }}
       >
         <div
@@ -81,12 +82,13 @@ export const LandingPage = () => {
             style={{
               width: '36px',
               height: '36px',
-              background: 'var(--surface-2)',
+              background: 'var(--glass-bg)',
               borderRadius: '12px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              border: '1px solid var(--border-color)',
+              border: '1px solid var(--glass-border)',
+              backdropFilter: 'blur(20px)',
             }}
           >
             <Rocket size={20} color="var(--text-primary)" />
@@ -148,15 +150,16 @@ export const LandingPage = () => {
           className="landing-hero-glow"
           style={{
             position: 'absolute',
-            top: '8%',
+            top: 0,
             left: '50%',
             transform: 'translateX(-50%)',
-            width: '900px',
-            height: '780px',
+            width: '100vw',
+            minWidth: '100%',
+            height: '100%',
             background: 'var(--hero-gradient)',
-            opacity: 0.92,
+            opacity: 0.98,
             zIndex: -1,
-            animation: 'fade-up 800ms cubic-bezier(0.22, 1, 0.36, 1)',
+            animation: 'gradientShift 18s ease infinite',
           }}
         />
 
@@ -172,9 +175,9 @@ export const LandingPage = () => {
               alignItems: 'center',
               gap: '10px',
               padding: '9px 18px',
-              background: 'var(--surface-2)',
+              background: 'var(--glass-bg)',
               borderRadius: '999px',
-              border: '1px solid var(--border-color)',
+              border: '1px solid var(--glass-border)',
               color: 'var(--text-primary)',
               fontSize: '0.85rem',
               fontWeight: '800',
@@ -291,7 +294,11 @@ export const LandingPage = () => {
                     display: 'flex',
                     flexDirection: 'column',
                     height: '100%',
-                    background: plan.id === 'Plus' ? 'var(--primary-soft)' : 'var(--card-bg)',
+                    background: plan.id === 'Plus'
+                      ? 'color-mix(in srgb, rgba(108, 63, 197, 0.18) 78%, var(--glass-bg-strong))'
+                      : 'var(--glass-bg)',
+                    backdropFilter: 'blur(40px)',
+                    boxShadow: 'var(--glass-inner-glow), var(--glass-shadow-lg)',
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
@@ -401,7 +408,10 @@ const FeatureCard = ({
       textAlign: 'left',
       flex: '1 1 320px',
       maxWidth: '380px',
-      background: 'color-mix(in srgb, var(--card-bg) 94%, transparent)',
+      background: 'var(--glass-bg)',
+      border: '1px solid var(--glass-border)',
+      boxShadow: 'var(--glass-inner-glow), var(--glass-shadow)',
+      backdropFilter: 'blur(20px)',
     }}
   >
     <div
@@ -409,11 +419,12 @@ const FeatureCard = ({
         width: '64px',
         height: '64px',
         borderRadius: '18px',
-        background: 'var(--surface-2)',
+        background: 'var(--glass-bg-medium)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        border: '1px solid var(--border-color)',
+        border: '1px solid var(--glass-border)',
+        backdropFilter: 'blur(20px)',
       }}
     >
       {icon}
@@ -424,7 +435,7 @@ const FeatureCard = ({
 );
 
 const PricingRow = ({ label, free, plus, pro }: { label: string; free: string; plus: string; pro: string }) => (
-  <div className="pricing-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '11px 0', borderBottom: '1px solid var(--border-color)', fontSize: '0.86rem' }}>
+  <div className="pricing-row" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '11px 0', borderBottom: '1px solid var(--glass-border)', fontSize: '0.86rem' }}>
     <span className="pricing-feature-label" style={{ color: 'var(--text-secondary)' }}>{label}</span>
     <span data-plan="Free">{free}</span>
     <span data-plan="Plus">{plus}</span>

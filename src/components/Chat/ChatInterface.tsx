@@ -141,12 +141,13 @@ const AttachmentChip = ({
       gap: '8px',
       padding: '8px 12px',
       borderRadius: '12px',
-      background: 'var(--surface-2)',
-      border: '1px solid var(--border-color)',
+      background: 'var(--glass-bg-medium)',
+      border: '1px solid var(--glass-border)',
       fontSize: '0.85rem',
       lineHeight: 1.2,
       maxWidth: '100%',
       color: 'var(--text-primary)',
+      backdropFilter: 'blur(12px)',
     }}
   >
     {part.type === 'image' ? <ImageIcon size={16} /> : <FileText size={16} />}
@@ -163,7 +164,7 @@ const AttachmentChip = ({
         {part.name}
       </span>
       <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>
-        {part.type === 'image' ? 'Image' : 'PDF'} • {formatBytes(part.sizeBytes)}
+        {part.type === 'image' ? 'Image' : 'PDF'} · {formatBytes(part.sizeBytes)}
       </span>
     </div>
     {onRemove ? (
@@ -221,6 +222,9 @@ export const ChatInterface = () => {
   const [isCompactViewport, setIsCompactViewport] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth <= 640 : false
   );
+  const [isMobileHeaderExpanded, setIsMobileHeaderExpanded] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth > 640 : true
+  );
   const [retryState, setRetryState] = useState<RetryState | null>(null);
   const [retryDotCount, setRetryDotCount] = useState(1);
   const [failedRequest, setFailedRequest] = useState<FailedRequestState | null>(null);
@@ -233,6 +237,8 @@ export const ChatInterface = () => {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const attachmentsRef = useRef<ComposerAttachment[]>([]);
   const previousLastMessageIdRef = useRef<string | null>(null);
+  const previousCompactViewportRef = useRef(isCompactViewport);
+  const composerHideTimeoutRef = useRef<number | null>(null);
   const shouldForceRenderError =
     import.meta.env.VITE_SMOKE_TESTS === 'true' &&
     typeof window !== 'undefined' &&
@@ -257,6 +263,26 @@ export const ChatInterface = () => {
     }
   };
 
+  const cancelComposerHide = () => {
+    if (composerHideTimeoutRef.current !== null) {
+      window.clearTimeout(composerHideTimeoutRef.current);
+      composerHideTimeoutRef.current = null;
+    }
+  };
+
+  const activateComposer = () => {
+    cancelComposerHide();
+    setIsComposerActive(true);
+  };
+
+  const scheduleComposerHide = () => {
+    cancelComposerHide();
+    composerHideTimeoutRef.current = window.setTimeout(() => {
+      setIsComposerActive(false);
+      composerHideTimeoutRef.current = null;
+    }, 220);
+  };
+
   useEffect(() => {
     attachmentsRef.current = attachments;
   }, [attachments]);
@@ -267,7 +293,12 @@ export const ChatInterface = () => {
     }
 
     const updateViewportMode = () => {
-      setIsCompactViewport(window.innerWidth <= 640);
+      const compact = window.innerWidth <= 640;
+      if (compact !== previousCompactViewportRef.current) {
+        setIsMobileHeaderExpanded(!compact);
+        previousCompactViewportRef.current = compact;
+      }
+      setIsCompactViewport(compact);
     };
 
     updateViewportMode();
@@ -302,6 +333,7 @@ export const ChatInterface = () => {
 
   useEffect(
     () => () => {
+      cancelComposerHide();
       attachmentsRef.current.forEach((attachment) => releaseAttachmentPreview(attachment));
     },
     []
@@ -351,7 +383,10 @@ export const ChatInterface = () => {
   ]);
 
   useEffect(() => {
-    const hidePanel = () => setIsComposerActive(false);
+    const hidePanel = () => {
+      cancelComposerHide();
+      setIsComposerActive(false);
+    };
     const currentMessagesContainer = messagesContainerRef.current;
 
     window.addEventListener('scroll', hidePanel, { passive: true });
@@ -366,6 +401,7 @@ export const ChatInterface = () => {
   useEffect(() => {
     const handlePointerDown = (event: PointerEvent) => {
       if (!footerInteractiveRef.current?.contains(event.target as Node)) {
+        cancelComposerHide();
         setIsComposerActive(false);
       }
     };
@@ -582,7 +618,7 @@ export const ChatInterface = () => {
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, ease: 'easeOut' }}
-          className="glass-card chat-empty-card"
+          className="glass-shell chat-empty-card"
           style={{ padding: '60px 40px', maxWidth: '600px' }}
         >
           <motion.div
@@ -594,14 +630,15 @@ export const ChatInterface = () => {
             style={{
               width: '100px',
               height: '100px',
-              background: 'linear-gradient(135deg, var(--surface-2), var(--surface-3))',
+              background: 'var(--glass-bg-strong)',
               borderRadius: '30px',
               margin: '0 auto 32px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: 'var(--panel-shadow)',
-              border: '1px solid var(--border-color)',
+              boxShadow: 'var(--glass-shadow-lg)',
+              border: '1px solid var(--glass-border-strong)',
+              backdropFilter: 'blur(20px)',
             }}
           >
             <Rocket size={50} color="var(--text-primary)" />
@@ -929,7 +966,7 @@ export const ChatInterface = () => {
     Homework: <FileEdit size={18} />,
     ExamPrep: <Award size={18} />,
   };
-
+  const showCollapsedMobileHeader = isCompactViewport && !isMobileHeaderExpanded;
   const handleQuickAction = (action: string) => {
     let prompt = action;
     if (action.includes('story')) prompt = "Tell me a fun story about what we're learning!";
@@ -956,69 +993,129 @@ export const ChatInterface = () => {
   return (
     <div className="chat-shell" style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', width: '100%', position: 'relative' }}>
       <header
-        className="chat-header"
+        className={`chat-header ${showCollapsedMobileHeader ? 'chat-header-collapsed' : 'chat-header-expanded'}`}
         style={{
           padding: '16px 24px',
-          borderBottom: '1px solid var(--card-border)',
+          borderBottom: '1px solid var(--glass-border)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          background: 'color-mix(in srgb, var(--bg-primary) 82%, transparent)',
-          backdropFilter: 'blur(10px)',
+          background: 'var(--glass-bg-strong)',
+          backdropFilter: 'blur(40px)',
         }}
       >
-        <div className="chat-header-main" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', width: '100%' }}>
-          <div className="chat-thread-title" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ color: 'var(--text-secondary)' }}>{modeIcons[activeThread.mode]}</div>
-            <h3 style={{ fontSize: '1.25rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{activeThread.title}</h3>
-          </div>
-          <div className="chat-header-divider" style={{ width: '1px', height: '20px', background: 'var(--card-border)' }} />
-          <motion.button
-            className="chat-project-button"
-            whileHover={{ y: -1 }}
-            onClick={() => setIsProjectsOpen(true)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              padding: '6px 12px',
-              borderRadius: '999px',
-              border: '1px solid var(--border-color)',
-              background: 'var(--surface-1)',
-              cursor: 'pointer',
-              color: assignedProject ? 'var(--text-primary)' : 'var(--text-secondary)',
-            }}
-          >
-            <Folder size={14} color={assignedProject?.color || 'currentColor'} />
-            <span style={{ fontSize: '0.9rem', fontWeight: '600' }}>{assignedProject?.name || 'No Project'}</span>
-            <ChevronDown size={14} opacity={0.5} />
-          </motion.button>
+        {showCollapsedMobileHeader ? (
           <div
-            className="chat-status-pills"
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              flexWrap: 'wrap',
-              marginLeft: 'auto',
-              justifyContent: 'flex-end',
-              flexShrink: 0,
-            }}
+            className="chat-header-collapsed-row"
+            style={{ position: 'relative', width: '100%', paddingRight: '18px' }}
           >
-            <div className="chat-status-pill pill pill-warning">
-              {isSubscriptionHydrated ? currentPlan.toUpperCase() : 'LOADING'}
+            <div
+              className="chat-status-pills"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                flexWrap: 'nowrap',
+                minWidth: 0,
+              }}
+            >
+              <div className="chat-status-pill pill pill-warning">
+                {isSubscriptionHydrated ? currentPlan.toUpperCase() : 'LOADING'}
+              </div>
+              <div className="chat-status-pill pill">
+                {isSubscriptionHydrated ? `${formatTokenCount(remainingTodayTokens)} TOKENS LEFT` : 'SYNCING TOKENS'}
+              </div>
+              <div className={`chat-status-pill pill ${getModePillClassName(activeThread.mode)}`}>
+                {activeThread.mode.toUpperCase()}
+              </div>
             </div>
-            <div className="chat-status-pill pill">
-              {isSubscriptionHydrated ? `${formatTokenCount(remainingTodayTokens)} TOKENS LEFT` : 'SYNCING TOKENS'}
+            <button
+              type="button"
+              className="chat-header-toggle"
+              onClick={() => setIsMobileHeaderExpanded(true)}
+              aria-label="Expand chat header"
+              style={{ position: 'absolute', right: 0, top: '50%', transform: 'translateY(-50%)' }}
+            >
+              <ChevronDown size={16} />
+            </button>
+          </div>
+        ) : (
+          <div className="chat-header-main" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', width: '100%' }}>
+            <div className="chat-thread-title" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ color: 'var(--text-secondary)' }}>{modeIcons[activeThread.mode]}</div>
+              <h3 style={{ fontSize: '1.25rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{activeThread.title}</h3>
             </div>
-            <div className={`chat-status-pill pill ${getModePillClassName(activeThread.mode)}`}>
-              {activeThread.mode.toUpperCase()}
+            <div className="chat-header-divider" style={{ width: '1px', height: '20px', background: 'var(--glass-border)' }} />
+            <motion.button
+              className="chat-project-button"
+              whileHover={{ y: -1 }}
+              onClick={() => setIsProjectsOpen(true)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '6px 12px',
+                borderRadius: '999px',
+                border: '1px solid var(--glass-border)',
+                background: 'var(--glass-bg)',
+                cursor: 'pointer',
+                color: assignedProject ? 'var(--text-primary)' : 'var(--text-secondary)',
+                backdropFilter: 'blur(20px)',
+              }}
+            >
+              <Folder size={14} color={assignedProject?.color || 'currentColor'} />
+              <span style={{ fontSize: '0.9rem', fontWeight: '600' }}>{assignedProject?.name || 'No Project'}</span>
+              <ChevronDown size={14} opacity={0.5} />
+            </motion.button>
+            <div
+              className="chat-status-pills"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                flexWrap: 'wrap',
+                marginLeft: 'auto',
+                justifyContent: 'flex-end',
+                flexShrink: 0,
+              }}
+            >
+              <div className="chat-status-pill pill pill-warning">
+                {isSubscriptionHydrated ? currentPlan.toUpperCase() : 'LOADING'}
+              </div>
+              <div className="chat-status-pill pill">
+                {isSubscriptionHydrated ? `${formatTokenCount(remainingTodayTokens)} TOKENS LEFT` : 'SYNCING TOKENS'}
+              </div>
+              <div className={`chat-status-pill pill ${getModePillClassName(activeThread.mode)}`}>
+                {activeThread.mode.toUpperCase()}
+              </div>
+              {isCompactViewport ? (
+                <button
+                  type="button"
+                  className="chat-header-toggle"
+                  onClick={() => setIsMobileHeaderExpanded(false)}
+                  aria-label="Collapse chat header"
+                >
+                  <ChevronDown size={16} style={{ transform: 'rotate(180deg)' }} />
+                </button>
+              ) : null}
             </div>
           </div>
-        </div>
+        )}
       </header>
 
-      <div ref={messagesContainerRef} className="chat-messages" style={{ flex: 1, overflowY: 'auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '32px' }}>
+      <div
+        ref={messagesContainerRef}
+        className="chat-messages"
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '24px',
+          paddingBottom: isCompactViewport ? '240px' : '300px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '32px',
+        }}
+      >
         {visibleMessages.length === 0 && (
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', opacity: 0.5 }}>
             <Sparkles size={48} color="var(--primary)" />
@@ -1051,13 +1148,14 @@ export const ChatInterface = () => {
                   width: '36px',
                   height: '36px',
                   borderRadius: '12px',
-                  background: msg.role === 'user' ? 'var(--action-bg)' : 'var(--surface-2)',
+                  background: msg.role === 'user' ? 'var(--action-bg)' : 'var(--glass-bg-medium)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   flexShrink: 0,
-                  boxShadow: 'var(--card-shadow)',
-                  border: msg.role === 'user' ? '1px solid var(--action-border)' : '1px solid var(--card-border)',
+                  boxShadow: 'var(--glass-shadow)',
+                  border: msg.role === 'user' ? '1px solid var(--action-border)' : '1px solid var(--glass-border)',
+                  backdropFilter: msg.role === 'assistant' ? 'blur(12px)' : 'none',
                 }}
               >
                 {msg.role === 'user' ? <User size={18} color="var(--action-text)" /> : <Rocket size={18} color="var(--secondary)" />}
@@ -1077,22 +1175,25 @@ export const ChatInterface = () => {
                   className="markdown-content chat-bubble"
                   style={{
                     padding: '18px 24px',
-                    borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '16px',
-                    background: msg.role === 'user' ? 'var(--action-bg)' : 'var(--assistant-bubble-bg)',
+                    borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '20px',
+                    background:
+                      msg.role === 'user'
+                        ? 'linear-gradient(135deg, #6c3fc5, #8b5cf6)'
+                        : 'var(--glass-bg-medium)',
                     backdropFilter: msg.role === 'assistant' ? 'blur(10px)' : 'none',
                     color:
                       msg.role === 'user'
                         ? 'var(--action-text)'
                         : 'var(--assistant-bubble-text)',
-                    border: msg.role === 'user' ? '1px solid var(--action-border)' : '1px solid var(--card-border)',
-                    borderLeft:
-                      msg.role === 'assistant' ? '1px solid var(--primary)' : '1px solid transparent',
+                    border: msg.role === 'user' ? '1px solid var(--action-border)' : '1px solid var(--glass-border)',
+                    borderLeft: msg.role === 'assistant' ? '2px solid rgba(108, 63, 197, 0.7)' : '1px solid transparent',
                     lineHeight: 1.7,
                     fontSize: '1rem',
-                    boxShadow: 'var(--card-shadow)',
+                    boxShadow: 'var(--glass-shadow)',
                     position: 'relative',
                     width: 'fit-content',
                     maxWidth: '100%',
+                    animation: 'messageAppear 0.3s ease',
                   }}
                 >
                   {textContent ? (
@@ -1148,8 +1249,8 @@ export const ChatInterface = () => {
                           gap: '8px',
                           padding: '6px 12px',
                           borderRadius: '999px',
-                          border: '1px solid var(--border-color)',
-                          background: 'var(--surface-1)',
+                          border: '1px solid var(--glass-border)',
+                          background: 'var(--glass-bg-subtle)',
                           color: 'var(--text-secondary)',
                           fontSize: '0.82rem',
                           fontWeight: 600,
@@ -1193,7 +1294,7 @@ export const ChatInterface = () => {
         })}
         {(isLoading || Boolean(failedRequest?.statusMessage)) && (
           <motion.div className="chat-message-row chat-message-row-assistant" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: 'flex', gap: '16px', alignItems: 'center', padding: '0 20px' }}>
-            <div className="animate-thinking" style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--card-border)' }}>
+            <div className="animate-thinking" style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'var(--glass-bg-medium)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--glass-border)', backdropFilter: 'blur(12px)' }}>
               <Sparkles size={18} color="var(--primary)" />
             </div>
             {requestRetryLabel || failedRequest?.statusMessage ? (
@@ -1212,29 +1313,67 @@ export const ChatInterface = () => {
         <div ref={messagesEndRef} />
       </div>
 
-      <footer className="chat-footer" style={{ padding: '24px 20px 8px', width: '100%', maxWidth: '850px', margin: '0 auto', zIndex: 10 }}>
+      <footer
+        className="chat-footer"
+        style={{
+          padding: isCompactViewport ? '10px 8px calc(10px + env(safe-area-inset-bottom))' : '24px 20px 8px',
+          width: isCompactViewport ? 'calc(100% - 16px)' : 'min(850px, calc(100% - 40px))',
+          maxWidth: 'none',
+          margin: 0,
+          zIndex: 10,
+          position: 'absolute',
+          bottom: isCompactViewport ? '0' : '8px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: 'transparent',
+          pointerEvents: 'none',
+        }}
+      >
         <div
           ref={footerInteractiveRef}
-          style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}
-          onMouseLeave={() => setIsComposerActive(false)}
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '10px',
+            pointerEvents: 'none',
+            position: 'relative',
+            paddingTop: isComposerActive ? (isCompactViewport ? '235px' : '144px') : '0',
+          }}
+          onPointerEnter={cancelComposerHide}
+          onPointerLeave={scheduleComposerHide}
         >
           {isComposerActive ? (
             <motion.div
               className="chat-mode-panel"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              style={{ padding: '0 12px', opacity: 0.92 }}
+              style={{
+                padding: '0 12px',
+                opacity: 0.98,
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: isCompactViewport ? '8px' : 0,
+                bottom: 'auto',
+                pointerEvents: 'none',
+              }}
             >
-              <Suspense fallback={null}>
-                {activeThread.mode === 'Conversational' && <LazyConversationalModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
-                {activeThread.mode === 'Homework' && <LazyHomeworkModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
-                {activeThread.mode === 'ExamPrep' && <LazyExamPrepUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
-              </Suspense>
+              <div
+                style={{ pointerEvents: 'auto' }}
+                onPointerEnter={cancelComposerHide}
+                onPointerLeave={scheduleComposerHide}
+              >
+                <Suspense fallback={null}>
+                  {activeThread.mode === 'Conversational' && <LazyConversationalModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
+                  {activeThread.mode === 'Homework' && <LazyHomeworkModeUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
+                  {activeThread.mode === 'ExamPrep' && <LazyExamPrepUI educationLevel={user?.educationLevel || 'High School'} onActionClick={handleQuickAction} />}
+                </Suspense>
+              </div>
             </motion.div>
           ) : null}
 
           {attachments.length > 0 ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', padding: '0 12px' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', padding: '0 12px', pointerEvents: 'auto' }}>
               {attachments.map((attachment, index) => (
                 <AttachmentChip
                   key={`${attachment.name}-${attachment.sizeBytes}-${index}`}
@@ -1250,16 +1389,18 @@ export const ChatInterface = () => {
             style={{
               display: 'flex',
               gap: '12px',
-              background: 'color-mix(in srgb, var(--card-bg) 88%, transparent)',
-              backdropFilter: 'blur(24px)',
-              border: '1px solid var(--glass-border)',
+              background: 'var(--glass-bg-strong)',
+              backdropFilter: 'blur(20px)',
+              border: '1px solid var(--glass-border-strong)',
               padding: '10px',
-              borderRadius: '999px',
-              boxShadow: 'var(--panel-shadow), var(--glass-inner-glow)',
+              borderRadius: '28px',
+              boxShadow: 'var(--glass-inner-glow), var(--glass-shadow-lg)',
               alignItems: 'flex-end',
-              marginTop: isComposerActive ? '8px' : 0,
+              transform: isComposerActive ? 'translateY(-2px)' : 'translateY(0)',
+              pointerEvents: 'auto',
             }}
-            onMouseEnter={() => setIsComposerActive(true)}
+            onPointerEnter={cancelComposerHide}
+            onMouseEnter={activateComposer}
           >
             <input
               ref={fileInputRef}
@@ -1307,15 +1448,15 @@ export const ChatInterface = () => {
               rows={1}
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              onFocus={() => setIsComposerActive(true)}
-              onClick={() => setIsComposerActive(true)}
+              onFocus={activateComposer}
+              onClick={activateComposer}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
                   void handleSend();
                 }
               }}
-              placeholder={isCompactViewport ? `Ask in ${activeThread.mode}...` : `Ask anything in ${activeThread.mode}...`}
+              placeholder="Ask Pluto"
               style={{
                 flex: 1,
                 minWidth: 0,
@@ -1328,6 +1469,7 @@ export const ChatInterface = () => {
                 lineHeight: 1.45,
                 outline: 'none',
                 resize: 'none',
+                overflowY: 'hidden',
                 fontFamily: 'inherit',
                 maxHeight: '200px',
               }}
@@ -1355,7 +1497,7 @@ export const ChatInterface = () => {
                 justifyContent: 'center',
                 transition: 'all 0.2s',
                 opacity: isLoading || !composerHasContent ? 0.3 : 1,
-                boxShadow: 'var(--panel-shadow)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18), 0 12px 28px rgba(108,63,197,0.34)',
                 flexShrink: 0,
               }}
             >
@@ -1388,19 +1530,20 @@ const composerIconButtonStyle: CSSProperties = {
   width: '44px',
   height: '44px',
   borderRadius: '999px',
-  background: 'var(--surface-2)',
-  border: '1px solid var(--card-border)',
+  background: 'var(--glass-bg)',
+  border: '1px solid var(--glass-border)',
   color: 'var(--text-primary)',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
   flexShrink: 0,
+  backdropFilter: 'blur(20px)',
 };
 
 const modeCardStyle: CSSProperties = {
-  background: 'var(--surface-1)',
-  border: '1px solid var(--primary-border)',
+  background: 'var(--glass-bg)',
+  border: '1px solid var(--glass-border)',
   color: 'var(--primary)',
   borderRadius: '18px',
   padding: '24px',
@@ -1413,6 +1556,8 @@ const modeCardStyle: CSSProperties = {
   transition: 'all 0.2s ease',
   fontSize: '0.9rem',
   fontWeight: '700',
+  backdropFilter: 'blur(20px)',
+  boxShadow: 'var(--glass-inner-glow), var(--glass-shadow)',
 };
 
 const getModePillClassName = (mode: 'Conversational' | 'Homework' | 'ExamPrep') => {

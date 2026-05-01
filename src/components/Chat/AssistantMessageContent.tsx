@@ -59,7 +59,7 @@ export const AssistantMessageContent = ({ text }: { text: string }) => {
   const normalizedText = indentDisplayMathWithinListItems(normalizeMathDelimiters(text));
 
   return (
-    <Suspense fallback={<div style={{ whiteSpace: 'pre-wrap' }}>{normalizedText}</div>}>
+    <Suspense fallback={<div className="markdown-content" style={{ whiteSpace: 'pre-wrap' }}>{normalizedText}</div>}>
       <AssistantMarkdownRenderer text={normalizedText} />
     </Suspense>
   );
