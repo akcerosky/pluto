@@ -46,9 +46,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             width: 'min(100%, 460px)',
             padding: '28px',
             border: '1px solid var(--card-border)',
-            borderRadius: '8px',
-            background: 'var(--surface-1)',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.28)',
+            borderRadius: '16px',
+            background: 'var(--card-bg)',
+            boxShadow: 'var(--panel-shadow)',
             textAlign: 'center',
           }}
         >
@@ -61,11 +61,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             onClick={() => window.location.reload()}
             style={{
               border: 'none',
-              borderRadius: '8px',
+              borderRadius: '12px',
               padding: '12px 18px',
               cursor: 'pointer',
-              background: 'var(--primary)',
-              color: 'white',
+              background: 'var(--brand-gradient)',
+              color: 'var(--user-bubble-text)',
               fontWeight: 700,
             }}
           >

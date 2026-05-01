@@ -1,20 +1,17 @@
 import { useApp } from '../../context/useApp';
-import { 
-  Plus, 
-  MessageSquare, 
-  Settings, 
-  LogOut, 
-  LayoutGrid, 
+import {
+  Plus,
+  MessageSquare,
+  Settings,
+  LayoutGrid,
   Search,
   ChevronLeft,
   Trash2,
   X,
-  Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Suspense, useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Suspense, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { LazyProjectsModal } from '../Chat/LazyModePanels';
 import { formatTokenUsageSummary } from '../../lib/tokenQuota';
 
@@ -24,33 +21,15 @@ interface SidebarProps {
   onCloseMobile?: () => void;
 }
 
-const getNextIstResetLabel = () => {
-  const now = new Date();
-  const istParts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(now);
-  const year = Number(istParts.find((part) => part.type === 'year')?.value);
-  const month = Number(istParts.find((part) => part.type === 'month')?.value);
-  const day = Number(istParts.find((part) => part.type === 'day')?.value);
-  const nextIstMidnightUtc = Date.UTC(year, month - 1, day + 1, -5, -30);
-  const resetDate = new Date(nextIstMidnightUtc);
-  const formattedReset = new Intl.DateTimeFormat('en-IN', {
-    timeZone: 'Asia/Kolkata',
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(resetDate);
-
-  return `Daily limit resets at ${formattedReset} IST`;
-};
-
-export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile }: SidebarProps) => {
-  const { 
+export const Sidebar = ({
+  isMobile = false,
+  isMobileOpen = false,
+  onCloseMobile,
+}: SidebarProps) => {
+  const {
     threads,
-    activeThreadId, 
-    setActiveThreadId, 
+    activeThreadId,
+    setActiveThreadId,
     deleteThread,
     projects,
     activeProjectId,
@@ -60,40 +39,27 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
     isSubscriptionHydrated,
     remainingTodayTokens,
     estimatedMessagesLeft,
-    logout 
   } = useApp();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isProjectsOpen, setIsProjectsOpen] = useState(false);
-  const [isUsageResetVisible, setIsUsageResetVisible] = useState(false);
-  const usageResetRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
-  const location = useLocation();
   const effectiveCollapsed = isMobile ? false : isCollapsed;
-  const usageResetTitle = getNextIstResetLabel();
   const showDiscover = import.meta.env.VITE_APP_ENV !== 'production';
+
   const closeMobile = () => {
-    if (isMobile) onCloseMobile?.();
+    if (isMobile) {
+      onCloseMobile?.();
+    }
   };
-
-  useEffect(() => {
-    const handlePointerDown = (event: PointerEvent) => {
-      if (!usageResetRef.current?.contains(event.target as Node)) {
-        setIsUsageResetVisible(false);
-      }
-    };
-
-    document.addEventListener('pointerdown', handlePointerDown);
-    return () => document.removeEventListener('pointerdown', handlePointerDown);
-  }, []);
 
   const handleNewChat = () => {
     setActiveThreadId(null);
     navigate('/chat');
     closeMobile();
   };
-  
-  const filteredThreads = activeProjectId 
-    ? threads.filter(t => t.projectId === activeProjectId)
+
+  const filteredThreads = activeProjectId
+    ? threads.filter((thread) => thread.projectId === activeProjectId)
     : threads;
 
   const handleComingSoon = (feature: string) => {
@@ -104,79 +70,79 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
     <motion.aside
       className={`app-sidebar ${isMobileOpen ? 'mobile-open' : ''}`}
       initial={false}
-      animate={{ width: effectiveCollapsed ? 80 : 280 }}
+      animate={{ width: effectiveCollapsed ? 82 : 296 }}
       style={{
         height: '100%',
-        background: 'rgba(5, 5, 20, 0.4)',
-        backdropFilter: 'blur(10px)',
-        borderRight: '1px solid var(--card-border)',
+        background: 'var(--sidebar-gradient)',
+        borderRight: '1px solid var(--border-color)',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
-        zIndex: 20
+        zIndex: 20,
+        boxShadow: 'var(--panel-shadow)',
+        backdropFilter: 'blur(16px)',
       }}
     >
-      {/* Header / New Chat */}
-      <div style={{ padding: '24px 20px', borderBottom: '1px solid var(--card-border)', position: 'relative' }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: isMobile ? '12px' : 0,
-          }}
-        >
-        <motion.button
-          data-testid="new-chat-button"
-          whileHover={{ scale: 1.02, boxShadow: '0 0 20px var(--primary-glow)' }}
-          whileTap={{ scale: 0.98 }}
-          onClick={handleNewChat}
-          style={{
-            width: '100%',
-            padding: '12px',
-            borderRadius: '12px',
-            background: 'linear-gradient(135deg, var(--primary), #6a1b9a)',
-            color: 'white',
-            border: 'none',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
-            gap: '12px',
-            cursor: 'pointer',
-            fontWeight: '600',
-            boxShadow: '0 4px 12px var(--primary-glow)',
-            flex: 1
-          }}
-        >
-          <Plus size={20} />
-          {!effectiveCollapsed && <span>New Chat</span>}
-        </motion.button>
-        {isMobile && (
-          <button
-            className="app-sidebar-mobile-close"
-            type="button"
-            onClick={closeMobile}
-            aria-label="Close navigation"
-            style={{ display: 'flex', margin: 0, flex: '0 0 52px' }}
+      <div
+        style={{
+          padding: '24px 18px 18px',
+          borderBottom: '1px solid var(--border-color)',
+          position: 'relative',
+          background: 'var(--brand-gradient-soft)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : 0 }}>
+          <motion.button
+            data-testid="new-chat-button"
+            whileHover={{ y: -1 }}
+            whileTap={{ scale: 0.985 }}
+            onClick={handleNewChat}
+            className="app-button"
+            style={{
+              width: '100%',
+              padding: effectiveCollapsed ? '0 14px' : '0 16px',
+              borderRadius: '16px',
+              justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
+              boxShadow: 'var(--panel-shadow)',
+              flex: 1,
+            }}
           >
-            <X size={18} />
-          </button>
-        )}
+            <Plus size={20} />
+            {!effectiveCollapsed && <span>New Chat</span>}
+          </motion.button>
+          {isMobile && (
+            <button
+              className="app-sidebar-mobile-close"
+              type="button"
+              onClick={closeMobile}
+              aria-label="Close navigation"
+              style={{ display: 'flex', margin: 0, flex: '0 0 52px' }}
+            >
+              <X size={18} />
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Navigation Links */}
-      <div style={{ padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-         <SidebarLink 
-          icon={<LayoutGrid size={20} />} 
-          label="Projects" 
-          isCollapsed={effectiveCollapsed} 
+      <div
+        style={{
+          padding: '16px 12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}
+      >
+        <SidebarLink
+          icon={<LayoutGrid size={19} />}
+          label="Projects"
+          isCollapsed={effectiveCollapsed}
           onClick={() => setIsProjectsOpen(true)}
         />
         {showDiscover ? (
-          <SidebarLink 
-            icon={<Search size={20} />} 
-            label="Discover" 
-            isCollapsed={effectiveCollapsed} 
+          <SidebarLink
+            icon={<Search size={19} />}
+            label="Discover"
+            isCollapsed={effectiveCollapsed}
             onClick={() => {
               handleComingSoon('Discover');
               closeMobile();
@@ -186,266 +152,293 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
       </div>
 
       {!effectiveCollapsed && projects.length > 0 && (
-        <div style={{ padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {projects.map(p => (
-            <motion.button 
-              key={p.id} 
-              whileHover={{ background: 'rgba(255,255,255,0.05)' }}
-              onClick={() => {
-                const nextProjectId = activeProjectId === p.id ? null : p.id;
-                setActiveProjectId(nextProjectId);
-                setActiveThreadId(null);
-                navigate('/chat');
-                closeMobile();
-              }}
-              style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '12px', 
-                padding: '8px 12px', 
-                borderRadius: '10px',
-                background: activeProjectId === p.id ? 'rgba(138, 43, 226, 0.1)' : 'transparent',
-                border: `1px solid ${activeProjectId === p.id ? 'rgba(138, 43, 226, 0.3)' : 'transparent'}`,
-                color: activeProjectId === p.id ? 'white' : 'var(--text-secondary)',
-                cursor: 'pointer',
-                width: '100%',
-                textAlign: 'left'
-              }}
-            >
-              <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: p.color }} />
-              <span style={{ fontSize: '0.85rem', fontWeight: '500', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {p.name}
-              </span>
-            </motion.button>
-          ))}
+        <div
+          style={{
+            padding: '0 12px 12px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '6px',
+          }}
+        >
+          {projects.map((project) => {
+            const isActive = activeProjectId === project.id;
+
+            return (
+              <motion.button
+                key={project.id}
+                whileHover={{ y: -1 }}
+                onClick={() => {
+                  const nextProjectId = activeProjectId === project.id ? null : project.id;
+                  setActiveProjectId(nextProjectId);
+                  setActiveThreadId(null);
+                  navigate('/chat');
+                  closeMobile();
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  padding: '10px 12px',
+                  borderRadius: '14px',
+                  background: isActive ? 'var(--primary-soft)' : 'transparent',
+                  border: `1px solid ${isActive ? 'var(--primary-border)' : 'transparent'}`,
+                  color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  cursor: 'pointer',
+                  width: '100%',
+                  textAlign: 'left',
+                }}
+              >
+                <div
+                  style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '3px',
+                    background: project.color,
+                    boxShadow: `0 0 0 3px color-mix(in srgb, ${project.color} 18%, transparent)`,
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: '0.83rem',
+                    fontWeight: '600',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {project.name}
+                </span>
+              </motion.button>
+            );
+          })}
         </div>
       )}
 
-      {/* Thread History */}
-      <div style={{ 
-        flex: 1, 
-        overflowY: 'auto', 
-        padding: '12px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '6px'
-      }}>
+      <div
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}
+      >
         {!effectiveCollapsed && (
-          <div style={{ 
-            fontSize: '0.65rem', 
-            color: 'var(--text-secondary)', 
-            padding: '8px 12px',
-            letterSpacing: '1px',
-            fontWeight: '700'
-          }}>
+          <div
+            style={{
+              fontSize: '0.65rem',
+              color: 'var(--text-muted)',
+              padding: '8px 12px',
+              letterSpacing: '0.12em',
+              fontWeight: '800',
+            }}
+          >
             RECENT CHATS
           </div>
         )}
         <AnimatePresence mode="popLayout">
-          {filteredThreads.map(thread => (
-            <motion.div
-              key={thread.id}
-              data-testid={`thread-item-${thread.id}`}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              whileHover={{ background: 'var(--surface-2)' }}
-              onClick={() => {
-                setActiveThreadId(thread.id);
-                navigate('/chat');
-                closeMobile();
-              }}
-              style={{
-                position: 'relative',
-                padding: '12px 12px',
-                borderRadius: '10px',
-                background: activeThreadId === thread.id ? 'var(--surface-3)' : 'transparent',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                gap: '10px',
-                transition: 'background 0.2s ease'
-              }}
-            >
-              {activeThreadId === thread.id && (
-                <motion.div 
-                  layoutId="active-pill"
+          {filteredThreads.map((thread) => {
+            const isActive = activeThreadId === thread.id;
+
+            return (
+              <motion.div
+                key={thread.id}
+                data-testid={`thread-item-${thread.id}`}
+                className={`sidebar-thread-item ${isActive ? 'active' : ''}`}
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.96 }}
+                whileHover={{ y: -1 }}
+                onClick={() => {
+                  setActiveThreadId(thread.id);
+                  navigate('/chat');
+                  closeMobile();
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                  cursor: 'pointer',
+                }}
+              >
+                <div
                   style={{
-                    position: 'absolute',
-                    left: 0,
-                    width: '3px',
-                    height: '18px',
-                    background: 'var(--primary)',
-                    borderRadius: '0 4px 4px 0',
-                    boxShadow: '0 0 10px var(--primary)'
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    overflow: 'hidden',
+                    marginLeft: isActive ? '6px' : '0',
                   }}
-                />
-              )}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', overflow: 'hidden', marginLeft: activeThreadId === thread.id ? '6px' : '0' }}>
-                <MessageSquare size={16} color={activeThreadId === thread.id ? 'var(--primary)' : 'currentColor'} />
-                {!effectiveCollapsed && <span style={{ 
-                  fontSize: '0.85rem', 
-                  whiteSpace: 'nowrap', 
-                  overflow: 'hidden', 
-                  textOverflow: 'ellipsis',
-                  color: activeThreadId === thread.id ? 'var(--foreground)' : 'var(--text-secondary)'
-                }}>
-                  {thread.title}
-                </span>}
-              </div>
-              {!effectiveCollapsed && activeThreadId === thread.id && (
-                <button 
-                  aria-label={`Delete thread ${thread.title}`}
-                  data-testid={`delete-thread-${thread.id}`}
-                  onClick={(e) => { e.stopPropagation(); deleteThread(thread.id); }}
-                  style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', padding: '4px' }}
                 >
-                  <Trash2 size={14} />
-                </button>
-              )}
-            </motion.div>
-          ))}
+                  <MessageSquare size={16} color={isActive ? 'var(--primary)' : 'currentColor'} />
+                  {!effectiveCollapsed && (
+                    <span
+                      style={{
+                        fontSize: '0.84rem',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        color: isActive ? 'var(--text-primary)' : 'inherit',
+                      }}
+                    >
+                      {thread.title}
+                    </span>
+                  )}
+                </div>
+                {!effectiveCollapsed && isActive && (
+                  <button
+                    aria-label={`Delete thread ${thread.title}`}
+                    data-testid={`delete-thread-${thread.id}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      deleteThread(thread.id);
+                    }}
+                    className="ghost-button"
+                    style={{
+                      minHeight: '30px',
+                      width: '30px',
+                      padding: 0,
+                      borderRadius: '10px',
+                    }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </motion.div>
+            );
+          })}
         </AnimatePresence>
       </div>
 
-      {/* User Footer */}
-      <div style={{ 
-        marginTop: 'auto', 
-        padding: '24px 20px', 
-        borderTop: '1px solid var(--card-border)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '16px',
-        background: 'rgba(0,0,0,0.2)'
-      }}>
-        <div style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '12px',
-          justifyContent: effectiveCollapsed ? 'center' : 'flex-start'
-        }}>
-          <div style={{ 
-            width: '36px', 
-            height: '36px', 
-            borderRadius: '10px', 
-            background: 'linear-gradient(45deg, var(--primary), var(--secondary))',
+      <div
+        style={{
+          marginTop: 'auto',
+          padding: '14px 18px',
+          borderTop: '1px solid var(--border-color)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          background: 'color-mix(in srgb, var(--bg-secondary) 66%, transparent)',
+        }}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            navigate('/profile');
+            closeMobile();
+          }}
+          className="sidebar-profile-row"
+          style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-            fontWeight: '700',
-            fontSize: '0.9rem',
-            boxShadow: '0 4px 10px rgba(0,0,0,0.3)'
-          }}>
-            {user?.name?.[0] || 'U'}
-          </div>
-          {!effectiveCollapsed && (
-            <div style={{ overflow: 'hidden', flex: 1 }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: '600' }}>{user?.name}</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#4CAF50' }}></div>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
-                  {isSubscriptionHydrated ? `${currentPlan} Plan` : 'Loading plan...'}
-                </div>
-              </div>
-              <div
-                ref={usageResetRef}
-                onMouseEnter={() => setIsUsageResetVisible(true)}
-                onMouseLeave={() => setIsUsageResetVisible(false)}
-                style={{ marginTop: '3px' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0 }}>
-                  <span style={{ fontSize: '0.65rem', color: '#f59e0b', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {isSubscriptionHydrated
-                      ? formatTokenUsageSummary(remainingTodayTokens, estimatedMessagesLeft)
-                      : 'Syncing subscription...'}
-                  </span>
-                  {isSubscriptionHydrated && (
-                    <button
-                      type="button"
-                      aria-label="Show daily reset time"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setIsUsageResetVisible((visible) => !visible);
-                      }}
-                      style={{
-                        width: '15px',
-                        height: '15px',
-                        borderRadius: '50%',
-                        border: 'none',
-                        background: 'rgba(245, 158, 11, 0.12)',
-                        color: '#f59e0b',
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        padding: 0,
-                        flex: '0 0 auto',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <Info size={10} />
-                    </button>
-                  )}
-                </div>
-                {isSubscriptionHydrated && isUsageResetVisible && (
-                  <div
-                    style={{
-                      marginTop: '4px',
-                      fontSize: '0.62rem',
-                      color: 'var(--text-secondary)',
-                      lineHeight: 1.35,
-                    }}
-                  >
-                    {usageResetTitle}
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-        
-        {!effectiveCollapsed && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <SidebarLink 
-              icon={<Settings size={18} />} 
-              label="Settings" 
-              onClick={() => {
-                navigate(location.pathname === '/profile' ? '/chat' : '/profile');
-                closeMobile();
-              }}
-            />
-            <button 
-              onClick={() => {
-                logout();
-                closeMobile();
-              }}
+            gap: '12px',
+            justifyContent: effectiveCollapsed ? 'center' : 'space-between',
+            width: '100%',
+            minHeight: '52px',
+            maxHeight: '52px',
+            padding: effectiveCollapsed ? '0' : '10px 12px',
+            borderRadius: '16px',
+            background: 'var(--surface-1)',
+            border: '1px solid var(--card-border)',
+            boxShadow: 'var(--card-shadow)',
+            textAlign: 'left',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0, flex: 1 }}>
+            <div
               style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '999px',
+                background: 'var(--action-bg)',
                 display: 'flex',
                 alignItems: 'center',
-                gap: '10px',
-                width: '100%',
-                padding: '10px 12px',
-                borderRadius: '10px',
-                background: 'rgba(255, 68, 68, 0.05)',
-                border: 'none',
-                color: '#ff4444',
-                cursor: 'pointer',
-                fontSize: '0.85rem',
-                fontWeight: '500',
-                transition: 'all 0.2s'
+                justifyContent: 'center',
+                color: 'var(--action-text)',
+                fontWeight: '800',
+                fontSize: '0.82rem',
+                border: '1px solid var(--action-border)',
+                flexShrink: 0,
               }}
-              onMouseOver={(e) => (e.currentTarget.style.background = 'rgba(255, 68, 68, 0.1)')}
-              onMouseOut={(e) => (e.currentTarget.style.background = 'rgba(255, 68, 68, 0.05)')}
             >
-              <LogOut size={18} />
-              <span>Logout</span>
-            </button>
+              {user?.name?.[0]?.toUpperCase() || 'U'}
+            </div>
+            {!effectiveCollapsed && (
+              <div
+                style={{
+                  overflow: 'hidden',
+                  minWidth: 0,
+                  flex: 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '10px',
+                }}
+              >
+                <div
+                  style={{
+                    fontSize: '0.85rem',
+                    fontWeight: '800',
+                    color: 'var(--text-primary)',
+                    flex: 1,
+                    minWidth: 0,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {user?.name || 'Pluto user'}
+                </div>
+                <span className="pill pill-primary" style={{ flex: '0 0 auto' }}>
+                  {isSubscriptionHydrated ? currentPlan : 'Syncing'}
+                </span>
+              </div>
+            )}
+          </div>
+          {!effectiveCollapsed && (
+            <span
+              style={{
+                width: '30px',
+                height: '30px',
+                borderRadius: '999px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'var(--surface-2)',
+                border: '1px solid var(--card-border)',
+                color: 'var(--text-secondary)',
+                flex: '0 0 auto',
+              }}
+            >
+              <Settings size={15} />
+            </span>
+          )}
+        </button>
+        {!effectiveCollapsed && (
+          <div
+            style={{
+              fontSize: '0.78rem',
+              lineHeight: 1.35,
+              color: 'var(--warning)',
+              fontWeight: '700',
+              padding: '0 4px',
+              textAlign: 'center',
+              width: '100%',
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {isSubscriptionHydrated
+              ? formatTokenUsageSummary(remainingTodayTokens, estimatedMessagesLeft)
+              : 'Syncing subscription...'}
           </div>
         )}
       </div>
 
-      {/* Collapse Toggle */}
       <button
         className="app-sidebar-collapse"
         onClick={() => setIsCollapsed(!isCollapsed)}
@@ -455,25 +448,28 @@ export const Sidebar = ({ isMobile = false, isMobileOpen = false, onCloseMobile 
           top: '50%',
           width: '24px',
           height: '24px',
-          borderRadius: '50%',
-          background: '#1a1a2e',
-          border: '1px solid var(--card-border)',
+          borderRadius: '999px',
+          background: 'var(--card-bg)',
+          border: '1px solid var(--border-color)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          cursor: 'pointer',
+          color: 'var(--text-secondary)',
           zIndex: 30,
-          boxShadow: '0 4px 10px rgba(0,0,0,0.3)'
+          boxShadow: 'var(--card-shadow)',
         }}
       >
-        <ChevronLeft size={14} style={{ transform: effectiveCollapsed ? 'rotate(180deg)' : 'none', transition: 'transform 0.3s' }} />
+        <ChevronLeft
+          size={14}
+          style={{
+            transform: effectiveCollapsed ? 'rotate(180deg)' : 'none',
+            transition: 'transform var(--page-transition)',
+          }}
+        />
       </button>
 
       <Suspense fallback={null}>
-        <LazyProjectsModal 
-          isOpen={isProjectsOpen} 
-          onClose={() => setIsProjectsOpen(false)} 
-        />
+        <LazyProjectsModal isOpen={isProjectsOpen} onClose={() => setIsProjectsOpen(false)} />
       </Suspense>
     </motion.aside>
   );
@@ -490,30 +486,16 @@ const SidebarLink = ({
   isCollapsed?: boolean;
   onClick?: () => void;
 }) => (
-  <motion.button 
-    whileHover={{ x: 4, background: 'var(--surface-2)' }}
-    whileTap={{ scale: 0.98 }}
+  <motion.button
+    whileHover={{ x: 2 }}
+    whileTap={{ scale: 0.985 }}
     onClick={onClick}
+    className="sidebar-link"
     style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-      width: '100%',
-      padding: '10px 14px',
-      borderRadius: '10px',
-      background: 'transparent',
-      border: 'none',
-      color: 'var(--text-secondary)',
-      cursor: 'pointer',
-      fontSize: '0.9rem',
-      fontWeight: '500',
-      transition: 'color 0.2s ease',
-      justifyContent: isCollapsed ? 'center' : 'flex-start'
+      justifyContent: isCollapsed ? 'center' : 'flex-start',
     }}
-    onMouseOver={(e) => (e.currentTarget.style.color = 'var(--foreground)')}
-    onMouseOut={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
   >
-    <span style={{ color: 'var(--primary)' }}>{icon}</span>
+    <span className="sidebar-link-icon">{icon}</span>
     {!isCollapsed && <span>{label}</span>}
   </motion.button>
 );

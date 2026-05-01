@@ -81,7 +81,7 @@ export const VerifyEmailPage = () => {
         }
       }
 
-      setNotice('Still waiting - please make sure you clicked the link in the email.');
+      setNotice('Still waiting, please make sure you clicked the link in the email.');
     } catch (error) {
       runtimeLogger.warn('Unable to refresh email verification status.', error);
       setNotice('Could not refresh verification status right now.');
@@ -91,59 +91,15 @@ export const VerifyEmailPage = () => {
   };
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#0a0a0a',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-        color: 'white',
-      }}
-    >
-      <Link to="/" style={{ marginBottom: '36px', color: 'white', textDecoration: 'none' }}>
-        <div
-          style={{
-            width: '40px',
-            height: '40px',
-            background: 'var(--primary)',
-            borderRadius: '10px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 0 20px var(--primary-glow)',
-          }}
-        >
-          <Rocket size={20} color="white" />
+    <div className="status-shell">
+      <Link to="/" style={{ marginBottom: '36px', color: 'var(--text-primary)', textDecoration: 'none' }}>
+        <div className="auth-logo-chip">
+          <Rocket size={20} color="var(--user-bubble-text)" />
         </div>
       </Link>
 
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '460px',
-          borderRadius: '20px',
-          padding: '32px',
-          background: 'rgba(255,255,255,0.04)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          textAlign: 'center',
-        }}
-      >
-        <div
-          style={{
-            width: '64px',
-            height: '64px',
-            borderRadius: '18px',
-            margin: '0 auto 20px',
-            background: 'rgba(138, 43, 226, 0.14)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--primary)',
-          }}
-        >
+      <div className="status-card-shell" style={{ width: '100%', maxWidth: '460px' }}>
+        <div className="status-icon-badge default">
           <Mail size={28} />
         </div>
 
@@ -151,7 +107,7 @@ export const VerifyEmailPage = () => {
         <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '20px' }}>
           Check your inbox and click the verification link to unlock Pluto chat access.
         </p>
-        <p style={{ color: '#e5e7eb', fontSize: '0.92rem', marginBottom: '24px' }}>
+        <p style={{ color: 'var(--text-primary)', fontSize: '0.92rem', marginBottom: '24px' }}>
           Signed in as <strong>{user.email}</strong>
         </p>
 
@@ -160,10 +116,10 @@ export const VerifyEmailPage = () => {
             style={{
               marginBottom: '18px',
               padding: '12px',
-              borderRadius: '10px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              color: '#f8fafc',
+              borderRadius: '12px',
+              background: 'var(--surface-2)',
+              border: '1px solid var(--border-color)',
+              color: 'var(--text-primary)',
               fontSize: '0.9rem',
             }}
           >
@@ -176,15 +132,8 @@ export const VerifyEmailPage = () => {
             type="button"
             onClick={handleResend}
             disabled={isSending}
-            style={{
-              padding: '12px 18px',
-              borderRadius: '10px',
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: 'rgba(255,255,255,0.04)',
-              color: 'white',
-              cursor: 'pointer',
-              fontWeight: 600,
-            }}
+            className="outline-button"
+            style={{ padding: '0 18px' }}
           >
             {isSending ? 'Sending...' : 'Resend email'}
           </button>
@@ -192,25 +141,26 @@ export const VerifyEmailPage = () => {
             type="button"
             onClick={handleRefresh}
             disabled={isRefreshing || isCompletingAccess}
-            style={{
-              padding: '12px 18px',
-              borderRadius: '10px',
-              border: 'none',
-              background: 'var(--primary)',
-              color: 'white',
-              cursor: 'pointer',
-              fontWeight: 700,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-            }}
+            className="app-button"
+            style={{ padding: '0 18px' }}
           >
             <RefreshCw size={16} />
-            {isRefreshing || isCompletingAccess ? 'Checking...' : user.emailVerified ? 'Continue to Pluto' : 'I verified'}
+            {isRefreshing || isCompletingAccess
+              ? 'Checking...'
+              : user.emailVerified
+                ? 'Continue to Pluto'
+                : 'I verified'}
           </button>
         </div>
         {isCompletingAccess && (
-          <div style={{ marginTop: '18px', display: 'flex', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+          <div
+            style={{
+              marginTop: '18px',
+              display: 'flex',
+              justifyContent: 'center',
+              color: 'var(--text-secondary)',
+            }}
+          >
             <LoaderCircle size={18} className="animate-spin" />
           </div>
         )}

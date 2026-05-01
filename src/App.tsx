@@ -5,6 +5,7 @@ import { useApp } from './context/useApp';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CookieConsentBanner } from './components/CookieConsentBanner';
 import { auth } from './lib/firebase';
+import { ThemeProvider } from './context/ThemeContext';
 
 const LandingPage = lazy(() => import('./pages/LandingPage').then((module) => ({ default: module.LandingPage })));
 const AuthPages = lazy(() => import('./pages/AuthPages').then((module) => ({ default: module.AuthPages })));
@@ -123,12 +124,14 @@ const AppRoutes = () => {
 function App() {
   return (
     <ErrorBoundary>
-      <AppProvider>
-        <Router>
-          <AppRoutes />
-          <CookieConsentBanner />
-        </Router>
-      </AppProvider>
+      <ThemeProvider>
+        <AppProvider>
+          <Router>
+            <AppRoutes />
+            <CookieConsentBanner />
+          </Router>
+        </AppProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

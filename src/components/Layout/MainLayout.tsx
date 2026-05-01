@@ -119,9 +119,9 @@ export const MainLayout = ({ children }: { children: ReactNode }) => {
           <div
             style={{
               padding: '12px 20px',
-              borderBottom: '1px solid rgba(255,255,255,0.08)',
-              background: 'rgba(245, 158, 11, 0.12)',
-              color: '#fcd34d',
+              borderBottom: '1px solid var(--border-color)',
+              background: 'var(--warning-soft)',
+              color: 'var(--warning)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
@@ -131,37 +131,25 @@ export const MainLayout = ({ children }: { children: ReactNode }) => {
           >
             <div style={{ fontSize: '0.92rem' }}>
               Verify your email to secure your Pluto account and keep recovery options available.
-              {verificationNotice && <span style={{ marginLeft: '10px', color: '#fde68a' }}>{verificationNotice}</span>}
+              {verificationNotice && (
+                <span style={{ marginLeft: '10px', color: 'var(--warning)' }}>{verificationNotice}</span>
+              )}
             </div>
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={handleResendVerification}
                 disabled={isSendingVerification}
-                style={{
-                  background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.12)',
-                  color: 'white',
-                  borderRadius: '8px',
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  fontSize: '0.85rem',
-                }}
+                className="outline-button"
+                style={{ minHeight: '36px', padding: '0 12px', fontSize: '0.85rem' }}
               >
                 {isSendingVerification ? 'Sending...' : 'Resend email'}
               </button>
               <button
                 type="button"
                 onClick={handleRefreshVerification}
-                style={{
-                  background: 'var(--primary)',
-                  border: 'none',
-                  color: 'white',
-                  borderRadius: '8px',
-                  padding: '8px 12px',
-                  cursor: 'pointer',
-                  fontSize: '0.85rem',
-                }}
+                className="app-button"
+                style={{ minHeight: '36px', padding: '0 12px', fontSize: '0.85rem' }}
               >
                 I verified
               </button>

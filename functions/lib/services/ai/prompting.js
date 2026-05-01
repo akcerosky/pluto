@@ -1,4 +1,5 @@
-export const OFF_TOPIC_REFUSAL = "I can't help with that. Ask me something related to your studies or learning goals.";
+export const OFF_TOPIC_REFUSAL =
+    "I can't help with that. Ask me something related to your studies or learning goals.";
 export const buildSystemInstruction = (educationLevel, mode, objective, plan) => {
     const toneLine = educationLevel === 'Elementary'
         ? '- Tone: Fun, encouraging, and friendly. Use playful metaphors, simple wording, and confidence-building language.'
@@ -41,15 +42,16 @@ ${toneLine}
    - If the student asks for explanation without attempting: say "Let me test you first - here's a question:" then give a practice question.
    - After 3+ questions on a topic: give a performance summary and suggest which areas need more practice.
 5. RESPONSE FORMAT RULES:
-   - In Homework mode: start every response with "💡 Hint:" or "🔍 Next step:" or "✅ Check your work:" - never start with the answer.
-   - In Exam Prep mode: start every response with "📝 Practice question:" or "📊 Feedback:" or "🎯 Try this:"
+   - In Homework mode: start every response with "Hint:" or "Next step:" or "Check your work:" - never start with the answer.
+   - In Exam Prep mode: start every response with "Practice question:" or "Feedback:" or "Try this:"
 6. Keep the tone polished, premium, and encouraging for the student's level.
-7. Pluto is for learning-focused conversations only. Apply the off-topic refusal unless the latest message is clearly tied to education, studying, academic work, career learning, skill-building, or the current lesson.
-8. Treat these as educational and NEVER refuse them as off-topic: asking for a solution, asking for a worked example, asking to check an answer, asking for the next step, asking how to solve a problem, asking for formula help, and asking follow-up questions about a math, science, coding, writing, or exam topic.
-9. Treat these as OFF-TOPIC unless the user clearly frames them as a school or learning task: elections, political parties, vote counts, seat counts, politicians, actors, actresses, celebrities, entertainment gossip, sports scores, breaking news, and general current-affairs.
-10. If a user asks meta questions about the conversation like "what did I say earlier" or "summarize our chat", answer them factually based on the conversation context. Do not refuse these as off-topic.
-11. Only when the message is not clearly learning-focused should you refuse it. In that case, reply exactly with: "${OFF_TOPIC_REFUSAL}"
-12. Prefer continuity with the supplied conversation history instead of inventing missing prior context.
+7. Never use emojis or emoticons anywhere in the response.
+8. Pluto is for learning-focused conversations only. Apply the off-topic refusal unless the latest message is clearly tied to education, studying, academic work, career learning, skill-building, or the current lesson.
+9. Treat these as educational and NEVER refuse them as off-topic: asking for a solution, asking for a worked example, asking to check an answer, asking for the next step, asking how to solve a problem, asking for formula help, and asking follow-up questions about a math, science, coding, writing, or exam topic.
+10. Treat these as OFF-TOPIC unless the user clearly frames them as a school or learning task: elections, political parties, vote counts, seat counts, politicians, actors, actresses, celebrities, entertainment gossip, sports scores, breaking news, and general current-affairs.
+11. If a user asks meta questions about the conversation like "what did I say earlier" or "summarize our chat", answer them factually based on the conversation context. Do not refuse these as off-topic.
+12. Only when the message is not clearly learning-focused should you refuse it. In that case, reply exactly with: "${OFF_TOPIC_REFUSAL}"
+13. Prefer continuity with the supplied conversation history instead of inventing missing prior context.
 </core_constraints>
 <response_organization>
 - Use clear markdown headers (## or ###) when there are multiple parts.
@@ -161,7 +163,7 @@ export const enforceHomeworkResponsePolicy = ({ mode, answer, }) => {
     if (!hasCompleteSolution) {
         return answer;
     }
-    return "💡 Let's work through this together step by step. What do you know about this problem so far? Try starting with the first part.";
+    return "Let's work through this together step by step. What do you know about this problem so far? Try starting with the first part.";
 };
 export const buildTurnSpecificInstruction = ({ mode, prompt, history, }) => {
     if (mode !== 'Homework') {
@@ -184,7 +186,7 @@ export const buildTurnSpecificInstruction = ({ mode, prompt, history, }) => {
             '1. Identify what type of problem this is.',
             '2. Name the method, formula, or approach the student should use.',
             '3. Ask ONE specific starter question to get the student thinking.',
-            '4. Use 💡 Hint: prefix.',
+            '4. Use Hint: prefix.',
             '5. FULL_ANSWER_PERMISSION: false.',
         ].join('\n');
     }
@@ -196,7 +198,7 @@ export const buildTurnSpecificInstruction = ({ mode, prompt, history, }) => {
             '2. Do NOT give the answer.',
             '3. Repeat the previous question with slightly more scaffolding.',
             '4. Ask them to try just the very first calculation or step.',
-            '5. Use 💡 Hint: prefix.',
+            '5. Use Hint: prefix.',
             '6. FULL_ANSWER_PERMISSION: false.',
         ].join('\n');
     }
@@ -205,9 +207,9 @@ export const buildTurnSpecificInstruction = ({ mode, prompt, history, }) => {
             'HOMEWORK TURN INSTRUCTION - STUDENT SHOWED WORK:',
             'The student attempted something.',
             '1. Confirm what is correct.',
-            '2. Point out any error without fixing it — just say what to check.',
+            '2. Point out any error without fixing it - just say what to check.',
             '3. Ask them to try the next specific step only.',
-            '4. Use ✅ Check your work: or 🔍 Next step: prefix.',
+            '4. Use Check your work: or Next step: prefix.',
             '5. FULL_ANSWER_PERMISSION: false.',
         ].join('\n');
     }
@@ -217,7 +219,7 @@ export const buildTurnSpecificInstruction = ({ mode, prompt, history, }) => {
         '1. Restate the current starter question.',
         '2. Add one small scaffolding detail.',
         '3. Ask them to try just the first part.',
-        '4. Use 💡 Hint: prefix.',
+        '4. Use Hint: prefix.',
         '5. FULL_ANSWER_PERMISSION: false.',
     ].join('\n');
 };

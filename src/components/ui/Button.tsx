@@ -34,11 +34,32 @@ export const Button = ({
     };
 
     if (variant === 'primary') {
-      styles = { ...styles, background: 'var(--primary)', color: 'white', boxShadow: '0 0 15px var(--primary-glow)' };
+      styles = {
+        ...styles,
+        background: 'var(--brand-gradient)',
+        color: 'var(--user-bubble-text)',
+        boxShadow: 'var(--panel-shadow)',
+      };
     } else if (variant === 'secondary') {
-      styles = { ...styles, background: 'var(--secondary)', color: 'black', boxShadow: '0 0 15px var(--secondary-glow)' };
+      styles = {
+        ...styles,
+        background: 'var(--surface-2)',
+        color: 'var(--text-primary)',
+        border: '1px solid var(--border-color)',
+      };
     } else if (variant === 'outline') {
-      styles = { ...styles, background: 'transparent', border: '1px solid var(--glass-border)', color: 'white' };
+      styles = {
+        ...styles,
+        background: 'transparent',
+        border: '1px solid var(--glass-border)',
+        color: 'var(--text-primary)',
+      };
+    } else if (variant === 'ghost') {
+      styles = {
+        ...styles,
+        background: 'transparent',
+        color: 'var(--text-secondary)',
+      };
     }
 
     return styles;
@@ -53,7 +74,7 @@ export const Button = ({
       {...props}
     >
       {loading ? (
-        <span className="spinner" style={{ width: '20px', height: '20px', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+        <span className="spinner" />
       ) : children}
     </motion.button>
   );

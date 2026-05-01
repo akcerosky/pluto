@@ -16,12 +16,22 @@ import {
 import { RAZORPAY_KEY_ID } from '../config/billing';
 import { runtimeLogger } from '../lib/runtimeLogger';
 import { formatTokenCount, formatTokenUsageSummary } from '../lib/tokenQuota';
+import { ThemeToggle } from '../components/ThemeToggle';
 
 declare global {
   interface Window {
     Razorpay?: new (options: Record<string, unknown>) => { open: () => void };
   }
 }
+
+const OBJECTIVE_OPTIONS = [
+  'General Learning',
+  'Homework Help',
+  'Exam Preparation',
+  'Concept Mastery',
+  'Assignment Support',
+  'Professional Growth',
+] as const;
 
 const getFriendlyBillingMessage = (error: unknown, fallback: string) => {
   if (typeof error === 'object' && error && 'message' in error) {
@@ -280,11 +290,36 @@ export const ProfilePage = () => {
 
         <div style={{ display: 'grid', gap: '32px' }}>
           <section className="profile-section" style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>Subscription</h3>
+            <h2 style={sectionTitleStyle}>Theme</h2>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '16px',
+                flexWrap: 'wrap',
+                padding: '18px',
+                borderRadius: '18px',
+                border: '1px solid var(--card-border)',
+                background: 'var(--surface-1)',
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: '4px' }}>Appearance</div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                  Switch between Pluto&apos;s refined dark and light surfaces.
+                </p>
+              </div>
+              <ThemeToggle label="Toggle Pluto theme from settings" />
+            </div>
+          </section>
+
+          <section className="profile-section" style={sectionStyle}>
+            <h2 style={sectionTitleStyle}>Subscription</h2>
             <div style={{ marginBottom: '18px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
               {isSubscriptionHydrated ? (
                 <>
-                  <strong style={{ color: 'white' }}>{currentPlan}</strong> plan active
+                  <strong style={{ color: 'var(--text-primary)' }}>{currentPlan}</strong> plan active
                   {` • ${formatTokenCount(usageTodayTokens)}/${formatTokenCount(dailyTokenLimit)} tokens used today (${formatTokenUsageSummary(remainingTodayTokens, estimatedMessagesLeft)})`}
                 </>
               ) : (
@@ -292,11 +327,11 @@ export const ProfilePage = () => {
               )}
             </div>
             <p style={{ marginBottom: '10px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-              Status: <strong style={{ color: 'white' }}>{subscriptionStatus}</strong>
+              Status: <strong style={{ color: 'var(--text-primary)' }}>{subscriptionStatus}</strong>
               {endDate ? ` • Renews or ends on ${new Date(endDate).toLocaleString()}` : ''}
             </p>
             {subscriptionStatus === 'paused' && (
-              <p style={{ marginBottom: '14px', color: '#fbbf24', fontSize: '0.82rem' }}>
+              <p style={{ marginBottom: '14px', color: 'var(--warning)', fontSize: '0.82rem' }}>
                 Auto-renew is disabled. Pluto will fall back to Free when the current Razorpay cycle ends.
               </p>
             )}
@@ -304,8 +339,8 @@ export const ProfilePage = () => {
               <div
                 style={{
                   marginBottom: '14px',
-                  color: '#f8fafc',
-                  background: 'rgba(255,255,255,0.06)',
+                  color: 'var(--text-primary)',
+                  background: 'var(--surface-2)',
                   border: '1px solid var(--card-border)',
                   borderRadius: '10px',
                   padding: '10px 12px',
@@ -324,8 +359,8 @@ export const ProfilePage = () => {
                     key={plan.id}
                     style={{
                       borderRadius: '16px',
-                      border: isCurrent ? '1px solid rgba(138, 43, 226, 0.65)' : '1px solid var(--card-border)',
-                      background: isCurrent ? 'rgba(138, 43, 226, 0.1)' : 'rgba(255,255,255,0.02)',
+                      border: isCurrent ? '1px solid var(--primary-border)' : '1px solid var(--card-border)',
+                      background: isCurrent ? 'var(--primary-soft)' : 'var(--surface-1)',
                       padding: '18px',
                       display: 'flex',
                       flexDirection: 'column',
@@ -336,15 +371,25 @@ export const ProfilePage = () => {
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <div style={{ fontSize: '1.1rem', fontWeight: 800 }}>{plan.id}</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{plan.tagLine}</div>
+                        <div style={{ fontSize: '0.8rem', color: isCurrent ? 'var(--text-primary)' : 'var(--text-secondary)' }}>
+                          {plan.tagLine}
+                        </div>
                       </div>
-                      <div style={{ fontWeight: 700, color: '#f59e0b' }}>{plan.price}</div>
+                      <div style={{ fontWeight: 700, color: 'var(--price-accent)' }}>{plan.price}</div>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '6px',
+                        color: isCurrent ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        fontSize: '0.8rem',
+                      }}
+                    >
                       {plan.bullets.map((bullet) => (
                         <div key={bullet} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <CheckCircle2 size={14} color="#22c55e" />
+                          <CheckCircle2 size={14} color="var(--success)" />
                           <span>{bullet}</span>
                         </div>
                       ))}
@@ -380,7 +425,7 @@ export const ProfilePage = () => {
           </section>
 
           <section className="profile-section" style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>Billing History</h3>
+            <h2 style={sectionTitleStyle}>Billing History</h2>
             <div style={{ display: 'grid', gap: '12px' }}>
               {history.length === 0 ? (
                 <p style={{ color: 'var(--text-secondary)' }}>No Razorpay billing events recorded yet.</p>
@@ -407,7 +452,7 @@ export const ProfilePage = () => {
                         padding: '12px 14px',
                         borderRadius: '12px',
                         border: '1px solid var(--card-border)',
-                        background: 'rgba(255,255,255,0.03)',
+                        background: 'var(--surface-1)',
                       }}
                     >
                       <div>
@@ -434,7 +479,7 @@ export const ProfilePage = () => {
           </section>
 
           <section className="profile-section" style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>Basic Information</h3>
+            <h2 style={sectionTitleStyle}>Basic Information</h2>
             <div className="profile-grid" style={gridStyle}>
               <div style={inputGroupStyle}>
                 <label style={labelStyle}>DISPLAY NAME</label>
@@ -459,7 +504,7 @@ export const ProfilePage = () => {
           </section>
 
           <section className="profile-section" style={sectionStyle}>
-            <h3 style={sectionTitleStyle}>Learning Profile</h3>
+            <h2 style={sectionTitleStyle}>Learning Profile</h2>
             <div className="profile-grid" style={gridStyle}>
               <div style={inputGroupStyle}>
                 <label style={labelStyle}>EDUCATION LEVEL</label>
@@ -483,7 +528,18 @@ export const ProfilePage = () => {
                 <label style={labelStyle}>LEARNING OBJECTIVE</label>
                 <div style={inputContainerStyle}>
                   <Target size={18} style={iconStyle} />
-                  <input type="text" value={objective} onChange={(e) => setObjective(e.target.value)} style={profileInputStyle} />
+                  <select
+                    className="profile-select"
+                    value={objective}
+                    onChange={(e) => setObjective(e.target.value)}
+                    style={profileInputStyle}
+                  >
+                    {OBJECTIVE_OPTIONS.map((option) => (
+                      <option key={option} value={option} style={selectOptionStyle}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </div>
@@ -494,11 +550,35 @@ export const ProfilePage = () => {
               <Save size={18} />
               {isSaving ? 'Saving...' : isSaved ? 'Saved!' : 'Save Changes'}
             </button>
-            <button onClick={logout} style={dangerButtonStyle}>
-              <LogOut size={18} />
-              Logout Session
-            </button>
           </div>
+
+          <section className="profile-section" style={sectionStyle}>
+            <h2 style={sectionTitleStyle}>Danger Zone</h2>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '16px',
+                flexWrap: 'wrap',
+                padding: '18px',
+                borderRadius: '18px',
+                border: '1px solid color-mix(in srgb, var(--danger) 28%, var(--card-border))',
+                background: 'color-mix(in srgb, var(--danger-soft) 58%, var(--surface-1))',
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: '4px', color: 'var(--text-primary)' }}>Logout</div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                  End this Pluto session on this device.
+                </p>
+              </div>
+              <button onClick={logout} style={dangerButtonStyle}>
+              <LogOut size={18} />
+                Logout Session
+              </button>
+            </div>
+          </section>
         </div>
       </div>
     </div>
@@ -516,7 +596,7 @@ const sectionTitleStyle: React.CSSProperties = {
   fontSize: '1.2rem',
   fontWeight: '700',
   marginBottom: '24px',
-  color: 'var(--primary)',
+  color: 'var(--text-primary)',
 };
 
 const gridStyle: React.CSSProperties = {
@@ -552,10 +632,10 @@ const iconStyle: React.CSSProperties = {
 const profileInputStyle: React.CSSProperties = {
   width: '100%',
   padding: '14px 14px 14px 48px',
-  background: 'rgba(255,255,255,0.03)',
+  background: 'var(--input-bg)',
   border: '1px solid var(--card-border)',
   borderRadius: '12px',
-  color: 'white',
+  color: 'var(--text-primary)',
   fontSize: '0.95rem',
   outline: 'none',
 };
@@ -564,7 +644,7 @@ const primaryButtonStyle = (disabled?: boolean): React.CSSProperties => ({
   padding: '12px 24px',
   borderRadius: '12px',
   background: 'var(--primary)',
-  color: 'white',
+  color: 'var(--user-bubble-text)',
   border: 'none',
   fontWeight: '700',
   display: 'flex',
@@ -578,8 +658,8 @@ const primaryButtonStyle = (disabled?: boolean): React.CSSProperties => ({
 const secondaryButtonStyle: React.CSSProperties = {
   padding: '10px 16px',
   borderRadius: '10px',
-  background: 'rgba(255,255,255,0.04)',
-  color: 'white',
+  background: 'var(--surface-2)',
+  color: 'var(--text-primary)',
   border: '1px solid var(--card-border)',
   fontWeight: 600,
   cursor: 'pointer',
@@ -587,29 +667,29 @@ const secondaryButtonStyle: React.CSSProperties = {
 
 const mutedDangerButtonStyle: React.CSSProperties = {
   ...secondaryButtonStyle,
-  background: 'rgba(239, 68, 68, 0.08)',
-  border: '1px solid rgba(239, 68, 68, 0.35)',
-  color: '#fca5a5',
+  background: 'var(--danger-soft)',
+  border: '1px solid color-mix(in srgb, var(--danger) 36%, transparent)',
+  color: 'var(--danger)',
 };
 
 const resumeButtonStyle: React.CSSProperties = {
   ...secondaryButtonStyle,
-  background: 'rgba(138, 43, 226, 0.08)',
-  border: '1px solid rgba(138, 43, 226, 0.45)',
-  color: '#d8b4fe',
+  background: 'var(--primary-soft)',
+  border: '1px solid var(--primary-border)',
+  color: 'var(--primary)',
 };
 
 const selectOptionStyle: React.CSSProperties = {
-  color: '#111827',
-  background: '#ffffff',
+  color: 'var(--text-primary)',
+  background: 'var(--card-bg)',
 };
 
 const dangerButtonStyle: React.CSSProperties = {
   padding: '12px 24px',
   borderRadius: '12px',
-  background: 'rgba(255, 68, 68, 0.1)',
-  color: '#ff4444',
-  border: '1px solid #ff4444',
+  background: 'var(--danger-soft)',
+  color: 'var(--danger)',
+  border: '1px solid color-mix(in srgb, var(--danger) 36%, transparent)',
   fontWeight: '700',
   display: 'flex',
   alignItems: 'center',

@@ -3,9 +3,45 @@
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link id="app-favicon" rel="icon" type="image/png" href="/favicon-light.png" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Pluto</title>
+  <script>
+    (function () {
+      var storageKey = 'pluto-theme';
+      var root = document.documentElement;
+      var favicon = document.getElementById('app-favicon');
+      var storedTheme = null;
+
+      var applyFavicon = function (theme) {
+        if (!favicon) return;
+        favicon.href = theme === 'dark' ? '/favicon-dark.png' : '/favicon-light.png';
+      };
+
+      try {
+        storedTheme = window.localStorage.getItem(storageKey);
+      } catch (error) {
+        storedTheme = null;
+      }
+
+      var resolvedTheme =
+        storedTheme === 'light' || storedTheme === 'dark'
+          ? storedTheme
+          : window.matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'dark'
+            : 'light';
+
+      root.dataset.theme = resolvedTheme;
+      applyFavicon(resolvedTheme);
+
+      new MutationObserver(function () {
+        applyFavicon(root.dataset.theme === 'dark' ? 'dark' : 'light');
+      }).observe(root, {
+        attributes: true,
+        attributeFilter: ['data-theme'],
+      });
+    })();
+  </script>
 </head>
 
 <body>

@@ -20,24 +20,17 @@ export const ConversationalModeUI = ({ educationLevel, onActionClick }: ModeUIPr
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
       <motion.div
-        initial={{ opacity: 0, height: 0 }}
-        animate={{ opacity: 1, height: 'auto' }}
-        style={{
-          display: 'flex',
-          gap: '12px',
-          padding: '10px 16px',
-          background: 'rgba(10, 16, 42, 0.72)',
-          borderRadius: '14px',
-          border: '1px solid rgba(138, 43, 226, 0.16)',
-          backdropFilter: 'blur(14px)',
-        }}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mode-panel-card conversational"
+        style={{ display: 'flex', gap: '12px' }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '0.9rem' }}>
             {isElementary ? <Rocket size={16} color="var(--primary)" /> : <Lightbulb size={16} color="var(--primary)" />}
             {isElementary ? 'Learning Buddy' : isProfessional ? 'Guided Reasoning' : 'Concept Coaching'}
           </div>
-          <p style={{ fontSize: '0.8rem', opacity: 0.8 }}>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
             {isElementary
               ? "I'll explain ideas in fun, simple steps and help you think through them."
               : isProfessional
@@ -45,13 +38,13 @@ export const ConversationalModeUI = ({ educationLevel, onActionClick }: ModeUIPr
                 : 'I will guide you with questions, examples, and step-by-step understanding.'}
           </p>
         </div>
-        <div style={{ width: '1px', background: 'var(--card-border)' }} />
+        <div style={{ width: '1px', background: 'var(--border-color)' }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '0.9rem' }}>
             {isElementary ? <Zap size={16} color="var(--primary)" /> : <Search size={16} color="var(--primary)" />}
             {isElementary ? 'Try Asking' : isProfessional ? 'Explore Deeper' : 'Best Prompt'}
           </div>
-          <p style={{ fontSize: '0.8rem', opacity: 0.8 }}>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
             {isElementary
               ? "Try: 'Can you explain this like a game?'"
               : isProfessional
@@ -65,18 +58,7 @@ export const ConversationalModeUI = ({ educationLevel, onActionClick }: ModeUIPr
           <button
             key={action}
             onClick={() => onActionClick(action)}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '20px',
-              background: 'var(--glass)',
-              border: '1px solid var(--primary-glow)',
-              color: 'var(--foreground)',
-              fontSize: '0.75rem',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-            onMouseOver={(event) => (event.currentTarget.style.background = 'var(--primary-glow)')}
-            onMouseOut={(event) => (event.currentTarget.style.background = 'var(--glass)')}
+            className="mode-action-chip conversational"
           >
             {action}
           </button>
@@ -96,26 +78,28 @@ export const HomeworkModeUI = ({ educationLevel, onActionClick }: ModeUIProps) =
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
       <motion.div
-        initial={{ opacity: 0, height: 0 }}
-        animate={{ opacity: 1, height: 'auto' }}
-        style={{
-          padding: '10px 16px',
-          background: 'rgba(9, 19, 38, 0.72)',
-          borderRadius: '14px',
-          border: '1px solid rgba(0, 210, 255, 0.16)',
-          backdropFilter: 'blur(14px)',
-        }}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mode-panel-card homework"
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '0.9rem', marginBottom: '8px' }}>
-          <BookOpen size={16} color="var(--secondary)" />
+          <BookOpen size={16} color="var(--mode-homework)" />
           {isElementary ? 'Homework Helper' : 'Hint-First Solver'}
         </div>
         <div style={{ display: 'flex', gap: '4px' }}>
           {[1, 2, 3, 4].map((index) => (
-            <div key={index} style={{ flex: 1, height: '4px', borderRadius: '2px', background: index === 1 ? 'var(--secondary)' : 'var(--card-border)' }} />
+            <div
+              key={index}
+              style={{
+                flex: 1,
+                height: '4px',
+                borderRadius: '2px',
+                background: index === 1 ? 'var(--mode-homework)' : 'var(--border-color)',
+              }}
+            />
           ))}
         </div>
-        <p style={{ fontSize: '0.75rem', opacity: 0.7, marginTop: '8px' }}>
+        <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '8px' }}>
           {isElementary
             ? 'I will help you solve it one clue at a time without taking over.'
             : 'I will focus on method, next step, and short hints instead of handing over the full answer.'}
@@ -123,22 +107,7 @@ export const HomeworkModeUI = ({ educationLevel, onActionClick }: ModeUIProps) =
       </motion.div>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         {actions.map((action) => (
-          <button
-            key={action}
-            onClick={() => onActionClick(action)}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '20px',
-              background: 'var(--glass)',
-              border: '1px solid var(--secondary-glow)',
-              color: 'var(--foreground)',
-              fontSize: '0.75rem',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-            onMouseOver={(event) => (event.currentTarget.style.background = 'var(--secondary-glow)')}
-            onMouseOut={(event) => (event.currentTarget.style.background = 'var(--glass)')}
-          >
+          <button key={action} onClick={() => onActionClick(action)} className="mode-action-chip homework">
             {action}
           </button>
         ))}
@@ -160,26 +129,22 @@ export const ExamPrepUI = ({ educationLevel, onActionClick }: ModeUIProps) => {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
       <motion.div
-        initial={{ opacity: 0, height: 0 }}
-        animate={{ opacity: 1, height: 'auto' }}
-        style={{
-          padding: '10px 16px',
-          background: 'rgba(22, 10, 34, 0.72)',
-          borderRadius: '14px',
-          border: '1px solid rgba(255, 0, 193, 0.16)',
-          backdropFilter: 'blur(14px)',
-        }}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="mode-panel-card examprep"
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: '600', fontSize: '0.9rem' }}>
-            <Stars size={16} color="var(--accent)" />
+            <Stars size={16} color="var(--mode-examprep)" />
             {isElementary ? 'Quiz Practice' : isProfessional ? 'Exam Simulation' : 'Practice Mode'}
           </div>
-          <div style={{ fontSize: '0.7rem', padding: '2px 6px', background: 'var(--accent)', borderRadius: '4px', color: 'white' }}>LIVE</div>
+          <div className="pill pill-success" style={{ minHeight: '22px', padding: '0 8px' }}>
+            LIVE
+          </div>
         </div>
-        <p style={{ fontSize: '0.8rem', opacity: 0.8 }}>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
           {isElementary
-            ? "I can quiz you, check recall, and help you practice with short questions."
+            ? 'I can quiz you, check recall, and help you practice with short questions.'
             : isProfessional
               ? 'I can generate mock scenarios, practice questions, and exam-style reasoning drills.'
               : 'I can run quizzes, mock tests, revision checks, and common-mistake reviews.'}
@@ -187,22 +152,7 @@ export const ExamPrepUI = ({ educationLevel, onActionClick }: ModeUIProps) => {
       </motion.div>
       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
         {actions.map((action) => (
-          <button
-            key={action}
-            onClick={() => onActionClick(action)}
-            style={{
-              padding: '6px 12px',
-              borderRadius: '20px',
-              background: 'var(--glass)',
-              border: '1px solid var(--accent-glow)',
-              color: 'var(--foreground)',
-              fontSize: '0.75rem',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-            onMouseOver={(event) => (event.currentTarget.style.background = 'var(--accent-glow)')}
-            onMouseOut={(event) => (event.currentTarget.style.background = 'var(--glass)')}
-          >
+          <button key={action} onClick={() => onActionClick(action)} className="mode-action-chip examprep">
             {action}
           </button>
         ))}

@@ -212,6 +212,6 @@ test('homework mode guards complete solutions with a generic redirect', async ()
   });
 
   expect(result.text).toBe(
-    "💡 Let's work through this together step by step. What do you know about this problem so far? Try starting with the first part."
+    "Let's work through this together step by step. What do you know about this problem so far? Try starting with the first part."
   );
 });

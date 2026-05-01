@@ -141,11 +141,12 @@ const AttachmentChip = ({
       gap: '8px',
       padding: '8px 12px',
       borderRadius: '12px',
-      background: 'rgba(255,255,255,0.08)',
-      border: '1px solid rgba(255,255,255,0.12)',
+      background: 'var(--surface-2)',
+      border: '1px solid var(--border-color)',
       fontSize: '0.85rem',
       lineHeight: 1.2,
       maxWidth: '100%',
+      color: 'var(--text-primary)',
     }}
   >
     {part.type === 'image' ? <ImageIcon size={16} /> : <FileText size={16} />}
@@ -161,7 +162,7 @@ const AttachmentChip = ({
       >
         {part.name}
       </span>
-      <span style={{ fontSize: '0.72rem', opacity: 0.7 }}>
+      <span style={{ fontSize: '0.8rem', opacity: 0.7 }}>
         {part.type === 'image' ? 'Image' : 'PDF'} • {formatBytes(part.sizeBytes)}
       </span>
     </div>
@@ -238,6 +239,13 @@ export const ChatInterface = () => {
     new URLSearchParams(window.location.search).get('plutoThrowChatError') === '1';
 
   const composerHasContent = input.trim().length > 0 || attachments.length > 0;
+  const showComposerCount = input.length >= Math.floor(planConfig.maxInputChars * 0.8);
+  const composerCountClassName =
+    input.length >= Math.floor(planConfig.maxInputChars * 0.9)
+      ? 'chat-composer-count danger'
+      : input.length >= Math.floor(planConfig.maxInputChars * 0.8)
+        ? 'chat-composer-count warning'
+        : 'chat-composer-count';
 
   if (shouldForceRenderError) {
     throw new Error('Pluto smoke test forced ChatInterface render error.');
@@ -586,16 +594,17 @@ export const ChatInterface = () => {
             style={{
               width: '100px',
               height: '100px',
-              background: 'linear-gradient(135deg, var(--primary), var(--secondary))',
+              background: 'linear-gradient(135deg, var(--surface-2), var(--surface-3))',
               borderRadius: '30px',
               margin: '0 auto 32px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
+              boxShadow: 'var(--panel-shadow)',
+              border: '1px solid var(--border-color)',
             }}
           >
-            <Rocket size={50} color="white" />
+            <Rocket size={50} color="var(--text-primary)" />
           </motion.div>
           <h2 style={{ fontSize: '2.5rem', fontWeight: '800', marginBottom: '16px', letterSpacing: '-1px' }}>Welcome back, Astronaut.</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '1.1rem', marginBottom: '40px' }}>
@@ -604,16 +613,20 @@ export const ChatInterface = () => {
           <div className="chat-empty-modes" style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'center' }}>
             <motion.button
               data-testid="mode-exploration-button"
-              whileHover={{ y: -5, background: 'rgba(138, 43, 226, 0.1)' }}
+              whileHover={{ y: -5, background: 'var(--mode-conversational-soft)' }}
               onClick={() => createThread('Conversational', activeProjectId || undefined)}
-              style={modeCardStyle}
+              style={{
+                ...modeCardStyle,
+                borderColor: 'color-mix(in srgb, var(--mode-conversational) 36%, transparent)',
+                color: 'var(--mode-conversational)',
+              }}
             >
               <MessageSquare size={28} />
               <span>Exploration</span>
             </motion.button>
             <motion.button
               data-testid="mode-homework-button"
-              whileHover={{ y: -5, background: 'rgba(0, 210, 255, 0.1)' }}
+              whileHover={{ y: -5, background: 'var(--mode-homework-soft)' }}
               onClick={() =>
                 canUseMode('Homework')
                   ? createThread('Homework', activeProjectId || undefined)
@@ -623,7 +636,11 @@ export const ChatInterface = () => {
                         : 'Homework mode is available on Plus and Pro plans.'
                     )
               }
-              style={{ ...modeCardStyle, borderColor: 'rgba(0, 210, 255, 0.3)', color: 'var(--secondary)' }}
+              style={{
+                ...modeCardStyle,
+                borderColor: 'color-mix(in srgb, var(--mode-homework) 36%, transparent)',
+                color: 'var(--mode-homework)',
+              }}
             >
               <FileEdit size={28} />
               <span>
@@ -636,7 +653,7 @@ export const ChatInterface = () => {
             </motion.button>
             <motion.button
               data-testid="mode-examprep-button"
-              whileHover={{ y: -5, background: 'rgba(255, 0, 193, 0.1)' }}
+              whileHover={{ y: -5, background: 'var(--mode-examprep-soft)' }}
               onClick={() =>
                 canUseMode('ExamPrep')
                   ? createThread('ExamPrep', activeProjectId || undefined)
@@ -646,7 +663,11 @@ export const ChatInterface = () => {
                         : 'Exam Prep mode is available on Plus and Pro plans.'
                     )
               }
-              style={{ ...modeCardStyle, borderColor: 'rgba(255, 0, 193, 0.3)', color: 'var(--accent)' }}
+              style={{
+                ...modeCardStyle,
+                borderColor: 'color-mix(in srgb, var(--mode-examprep) 36%, transparent)',
+                color: 'var(--mode-examprep)',
+              }}
             >
               <Award size={28} />
               <span>
@@ -658,11 +679,15 @@ export const ChatInterface = () => {
               </span>
             </motion.button>
           </div>
-          {planNotice && <p style={{ marginTop: '18px', color: '#fbbf24', fontSize: '0.9rem' }}>{planNotice}</p>}
+          {planNotice && (
+            <p style={{ marginTop: '18px', color: 'var(--warning)', fontSize: '0.9rem' }}>
+              {planNotice}
+            </p>
+          )}
           {activeProjectId && (
             <button
               onClick={() => setActiveProjectId(null)}
-              style={{ marginTop: '32px', background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.9rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}
+              style={{ marginTop: '32px', background: 'none', border: 'none', color: 'var(--mode-conversational)', cursor: 'pointer', fontSize: '0.9rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '8px' }}
             >
               <X size={14} /> Clear project focus ({projects.find((p) => p.id === activeProjectId)?.name})
             </button>
@@ -938,35 +963,34 @@ export const ChatInterface = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          background: 'rgba(10, 11, 22, 0.4)',
+          background: 'color-mix(in srgb, var(--bg-primary) 82%, transparent)',
           backdropFilter: 'blur(10px)',
         }}
       >
         <div className="chat-header-main" style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', width: '100%' }}>
           <div className="chat-thread-title" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ color: 'var(--primary)' }}>{modeIcons[activeThread.mode]}</div>
-            <h3 style={{ fontSize: '1.1rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{activeThread.title}</h3>
+            <div style={{ color: 'var(--text-secondary)' }}>{modeIcons[activeThread.mode]}</div>
+            <h3 style={{ fontSize: '1.25rem', fontWeight: '800', letterSpacing: '-0.02em' }}>{activeThread.title}</h3>
           </div>
           <div className="chat-header-divider" style={{ width: '1px', height: '20px', background: 'var(--card-border)' }} />
           <motion.button
             className="chat-project-button"
-            whileHover={{ background: 'rgba(255,255,255,0.05)' }}
+            whileHover={{ y: -1 }}
             onClick={() => setIsProjectsOpen(true)}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '8px',
               padding: '6px 12px',
-              borderRadius: '10px',
-              border: '1px solid var(--card-border)',
-              background: 'transparent',
+              borderRadius: '999px',
+              border: '1px solid var(--border-color)',
+              background: 'var(--surface-1)',
               cursor: 'pointer',
-              color: assignedProject ? 'white' : 'var(--text-secondary)',
-              transition: 'all 0.2s',
+              color: assignedProject ? 'var(--text-primary)' : 'var(--text-secondary)',
             }}
           >
             <Folder size={14} color={assignedProject?.color || 'currentColor'} />
-            <span style={{ fontSize: '0.85rem', fontWeight: '600' }}>{assignedProject?.name || 'No Project'}</span>
+            <span style={{ fontSize: '0.9rem', fontWeight: '600' }}>{assignedProject?.name || 'No Project'}</span>
             <ChevronDown size={14} opacity={0.5} />
           </motion.button>
           <div
@@ -981,13 +1005,13 @@ export const ChatInterface = () => {
               flexShrink: 0,
             }}
           >
-            <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: '#f59e0b', fontWeight: '700', letterSpacing: '0.5px' }}>
+            <div className="chat-status-pill pill pill-warning">
               {isSubscriptionHydrated ? currentPlan.toUpperCase() : 'LOADING'}
             </div>
-            <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontWeight: '700', letterSpacing: '0.5px' }}>
+            <div className="chat-status-pill pill">
               {isSubscriptionHydrated ? `${formatTokenCount(remainingTodayTokens)} TOKENS LEFT` : 'SYNCING TOKENS'}
             </div>
-            <div className="chat-status-pill" style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', background: 'rgba(255,255,255,0.05)', color: 'var(--text-secondary)', fontWeight: '700', letterSpacing: '0.5px' }}>
+            <div className={`chat-status-pill pill ${getModePillClassName(activeThread.mode)}`}>
               {activeThread.mode.toUpperCase()}
             </div>
           </div>
@@ -1013,7 +1037,7 @@ export const ChatInterface = () => {
               initial={{ opacity: 0, y: 10, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               key={msg.id}
-              className={`chat-message-row ${msg.role === 'user' ? 'chat-message-row-user' : 'chat-message-row-assistant'}`}
+              className={`chat-message-row chat-fade-in ${msg.role === 'user' ? 'chat-message-row-user' : 'chat-message-row-assistant'}`}
               style={{
                 display: 'flex',
                 gap: msg.role === 'user' ? '10px' : '16px',
@@ -1027,16 +1051,16 @@ export const ChatInterface = () => {
                   width: '36px',
                   height: '36px',
                   borderRadius: '12px',
-                  background: msg.role === 'user' ? 'linear-gradient(135deg, var(--primary), #6a1b9a)' : 'linear-gradient(135deg, #1a1a3a, #050515)',
+                  background: msg.role === 'user' ? 'var(--action-bg)' : 'var(--surface-2)',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   flexShrink: 0,
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                  border: '1px solid var(--card-border)',
+                  boxShadow: 'var(--card-shadow)',
+                  border: msg.role === 'user' ? '1px solid var(--action-border)' : '1px solid var(--card-border)',
                 }}
               >
-                {msg.role === 'user' ? <User size={18} color="white" /> : <Rocket size={18} color="var(--secondary)" />}
+                {msg.role === 'user' ? <User size={18} color="var(--action-text)" /> : <Rocket size={18} color="var(--secondary)" />}
               </div>
 
               <div
@@ -1053,14 +1077,19 @@ export const ChatInterface = () => {
                   className="markdown-content chat-bubble"
                   style={{
                     padding: '18px 24px',
-                    borderRadius: msg.role === 'user' ? '24px 4px 24px 24px' : '4px 24px 24px 24px',
-                    background: msg.role === 'user' ? 'linear-gradient(135deg, var(--primary), #4a148c)' : 'var(--surface-1)',
+                    borderRadius: msg.role === 'user' ? '18px 18px 4px 18px' : '16px',
+                    background: msg.role === 'user' ? 'var(--action-bg)' : 'var(--assistant-bubble-bg)',
                     backdropFilter: msg.role === 'assistant' ? 'blur(10px)' : 'none',
-                    color: 'white',
-                    border: '1px solid var(--card-border)',
+                    color:
+                      msg.role === 'user'
+                        ? 'var(--action-text)'
+                        : 'var(--assistant-bubble-text)',
+                    border: msg.role === 'user' ? '1px solid var(--action-border)' : '1px solid var(--card-border)',
+                    borderLeft:
+                      msg.role === 'assistant' ? '1px solid var(--primary)' : '1px solid transparent',
                     lineHeight: 1.7,
                     fontSize: '1rem',
-                    boxShadow: '0 8px 30px rgba(0,0,0,0.2)',
+                    boxShadow: 'var(--card-shadow)',
                     position: 'relative',
                     width: 'fit-content',
                     maxWidth: '100%',
@@ -1101,7 +1130,7 @@ export const ChatInterface = () => {
                         <div
                           style={{
                             color: 'var(--text-secondary)',
-                            fontSize: '0.76rem',
+                            fontSize: '0.8rem',
                             fontWeight: 600,
                             opacity: 0.85,
                           }}
@@ -1119,10 +1148,10 @@ export const ChatInterface = () => {
                           gap: '8px',
                           padding: '6px 12px',
                           borderRadius: '999px',
-                          border: '1px solid rgba(255,255,255,0.14)',
-                          background: 'rgba(255,255,255,0.05)',
+                          border: '1px solid var(--border-color)',
+                          background: 'var(--surface-1)',
                           color: 'var(--text-secondary)',
-                          fontSize: '0.78rem',
+                          fontSize: '0.82rem',
                           fontWeight: 600,
                           cursor: isLoading ? 'default' : 'pointer',
                           opacity: isLoading ? 0.5 : 1,
@@ -1148,7 +1177,7 @@ export const ChatInterface = () => {
                         gap: '8px',
                         padding: '4px 2px',
                         color: 'var(--text-secondary)',
-                        fontSize: '0.76rem',
+                        fontSize: '0.8rem',
                         fontWeight: 600,
                         opacity: 0.85,
                       }}
@@ -1167,9 +1196,17 @@ export const ChatInterface = () => {
             <div className="animate-thinking" style={{ width: '36px', height: '36px', borderRadius: '12px', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--card-border)' }}>
               <Sparkles size={18} color="var(--primary)" />
             </div>
-            <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '500', letterSpacing: '0.5px' }}>
-              {requestRetryLabel ?? failedRequest?.statusMessage ?? 'PLUTO IS GENERATING...'}
-            </div>
+            {requestRetryLabel || failedRequest?.statusMessage ? (
+              <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', fontWeight: '500', letterSpacing: '0.5px' }}>
+                {requestRetryLabel ?? failedRequest?.statusMessage}
+              </div>
+            ) : (
+              <div className="typing-indicator" aria-label="Pluto is typing">
+                <span />
+                <span />
+                <span />
+              </div>
+            )}
           </motion.div>
         )}
         <div ref={messagesEndRef} />
@@ -1213,12 +1250,12 @@ export const ChatInterface = () => {
             style={{
               display: 'flex',
               gap: '12px',
-              background: 'rgba(10, 10, 26, 0.7)',
+              background: 'color-mix(in srgb, var(--card-bg) 88%, transparent)',
               backdropFilter: 'blur(24px)',
               border: '1px solid var(--glass-border)',
               padding: '10px',
-              borderRadius: '20px',
-              boxShadow: '0 20px 50px rgba(0,0,0,0.5), var(--glass-inner-glow)',
+              borderRadius: '999px',
+              boxShadow: 'var(--panel-shadow), var(--glass-inner-glow)',
               alignItems: 'flex-end',
               marginTop: isComposerActive ? '8px' : 0,
             }}
@@ -1285,7 +1322,7 @@ export const ChatInterface = () => {
                 minHeight: '44px',
                 background: 'none',
                 border: 'none',
-                color: 'white',
+                color: 'var(--text-primary)',
                 padding: '14px',
                 fontSize: '1rem',
                 lineHeight: 1.45,
@@ -1295,27 +1332,30 @@ export const ChatInterface = () => {
                 maxHeight: '200px',
               }}
             />
+            {showComposerCount ? (
+              <div className={composerCountClassName}>{input.length}/{planConfig.maxInputChars}</div>
+            ) : null}
             <motion.button
               data-testid="chat-send-button"
               className="chat-send-button"
-              whileHover={{ scale: 1.05, background: 'var(--secondary)' }}
+              whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={() => void handleSend()}
               disabled={isLoading || !composerHasContent}
               style={{
                 width: '48px',
                 height: '48px',
-                borderRadius: '14px',
-                background: 'var(--primary)',
-                color: 'white',
-                border: 'none',
+                borderRadius: '999px',
+                background: 'var(--action-bg)',
+                color: 'var(--action-text)',
+                border: '1px solid var(--action-border)',
                 cursor: 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 transition: 'all 0.2s',
                 opacity: isLoading || !composerHasContent ? 0.3 : 1,
-                boxShadow: '0 4px 15px var(--primary-glow)',
+                boxShadow: 'var(--panel-shadow)',
                 flexShrink: 0,
               }}
             >
@@ -1323,15 +1363,15 @@ export const ChatInterface = () => {
             </motion.button>
           </div>
           {planNotice ? (
-            <div style={{ textAlign: 'center', fontSize: '0.82rem', color: '#fbbf24' }}>{planNotice}</div>
+            <div style={{ textAlign: 'center', fontSize: '0.82rem', color: 'var(--warning)' }}>{planNotice}</div>
           ) : null}
           {isSubscriptionHydrated && !canUseMode(activeThread.mode) && (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#fbbf24', fontSize: '0.8rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--warning)', fontSize: '0.8rem' }}>
               <Lock size={14} />
               <span>This mode is locked on {currentPlan}. Upgrade to Plus or Pro.</span>
             </div>
           )}
-          <p style={{ textAlign: 'center', fontSize: '0.7rem', color: 'var(--text-secondary)', opacity: 0.6, marginTop: '0', paddingBottom: '0', lineHeight: 1.2 }}>
+          <p style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-secondary)', opacity: 0.72, marginTop: '0', paddingBottom: '0', lineHeight: 1.4 }}>
             Pluto Intelligence may be wrong. Verification recommended.
           </p>
         </div>
@@ -1347,10 +1387,10 @@ export const ChatInterface = () => {
 const composerIconButtonStyle: CSSProperties = {
   width: '44px',
   height: '44px',
-  borderRadius: '14px',
-  background: 'rgba(255,255,255,0.06)',
+  borderRadius: '999px',
+  background: 'var(--surface-2)',
   border: '1px solid var(--card-border)',
-  color: 'white',
+  color: 'var(--text-primary)',
   cursor: 'pointer',
   display: 'flex',
   alignItems: 'center',
@@ -1359,10 +1399,10 @@ const composerIconButtonStyle: CSSProperties = {
 };
 
 const modeCardStyle: CSSProperties = {
-  background: 'rgba(255,255,255,0.03)',
-  border: '1px solid var(--primary-glow)',
+  background: 'var(--surface-1)',
+  border: '1px solid var(--primary-border)',
   color: 'var(--primary)',
-  borderRadius: '16px',
+  borderRadius: '18px',
   padding: '24px',
   display: 'flex',
   flexDirection: 'column',
@@ -1373,4 +1413,15 @@ const modeCardStyle: CSSProperties = {
   transition: 'all 0.2s ease',
   fontSize: '0.9rem',
   fontWeight: '700',
+};
+
+const getModePillClassName = (mode: 'Conversational' | 'Homework' | 'ExamPrep') => {
+  switch (mode) {
+    case 'Homework':
+      return 'mode-pill-homework';
+    case 'ExamPrep':
+      return 'mode-pill-examprep';
+    default:
+      return 'mode-pill-conversational';
+  }
 };

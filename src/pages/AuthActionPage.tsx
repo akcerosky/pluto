@@ -19,11 +19,20 @@ import { runtimeLogger } from '../lib/runtimeLogger';
 const cardStyle = {
   width: '100%',
   maxWidth: '480px',
-  borderRadius: '20px',
+  borderRadius: '24px',
   padding: '32px',
-  background: 'rgba(255,255,255,0.04)',
-  border: '1px solid rgba(255,255,255,0.08)',
   textAlign: 'center' as const,
+};
+
+const inputStyle = {
+  width: '100%',
+  padding: '14px 16px',
+  background: 'var(--input-bg)',
+  border: '1px solid var(--border-color)',
+  borderRadius: '12px',
+  color: 'var(--text-primary)',
+  fontSize: '1rem',
+  outline: 'none',
 };
 
 const getContinueDestination = (continueUrl: string | null, fallbackPath: string) => {
@@ -64,49 +73,15 @@ const StatusShell = ({
   message: string;
   children?: React.ReactNode;
 }) => (
-  <div
-    style={{
-      minHeight: '100vh',
-      background: '#0a0a0a',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '20px',
-      color: 'white',
-    }}
-  >
-    <Link to="/" style={{ marginBottom: '36px', color: 'white', textDecoration: 'none' }}>
-      <div
-        style={{
-          width: '40px',
-          height: '40px',
-          background: 'var(--primary)',
-          borderRadius: '10px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          boxShadow: '0 0 20px var(--primary-glow)',
-        }}
-      >
-        <Rocket size={20} color="white" />
+  <div className="status-shell">
+    <Link to="/" style={{ marginBottom: '36px', color: 'var(--text-primary)', textDecoration: 'none' }}>
+      <div className="auth-logo-chip">
+        <Rocket size={20} color="var(--user-bubble-text)" />
       </div>
     </Link>
 
-    <div style={cardStyle}>
-      <div
-        style={{
-          width: '64px',
-          height: '64px',
-          borderRadius: '18px',
-          margin: '0 auto 20px',
-          background: tone === 'error' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(138, 43, 226, 0.14)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: tone === 'error' ? '#fca5a5' : 'var(--primary)',
-        }}
-      >
+    <div className="status-card-shell" style={cardStyle}>
+      <div className={`status-icon-badge ${tone}`}>
         {tone === 'error' ? <AlertCircle size={28} /> : <CheckCircle2 size={28} />}
       </div>
 
@@ -260,17 +235,8 @@ export const AuthActionPage = () => {
       <StatusShell tone="error" title="Action failed" message={message}>
         <a
           href={mode === 'resetPassword' ? loginDestination : verifyDestination}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '12px 18px',
-            borderRadius: '10px',
-            background: 'var(--primary)',
-            color: 'white',
-            textDecoration: 'none',
-            fontWeight: 700,
-          }}
+          className="app-button"
+          style={{ textDecoration: 'none', padding: '0 18px' }}
         >
           Back to Pluto
         </a>
@@ -293,17 +259,8 @@ export const AuthActionPage = () => {
         {mode !== 'resetPassword' && (
           <a
             href={verifyDestination}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '12px 18px',
-              borderRadius: '10px',
-              background: 'var(--primary)',
-              color: 'white',
-              textDecoration: 'none',
-              fontWeight: 700,
-            }}
+            className="app-button"
+            style={{ textDecoration: 'none', padding: '0 18px' }}
           >
             Back to Pluto
           </a>
@@ -313,58 +270,22 @@ export const AuthActionPage = () => {
   }
 
   return (
-    <div
-      style={{
-        minHeight: '100vh',
-        background: '#0a0a0a',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '20px',
-        color: 'white',
-      }}
-    >
-      <Link to="/" style={{ marginBottom: '36px', color: 'white', textDecoration: 'none' }}>
-        <div
-          style={{
-            width: '40px',
-            height: '40px',
-            background: 'var(--primary)',
-            borderRadius: '10px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 0 20px var(--primary-glow)',
-          }}
-        >
-          <Rocket size={20} color="white" />
+    <div className="status-shell">
+      <Link to="/" style={{ marginBottom: '36px', color: 'var(--text-primary)', textDecoration: 'none' }}>
+        <div className="auth-logo-chip">
+          <Rocket size={20} color="var(--user-bubble-text)" />
         </div>
       </Link>
 
-      <div style={cardStyle}>
-        <div
-          style={{
-            width: '64px',
-            height: '64px',
-            borderRadius: '18px',
-            margin: '0 auto 20px',
-            background: 'rgba(138, 43, 226, 0.14)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--primary)',
-          }}
-        >
+      <div className="status-card-shell" style={cardStyle}>
+        <div className="status-icon-badge default">
           <CheckCircle2 size={28} />
         </div>
 
         <h1 style={{ fontSize: '1.9rem', fontWeight: 800, marginBottom: '12px' }}>Reset your password</h1>
-        <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '12px' }}>
-          {message}
-        </p>
+        <p style={{ color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '12px' }}>{message}</p>
         {accountEmail && (
-          <p style={{ color: '#e5e7eb', fontSize: '0.92rem', marginBottom: '24px' }}>
+          <p style={{ color: 'var(--text-primary)', fontSize: '0.92rem', marginBottom: '24px' }}>
             Updating access for <strong>{accountEmail}</strong>
           </p>
         )}
@@ -377,29 +298,21 @@ export const AuthActionPage = () => {
               placeholder="New password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              style={{
-                width: '100%',
-                padding: '14px 16px',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '8px',
-                color: 'white',
-                fontSize: '1rem',
-                outline: 'none',
-              }}
+              style={{ ...inputStyle, paddingRight: '52px' }}
             />
             <button
               type="button"
               onClick={() => setShowPassword((value) => !value)}
+              className="ghost-button"
               style={{
                 position: 'absolute',
-                right: '16px',
+                right: '10px',
                 top: '50%',
                 transform: 'translateY(-50%)',
-                background: 'none',
-                border: 'none',
-                color: '#666',
-                cursor: 'pointer',
+                minHeight: '32px',
+                width: '32px',
+                padding: 0,
+                borderRadius: '999px',
               }}
             >
               {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -412,33 +325,15 @@ export const AuthActionPage = () => {
             placeholder="Confirm new password"
             value={confirmPassword}
             onChange={(event) => setConfirmPassword(event.target.value)}
-            style={{
-              width: '100%',
-              padding: '14px 16px',
-              background: 'rgba(255,255,255,0.05)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: '8px',
-              color: 'white',
-              fontSize: '1rem',
-              outline: 'none',
-            }}
+            style={inputStyle}
           />
 
           <button
             type="button"
             onClick={() => void handlePasswordReset()}
             disabled={isSubmitting}
-            style={{
-              width: '100%',
-              padding: '14px',
-              borderRadius: '8px',
-              background: 'var(--primary)',
-              color: 'white',
-              border: 'none',
-              fontSize: '1rem',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
+            className="app-button"
+            style={{ width: '100%' }}
           >
             {isSubmitting ? 'Updating...' : 'Update password'}
           </button>

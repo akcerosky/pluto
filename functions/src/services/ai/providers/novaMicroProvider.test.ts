@@ -134,7 +134,7 @@ test('retries when Nova repeats the previous assistant response almost exactly',
       jsonResponse({
         output: {
           message: {
-            content: [{ text: '🔍 Next step: Compute b^2 - 4ac using a = 3, b = 2, and c = 4.' }],
+            content: [{ text: 'Next step: Compute b^2 - 4ac using a = 3, b = 2, and c = 4.' }],
           },
         },
         usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
@@ -144,7 +144,7 @@ test('retries when Nova repeats the previous assistant response almost exactly',
       jsonResponse({
         output: {
           message: {
-            content: [{ text: '✅ Check your work: What number do you get for 2^2 - 4*3*4?' }],
+            content: [{ text: 'Check your work: What number do you get for 2^2 - 4*3*4?' }],
           },
         },
         usage: { inputTokens: 12, outputTokens: 7, totalTokens: 19 },
@@ -162,13 +162,13 @@ test('retries when Nova repeats the previous assistant response almost exactly',
       },
       {
         role: 'assistant',
-        parts: [{ type: 'text', text: '🔍 Next step: Compute b^2 - 4ac using a = 3, b = 2, and c = 4.' }],
+        parts: [{ type: 'text', text: 'Next step: Compute b^2 - 4ac using a = 3, b = 2, and c = 4.' }],
       },
     ],
   });
 
   expect(fetchMock).toHaveBeenCalledTimes(2);
-  expect(result.text).toBe('✅ Check your work: What number do you get for 2^2 - 4*3*4?');
+  expect(result.text).toBe('Check your work: What number do you get for 2^2 - 4*3*4?');
   expect((fetchMock.mock.calls[1]?.[1] as { body?: string })?.body ?? '').toContain(
     'The student needs a DIFFERENT response'
   );

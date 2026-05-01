@@ -878,6 +878,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const logout = useCallback(() => {
+    const storedTheme =
+      typeof window !== 'undefined' ? window.localStorage.getItem('pluto-theme') : null;
+    const storedCookieConsent =
+      typeof window !== 'undefined'
+        ? window.localStorage.getItem('pluto_cookie_consent_v1')
+        : null;
+
     if (auth) {
       void signOut(auth).catch((error) => {
         runtimeLogger.warn('Firebase sign out failed.', error);
@@ -900,6 +907,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setPremiumModeCount(0);
     setFreePremiumModesRemainingToday(FREE_PREMIUM_MODE_DAILY_LIMIT);
     localStorage.clear();
+    if (storedTheme === 'dark' || storedTheme === 'light') {
+      localStorage.setItem('pluto-theme', storedTheme);
+    }
+    if (storedCookieConsent === 'accepted' || storedCookieConsent === 'rejected') {
+      localStorage.setItem('pluto_cookie_consent_v1', storedCookieConsent);
+    }
   }, []);
 
   const persistThreadMetadata = useCallback(
