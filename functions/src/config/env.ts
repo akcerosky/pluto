@@ -28,6 +28,7 @@ const envReaders = {
     getOptional('AWS_BEARER_TOKEN_BEDROCK'),
   bedrockRegion: () => getOptional('BEDROCK_REGION', 'ap-south-1'),
   bedrockNovaModelId: () => getOptional('BEDROCK_NOVA_MICRO_MODEL_ID', 'apac.amazon.nova-micro-v1:0'),
+  bedrockNovaLiteModelId: () => getOptional('BEDROCK_NOVA_LITE_MODEL_ID', 'apac.amazon.nova-lite-v1:0'),
   // Razorpay key IDs are intentionally public publishable keys used by Razorpay Checkout.
   // They are safe to expose to the client and do not need Secret Manager protection.
   razorpayKeyId: () => getOptional('RAZORPAY_KEY_ID'),
@@ -60,6 +61,9 @@ export const env = {
   },
   get bedrockNovaModelId() {
     return envReaders.bedrockNovaModelId();
+  },
+  get bedrockNovaLiteModelId() {
+    return envReaders.bedrockNovaLiteModelId();
   },
   get razorpayKeyId() {
     return envReaders.razorpayKeyId();

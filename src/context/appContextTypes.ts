@@ -9,6 +9,7 @@ export type EducationLevel =
   | 'Professional';
 
 export type ChatMode = 'Conversational' | 'Homework' | 'ExamPrep';
+export type LearningMode = 'chat' | 'questionPaper' | 'flashcards' | 'pdfQuestionPaper';
 
 export interface AppContextType {
   user: UserSession | null;
@@ -52,6 +53,12 @@ export interface AppContextType {
 
   mode: ChatMode;
   setMode: (mode: ChatMode) => void;
+  selectedMode: LearningMode;
+  setSelectedMode: (mode: LearningMode) => void;
+  showModeSelector: boolean;
+  setShowModeSelector: (value: boolean) => void;
+  dueFlashcardCount: number;
+  setDueFlashcardCount: (count: number) => void;
 
   activeProjectId: string | null;
   setActiveProjectId: (id: string | null) => void;

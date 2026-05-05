@@ -2,6 +2,7 @@ export type SubscriptionPlan = 'Free' | 'Plus' | 'Pro';
 export type PlanFeatureKey =
   | 'homeworkMode'
   | 'examPrepMode'
+  | 'learningFeatures'
   | 'projects'
   | 'prioritySupport'
   | 'extendedContext';
@@ -58,6 +59,7 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
     features: {
       homeworkMode: false,
       examPrepMode: false,
+      learningFeatures: false,
       projects: true,
       prioritySupport: false,
       extendedContext: false,
@@ -84,12 +86,13 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
     historyWindow: 16,
     allowedModes: ['Conversational', 'Homework', 'ExamPrep'],
     attachmentsEnabled: true,
-    allowedAttachmentKinds: ['image'],
+    allowedAttachmentKinds: ['image', 'pdf'],
     maxAttachmentBytes: 5 * 1024 * 1024,
     maxTotalAttachmentPayloadBytes: INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
     features: {
       homeworkMode: true,
       examPrepMode: true,
+      learningFeatures: true,
       projects: true,
       prioritySupport: true,
       extendedContext: true,
@@ -122,6 +125,7 @@ export const PLAN_CONFIGS: Record<SubscriptionPlan, PlanConfig> = {
     features: {
       homeworkMode: true,
       examPrepMode: true,
+      learningFeatures: true,
       projects: true,
       prioritySupport: true,
       extendedContext: true,

@@ -468,8 +468,41 @@
 
 ### Glassmorphism Redesign and UI Polish
 
-- Reworked Pluto around an Apple-inspired glassmorphism system across landing, chat, sidebar, settings, auth, policy, and modal surfaces using shared glass tokens and midnight-indigo dark-theme tuning.
-- Updated the global theme system in `src/index.css` to use `#533afd` as the primary brand color, denser dark glass surfaces, calmer indigo backgrounds, and refined blur/border/shadow treatments.
-- Refined chat interactions in `src/components/Chat/ChatInterface.tsx` with a floating composer dock, improved mobile header collapse behavior, prompt-bar-driven coaching widgets, and better mobile placement/visibility rules for dock overlays.
-- Polished sidebar and profile behavior in `src/components/Layout/Sidebar.tsx` and `src/pages/ProfilePage.tsx`, including compact settings access, improved dark-mode icon visibility, cleaner profile actions, and learning-profile control styling.
-- Fixed multiple landing-page presentation issues in `src/pages/LandingPage.tsx`, including making the hero cyan gradient stage span the full viewport width and aligning the marketing surface with the updated glass system.
+- Refreshed Pluto with a cohesive glassmorphism design system across the landing page, chat, sidebar, settings, auth, policy, and modal surfaces.
+- Tuned the global theme around the `#533afd` brand color with stronger glass surfaces, calmer indigo backgrounds, and more consistent blur, border, and shadow treatments.
+- Polished the core product experience by improving the floating chat composer, mobile chat/header behavior, sidebar/profile controls, and landing-page visual alignment.
+
+## 2026-05-06
+
+### Learning Modes Mobile Navigation
+
+- Added compact mobile toggles for paper workflows so `Question Paper` and `PDF to Question Paper` now use `New Papers` and `Previous Papers` controls similar to the Flashcards mobile flow.
+- Updated `src/pages/PdfQuestionPaperPage.tsx` so mobile PDF generation keeps the upload form and the saved-paper browser as separate views instead of stacking both at once.
+- Updated `src/pages/QuestionPaperPage.tsx` so mobile paper browsing defaults to the paper list first, waits for an explicit tap before opening a paper, and returns to the list when `Previous Papers` is tapped again while a paper is open.
+- Added compact-view scroll targeting in `src/pages/QuestionPaperPage.tsx` so switching between generator, list, and viewer states lands at the correct panel instead of preserving stale scroll offsets.
+
+### Flashcards Mobile and Review UX
+
+- Reworked the Flashcards mobile state flow in `src/pages/FlashcardsPage.tsx` so review mode, create mode, and library mode no longer overlap visually on narrow screens.
+- Added and refined compact mobile switching for Flashcards between new-set creation and the review/library view.
+- Tightened flashcard review card sizing, centered question/answer content better, and preserved stable button rows between question and answer states.
+- Improved mobile button sizing and row behavior for review controls including `Unknown Only`, `Shuffle`, `Reset`, `Unknown`, `Known`, `Prev`, `Flip`, `Hide`, and `Next`.
+- Fixed a mobile review rendering regression where desktop-style panel constraints caused cards and controls to overlap beneath the create form.
+
+### Question Paper and PDF Paper UI Polish
+
+- Cleaned up failed-paper presentation in `src/pages/QuestionPaperPage.tsx` so broken PDF attempts show normalized titles and human-readable failure states instead of raw malformed AI output or backend Firestore errors.
+- Improved compact/mobile question-paper layouts by flattening stacked sections, reducing nested scroll traps, and making recent-paper panels show fully in mobile view.
+- Standardized question-paper delete actions to use a larger fixed touch target for consistent mobile card actions.
+- Removed a React style warning by replacing mixed `border` / `borderColor` updates on paper cards with a single border assignment path.
+
+### PDF-to-Question-Paper Backend Hardening
+
+- Added a PDF source-digest step in `functions/src/services/learning/questionPapers.ts` so PDF-driven question-paper generation uses extracted concepts and boundaries instead of relying on a raw document dump.
+- Tightened subject/topic inference for PDF-derived papers so generated papers stay closer to the uploaded chapter or concept instead of drifting into unrelated subject areas.
+- Hardened digest parsing and question-paper parsing to tolerate alternate model JSON shapes, including nested `sections[].questions[]` outputs.
+- Increased timeout flexibility in `functions/src/services/ai/providerTypes.ts` and `functions/src/services/ai/orchestrator.ts`, then gave PDF extraction a larger per-request budget to avoid `generatePaperFromPdfs` timing out during long multimodal extraction runs.
+- Fixed multiple Firestore persistence edge cases in `functions/src/services/learning/questionPapers.ts` by omitting undefined optional fields such as `topic`, `sourcePdfNames`, `sourcePdfTextLength`, `questions[].options`, and `questions[].subParts`.
+- Sanitized Nova Lite document names in `functions/src/services/ai/providers/novaLiteProvider.ts` to avoid Bedrock multimodal request failures from PDF filenames.
+- Added tolerant parsing and normalization for flashcard and question-paper AI responses so slight provider formatting drift does not surface as raw `500 INTERNAL` errors to the app.
+- Added safer mobile and compact-view state transitions across `src/pages/QuestionPaperPage.tsx`, `src/pages/PdfQuestionPaperPage.tsx`, and `src/pages/FlashcardsPage.tsx` to avoid hidden-panel state updates that looked like broken taps in the browser.

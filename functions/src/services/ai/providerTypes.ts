@@ -1,7 +1,7 @@
 import type { SubscriptionPlan } from '../../config/plans.js';
 import type { AiHistoryMessage, AiInlineAttachment, ThreadContextSummary, TokenUsage } from '../../types/index.js';
 
-export type AiProvider = 'gemini' | 'nova-micro';
+export type AiProvider = 'gemini' | 'nova-micro' | 'nova-lite';
 
 export interface ProviderRequest {
   prompt: string;
@@ -16,6 +16,7 @@ export interface ProviderRequest {
   summaryCandidates: AiHistoryMessage[];
   attachments: AiInlineAttachment[];
   maxOutputTokens: number;
+  totalTimeoutMs?: number;
 }
 
 export interface ProviderResult {

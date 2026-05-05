@@ -443,7 +443,7 @@ export const ChatInterface = () => {
     }
 
     if (metadata.kind === 'file' && !planConfig.allowedAttachmentKinds.includes('pdf')) {
-      return `${currentPlan} supports PDF attachments only on Pro.`;
+      return `${currentPlan} does not include PDF attachments. Upgrade to continue.`;
     }
 
     if (file.size > planConfig.maxAttachmentBytes) {

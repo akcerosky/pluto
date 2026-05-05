@@ -17,6 +17,16 @@ jest.mock('./providers/novaMicroProvider.js', () => ({
   isRetryableNovaError: jest.fn(),
 }));
 
+jest.mock('./providers/novaLiteProvider.js', () => ({
+  novaLiteProvider: {
+    provider: 'nova-lite',
+    configuredModelId: 'apac.amazon.nova-lite-v1:0',
+    configuredModelUsed: 'nova-lite',
+    execute: jest.fn(),
+  },
+  isRetryableNovaLiteError: jest.fn(),
+}));
+
 jest.mock('firebase-functions', () => ({
   logger: {
     error: jest.fn(),
@@ -29,10 +39,13 @@ import { logger } from 'firebase-functions';
 import { executeHybridAiRequest, NOVA_MAX_ATTEMPTS } from './orchestrator.js';
 import { geminiProvider } from './providers/geminiProvider.js';
 import { isRetryableNovaError, novaMicroProvider } from './providers/novaMicroProvider.js';
+import { isRetryableNovaLiteError, novaLiteProvider } from './providers/novaLiteProvider.js';
 
 const geminiExecute = geminiProvider.execute as jest.Mock;
 const novaExecute = novaMicroProvider.execute as jest.Mock;
+const novaLiteExecute = novaLiteProvider.execute as jest.Mock;
 const isRetryableNovaErrorMock = isRetryableNovaError as jest.Mock;
+const isRetryableNovaLiteErrorMock = isRetryableNovaLiteError as jest.Mock;
 const loggerWarn = (logger.warn ?? jest.fn()) as jest.Mock;
 const loggerInfo = (logger.info ?? jest.fn()) as jest.Mock;
 
@@ -67,10 +80,17 @@ const successResult = (provider: 'gemini' | 'nova-micro', modelId: string, model
   latencyMs: 25,
 });
 
+const successResultWithLite = (provider: 'gemini' | 'nova-micro' | 'nova-lite', modelId: string, modelUsed: string) => ({
+  ...successResult(provider === 'nova-lite' ? 'gemini' : provider as 'gemini' | 'nova-micro', modelId, modelUsed),
+  provider,
+});
+
 beforeEach(() => {
   geminiExecute.mockReset();
   novaExecute.mockReset();
+  novaLiteExecute.mockReset();
   isRetryableNovaErrorMock.mockReset();
+  isRetryableNovaLiteErrorMock.mockReset();
   loggerWarn.mockReset();
   loggerInfo.mockReset();
 });
@@ -117,9 +137,9 @@ test('text request falls back to gemini only after three nova failures', async (
   );
 });
 
-test('attachment request uses gemini only', async () => {
-  geminiExecute.mockResolvedValueOnce(
-    successResult('gemini', 'gemini-2.5-flash-lite', 'gemini-2.5-flash-lite')
+test('attachment request uses nova lite as primary', async () => {
+  novaLiteExecute.mockResolvedValueOnce(
+    successResultWithLite('nova-lite', 'apac.amazon.nova-lite-v1:0', 'nova-lite')
   );
 
   const result = await executeHybridAiRequest({
@@ -134,12 +154,13 @@ test('attachment request uses gemini only', async () => {
     ],
   });
 
-  expect(geminiExecute).toHaveBeenCalledTimes(1);
+  expect(novaLiteExecute).toHaveBeenCalledTimes(1);
+  expect(geminiExecute).not.toHaveBeenCalled();
   expect(novaExecute).not.toHaveBeenCalled();
-  expect(result.primaryProvider).toBe('gemini');
-  expect(result.finalProvider).toBe('gemini');
+  expect(result.primaryProvider).toBe('nova-lite');
+  expect(result.finalProvider).toBe('nova-lite');
   expect(result.fallbackTriggered).toBe(false);
-  expect(result.modelUsed).toBe('gemini-2.5-flash-lite');
+  expect(result.modelUsed).toBe('nova-lite');
 });
 
 test('non-retryable nova failure does not exceed retry cap before gemini fallback', async () => {
@@ -188,8 +209,8 @@ test('completion logs include modelUsed and failure errors carry model metadata'
 });
 
 test('homework mode guards complete solutions with a generic redirect', async () => {
-  geminiExecute.mockResolvedValueOnce({
-    ...successResult('gemini', 'gemini-2.5-flash', 'gemini-2.5-flash'),
+  novaLiteExecute.mockResolvedValueOnce({
+    ...successResultWithLite('nova-lite', 'apac.amazon.nova-lite-v1:0', 'nova-lite'),
     text: `Complete Solution:
 1. Identify the parts
 2. Work them out
@@ -214,4 +235,71 @@ test('homework mode guards complete solutions with a generic redirect', async ()
   expect(result.text).toBe(
     "Let's work through this together step by step. What do you know about this problem so far? Try starting with the first part."
   );
+});
+
+test('attachment request falls back from nova lite to gemini after retryable failures', async () => {
+  const failure = { status: 503, message: 'temporary outage' };
+  novaLiteExecute
+    .mockRejectedValueOnce(failure)
+    .mockRejectedValueOnce(failure)
+    .mockRejectedValueOnce(failure);
+  isRetryableNovaLiteErrorMock.mockReturnValue(true);
+  geminiExecute.mockResolvedValueOnce(
+    successResult('gemini', 'gemini-2.5-flash-lite', 'gemini-2.5-flash-lite')
+  );
+
+  const result = await executeHybridAiRequest({
+    ...baseRequest,
+    attachments: [
+      {
+        name: 'worksheet.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 100,
+        base64Data: 'QQ==',
+      },
+    ],
+  });
+
+  expect(novaLiteExecute).toHaveBeenCalledTimes(NOVA_MAX_ATTEMPTS);
+  expect(geminiExecute).toHaveBeenCalledTimes(1);
+  expect(result.primaryProvider).toBe('nova-lite');
+  expect(result.finalProvider).toBe('gemini');
+  expect(result.fallbackTriggered).toBe(true);
+});
+
+test('per-request timeout override allows longer attachment attempts', async () => {
+  jest.useFakeTimers();
+  try {
+    novaLiteExecute.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => {
+            resolve(
+              successResultWithLite('nova-lite', 'apac.amazon.nova-lite-v1:0', 'nova-lite')
+            );
+          }, 60_000);
+        })
+    );
+
+    const requestPromise = executeHybridAiRequest({
+      ...baseRequest,
+      attachments: [
+        {
+          name: 'worksheet.pdf',
+          mimeType: 'application/pdf',
+          sizeBytes: 100,
+          base64Data: 'QQ==',
+        },
+      ],
+      totalTimeoutMs: 140_000,
+    });
+
+    await jest.advanceTimersByTimeAsync(60_000);
+    const result = await requestPromise;
+
+    expect(result.finalProvider).toBe('nova-lite');
+    expect(novaLiteExecute).toHaveBeenCalledTimes(1);
+  } finally {
+    jest.useRealTimers();
+  }
 });

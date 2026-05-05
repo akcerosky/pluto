@@ -17,6 +17,7 @@ export interface PlanDefinition {
   allowedAttachmentKinds: AttachmentKind[];
   maxAttachmentBytes: number;
   maxTotalAttachmentPayloadBytes: number;
+  learningFeaturesEnabled: boolean;
 }
 
 export const IST_TIME_ZONE = 'Asia/Kolkata';
@@ -49,6 +50,7 @@ export const PLAN_DEFINITIONS: Record<SubscriptionPlan, PlanDefinition> = {
     allowedAttachmentKinds: [],
     maxAttachmentBytes: 0,
     maxTotalAttachmentPayloadBytes: INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
+    learningFeaturesEnabled: false,
   },
   Plus: {
     id: 'Plus',
@@ -61,9 +63,10 @@ export const PLAN_DEFINITIONS: Record<SubscriptionPlan, PlanDefinition> = {
     maxInputChars: 2000,
     allowedModes: ['Conversational', 'Homework', 'ExamPrep'],
     attachmentsEnabled: true,
-    allowedAttachmentKinds: ['image'],
+    allowedAttachmentKinds: ['image', 'pdf'],
     maxAttachmentBytes: 5 * 1024 * 1024,
     maxTotalAttachmentPayloadBytes: INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
+    learningFeaturesEnabled: true,
   },
   Pro: {
     id: 'Pro',
@@ -79,6 +82,7 @@ export const PLAN_DEFINITIONS: Record<SubscriptionPlan, PlanDefinition> = {
     allowedAttachmentKinds: ['image', 'pdf'],
     maxAttachmentBytes: 20 * 1024 * 1024,
     maxTotalAttachmentPayloadBytes: INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
+    learningFeaturesEnabled: true,
   },
 };
 

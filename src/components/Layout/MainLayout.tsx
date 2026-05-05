@@ -110,6 +110,7 @@ export const MainLayout = ({ children }: { children: ReactNode }) => {
         className="app-main"
         style={{ 
         flex: 1, 
+        minHeight: 0,
         position: 'relative', 
         display: 'flex', 
         flexDirection: 'column',

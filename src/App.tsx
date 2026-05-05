@@ -9,8 +9,8 @@ import { ThemeProvider } from './context/ThemeContext';
 
 const LandingPage = lazy(() => import('./pages/LandingPage').then((module) => ({ default: module.LandingPage })));
 const AuthPages = lazy(() => import('./pages/AuthPages').then((module) => ({ default: module.AuthPages })));
-const ChatInterface = lazy(() =>
-  import('./components/Chat/ChatInterface').then((module) => ({ default: module.ChatInterface }))
+const LearningShell = lazy(() =>
+  import('./components/Learning/LearningShell').then((module) => ({ default: module.LearningShell }))
 );
 const MainLayout = lazy(() => import('./components/Layout/MainLayout').then((module) => ({ default: module.MainLayout })));
 const ProfilePage = lazy(() => import('./pages/ProfilePage').then((module) => ({ default: module.ProfilePage })));
@@ -88,7 +88,7 @@ const AppRoutes = () => {
               <ErrorBoundary>
                 <MainLayout>
                   {isSubscriptionHydrated && isCloudHydrated ? (
-                    <ChatInterface />
+                    <LearningShell />
                   ) : (
                     <ShellRouteFallback />
                   )}

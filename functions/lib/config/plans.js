@@ -23,6 +23,7 @@ export const PLAN_DEFINITIONS = {
         allowedAttachmentKinds: [],
         maxAttachmentBytes: 0,
         maxTotalAttachmentPayloadBytes: INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
+        learningFeaturesEnabled: false,
     },
     Plus: {
         id: 'Plus',
@@ -35,9 +36,10 @@ export const PLAN_DEFINITIONS = {
         maxInputChars: 2000,
         allowedModes: ['Conversational', 'Homework', 'ExamPrep'],
         attachmentsEnabled: true,
-        allowedAttachmentKinds: ['image'],
+        allowedAttachmentKinds: ['image', 'pdf'],
         maxAttachmentBytes: 5 * 1024 * 1024,
         maxTotalAttachmentPayloadBytes: INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
+        learningFeaturesEnabled: true,
     },
     Pro: {
         id: 'Pro',
@@ -53,6 +55,7 @@ export const PLAN_DEFINITIONS = {
         allowedAttachmentKinds: ['image', 'pdf'],
         maxAttachmentBytes: 20 * 1024 * 1024,
         maxTotalAttachmentPayloadBytes: INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES,
+        learningFeaturesEnabled: true,
     },
 };
 export const DEFAULT_PLAN = 'Free';

@@ -21,7 +21,7 @@ import {
   type ThreadMetadata,
   type UserSession,
 } from '../types';
-import type { AppContextType, ChatMode, EducationLevel } from './appContextTypes';
+import type { AppContextType, ChatMode, EducationLevel, LearningMode } from './appContextTypes';
 import { AppContext } from './appContextValue';
 import {
   appStateDocRef,
@@ -284,6 +284,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     return saved ? JSON.parse(saved) : [];
   });
   const [mode, setMode] = useState<ChatMode>('Conversational');
+  const [selectedMode, setSelectedMode] = useState<LearningMode>('chat');
+  const [showModeSelector, setShowModeSelector] = useState(true);
+  const [dueFlashcardCount, setDueFlashcardCount] = useState(0);
   const [activeProjectId, setActiveProjectId] = useState<string | null>(null);
   const [isCloudHydrated, setIsCloudHydrated] = useState(false);
   const [isSubscriptionHydrated, setIsSubscriptionHydrated] = useState(false);
@@ -437,6 +440,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const startNewChat = useCallback(() => {
     requestFreshChatView();
     setShouldAutoCreateFreshThread(true);
+    setSelectedMode('chat');
+    setShowModeSelector(false);
     setActiveThreadId(null);
     setActiveProjectId(null);
   }, []);
@@ -1225,6 +1230,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       createProject,
       mode,
       setMode,
+      selectedMode,
+      setSelectedMode,
+      showModeSelector,
+      setShowModeSelector,
+      dueFlashcardCount,
+      setDueFlashcardCount,
       activeProjectId,
       setActiveProjectId,
       currentPlan,
@@ -1264,6 +1275,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       isActiveThreadMessagesLoading,
       loadOlderActiveThreadMessages,
       logout,
+      dueFlashcardCount,
+      selectedMode,
       mode,
       planConfig,
       premiumModeCount,
@@ -1271,6 +1284,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       refreshServerState,
       remainingTodayTokens,
       setMode,
+      setDueFlashcardCount,
+      setSelectedMode,
+      setShowModeSelector,
+      showModeSelector,
       setUser,
       startNewChat,
       threads,

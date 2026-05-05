@@ -65,8 +65,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               padding: '12px 18px',
               cursor: 'pointer',
               background: 'var(--brand-gradient)',
-              color: 'var(--user-bubble-text)',
+              color: '#ffffff',
               fontWeight: 700,
+              boxShadow: '0 10px 24px rgba(93, 76, 255, 0.24)',
+              textShadow: '0 1px 2px rgba(0,0,0,0.18)',
             }}
           >
             Reload page

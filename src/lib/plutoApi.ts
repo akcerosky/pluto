@@ -2,7 +2,13 @@ import { httpsCallable } from 'firebase/functions';
 import { functions } from './firebase';
 import { runtimeLogger } from './runtimeLogger';
 import type { SubscriptionPlan } from '../config/subscription';
-import type { MessagePart, ThreadContextSummary } from '../types';
+import type {
+  FlashcardCardDoc,
+  FlashcardSetDoc,
+  MessagePart,
+  QuestionPaperDoc,
+  ThreadContextSummary,
+} from '../types';
 import type { InlineAttachmentInput } from './attachments';
 
 const requireFunctions = () => {
@@ -121,6 +127,7 @@ export interface MeResponse {
     allowedAttachmentKinds: Array<'image' | 'pdf'>;
     maxAttachmentBytes: number;
     maxTotalAttachmentPayloadBytes: number;
+    learningFeaturesEnabled?: boolean;
   };
 }
 
@@ -357,5 +364,110 @@ export const billingSubscriptionResume = async () => {
     'billingSubscriptionResume'
   );
   const result = await call();
+  return result.data;
+};
+
+export const generateQuestionPaper = async (payload: {
+  subject: string;
+  educationLevel: string;
+  examBoard: string;
+  topic?: string;
+}) => {
+  const call = httpsCallable<typeof payload, { paperId: string }>(requireFunctions(), 'generateQuestionPaper');
+  const result = await call(payload);
+  return result.data;
+};
+
+export const getQuestionPapers = async () => {
+  const call = httpsCallable<undefined, { papers: QuestionPaperDoc[]; grouped: Record<string, QuestionPaperDoc[]> }>(
+    requireFunctions(),
+    'getQuestionPapers'
+  );
+  const result = await call();
+  return result.data;
+};
+
+export const deleteQuestionPaper = async (payload: { paperId: string }) => {
+  const call = httpsCallable<typeof payload, { ok: boolean }>(requireFunctions(), 'deleteQuestionPaper');
+  const result = await call(payload);
+  return result.data;
+};
+
+export const generateQuestionPaperPdf = async (payload: { paperId: string }) => {
+  const call = httpsCallable<typeof payload, { base64Pdf: string; filename: string }>(
+    requireFunctions(),
+    'generateQuestionPaperPdf'
+  );
+  const result = await call(payload);
+  return result.data;
+};
+
+export const generateFlashcardSet = async (payload: {
+  topic: string;
+  subject?: string;
+  educationLevel?: string;
+}) => {
+  const call = httpsCallable<typeof payload, { setId: string }>(requireFunctions(), 'generateFlashcardSet');
+  const result = await call(payload);
+  return result.data;
+};
+
+export const getFlashcardSets = async () => {
+  const call = httpsCallable<undefined, { sets: FlashcardSetDoc[]; dueCount: number }>(
+    requireFunctions(),
+    'getFlashcardSets'
+  );
+  const result = await call();
+  return result.data;
+};
+
+export const getFlashcardCards = async (payload: { setId: string }) => {
+  const call = httpsCallable<typeof payload, { cards: FlashcardCardDoc[] }>(requireFunctions(), 'getFlashcardCards');
+  const result = await call(payload);
+  return result.data;
+};
+
+export const getDueCards = async (payload?: { setId?: string }) => {
+  const call = httpsCallable<typeof payload, { cards: FlashcardCardDoc[]; session?: { setId?: string; date: string } }>(
+    requireFunctions(),
+    'getDueCards'
+  );
+  const result = await call(payload);
+  return result.data;
+};
+
+export const submitCardReview = async (payload: {
+  setId: string;
+  cardId: string;
+  rating: 'easy' | 'good' | 'hard';
+  sessionId: string;
+}) => {
+  const call = httpsCallable<
+    typeof payload,
+    { card: FlashcardCardDoc; stats: FlashcardSetDoc['stats'] }
+  >(requireFunctions(), 'submitCardReview');
+  const result = await call(payload);
+  return result.data;
+};
+
+export const deleteFlashcardSet = async (payload: { setId: string }) => {
+  const call = httpsCallable<typeof payload, { ok: boolean }>(requireFunctions(), 'deleteFlashcardSet');
+  const result = await call(payload);
+  return result.data;
+};
+
+export const generatePaperFromPdfs = async (payload: {
+  pdfAttachments: Array<{
+    name: string;
+    mimeType: 'application/pdf';
+    sizeBytes: number;
+    base64Data: string;
+  }>;
+  educationLevel: string;
+  examBoard: string;
+  subject?: string;
+}) => {
+  const call = httpsCallable<typeof payload, { paperId: string }>(requireFunctions(), 'generatePaperFromPdfs');
+  const result = await call(payload);
   return result.data;
 };

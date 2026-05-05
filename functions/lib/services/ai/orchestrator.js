@@ -1,6 +1,7 @@
 import { logger } from 'firebase-functions';
 import { geminiProvider } from './providers/geminiProvider.js';
 import { novaMicroProvider, isRetryableNovaError } from './providers/novaMicroProvider.js';
+import { novaLiteProvider, isRetryableNovaLiteError } from './providers/novaLiteProvider.js';
 import { enforceHomeworkResponsePolicy } from './prompting.js';
 import { selectPrimaryProvider } from './router.js';
 export const NOVA_MAX_ATTEMPTS = 3;
@@ -31,12 +32,14 @@ const isRetryableFailure = (error) => {
         return false;
     }
     const record = error;
-    return record.code === 'ATTEMPT_TIMEOUT' || isRetryableNovaError(error);
+    return (record.code === 'ATTEMPT_TIMEOUT' ||
+        isRetryableNovaError(error) ||
+        isRetryableNovaLiteError(error));
 };
-const getAttemptTimeoutMs = ({ primaryProvider, totalStartedAt, }) => {
-    const remainingMs = Math.max(TOTAL_REQUEST_TIMEOUT_MS - (Date.now() - totalStartedAt), 0);
+const getAttemptTimeoutMs = ({ primaryProvider, totalStartedAt, totalTimeoutMs, }) => {
+    const remainingMs = Math.max(totalTimeoutMs - (Date.now() - totalStartedAt), 0);
     if (remainingMs <= 0) {
-        const error = new Error(`Total AI request timeout of ${TOTAL_REQUEST_TIMEOUT_MS}ms exceeded.`);
+        const error = new Error(`Total AI request timeout of ${totalTimeoutMs}ms exceeded.`);
         Object.assign(error, { code: 'TOTAL_TIMEOUT' });
         throw error;
     }
@@ -101,7 +104,11 @@ const executeAttempt = async ({ provider, request, attemptNumber, primaryProvide
     });
     const startedAt = Date.now();
     try {
-        const result = await withTimeout(provider.execute(request), getAttemptTimeoutMs({ primaryProvider, totalStartedAt }));
+        const result = await withTimeout(provider.execute(request), getAttemptTimeoutMs({
+            primaryProvider,
+            totalStartedAt,
+            totalTimeoutMs: request.totalTimeoutMs ?? TOTAL_REQUEST_TIMEOUT_MS,
+        }));
         logAttemptFinished({
             requestId: request.requestId,
             provider: result.provider,
@@ -128,7 +135,8 @@ const executeAttempt = async ({ provider, request, attemptNumber, primaryProvide
             modelUsed: errorModelMetadata.modelUsed ?? provider.configuredModelUsed,
             attemptNumber,
             outcome: 'failure',
-            retryEligible: provider.provider === 'nova-micro' && isRetryableFailure(error),
+            retryEligible: (provider.provider === 'nova-micro' || provider.provider === 'nova-lite') &&
+                isRetryableFailure(error),
             fallbackTriggered,
             latencyMs: Date.now() - startedAt,
             usage: null,
@@ -141,7 +149,8 @@ const executeAttempt = async ({ provider, request, attemptNumber, primaryProvide
                 modelId: provider.configuredModelId,
                 modelUsed: provider.configuredModelUsed,
                 attemptNumber,
-                retryEligible: provider.provider === 'nova-micro' && isRetryableFailure(error),
+                retryEligible: (provider.provider === 'nova-micro' || provider.provider === 'nova-lite') &&
+                    isRetryableFailure(error),
             });
         }
         throw error;
@@ -160,22 +169,13 @@ export const executeHybridAiRequest = async (request) => {
     let finalProvider = primaryProvider;
     let fallbackTriggered = false;
     let retryCount = 0;
-    if (primaryProvider === 'gemini') {
-        finalResult = await executeAttempt({
-            provider: geminiProvider,
-            request,
-            attemptNumber: 1,
-            primaryProvider,
-            fallbackTriggered: false,
-            totalStartedAt,
-        });
-    }
-    else {
+    if (primaryProvider !== 'gemini') {
+        const primaryExecutor = primaryProvider === 'nova-lite' ? novaLiteProvider : novaMicroProvider;
         let lastError;
         for (let attempt = 1; attempt <= NOVA_MAX_ATTEMPTS; attempt += 1) {
             try {
                 finalResult = await executeAttempt({
-                    provider: novaMicroProvider,
+                    provider: primaryExecutor,
                     request,
                     attemptNumber: attempt,
                     primaryProvider,
@@ -222,7 +222,7 @@ export const executeHybridAiRequest = async (request) => {
         }
         fallbackTriggered = true;
         finalProvider = 'gemini';
-        logger.warn('ai_fallback_triggered', {
+        logger.warn(primaryProvider === 'nova-lite' ? 'gemini_fallback_triggered_from_nova_lite' : 'ai_fallback_triggered', {
             eventType: 'ai_fallback_triggered',
             requestId: request.requestId ?? null,
             primaryProvider,
@@ -240,6 +240,16 @@ export const executeHybridAiRequest = async (request) => {
             totalStartedAt,
         });
         retryCount = NOVA_MAX_ATTEMPTS;
+    }
+    else {
+        finalResult = await executeAttempt({
+            provider: geminiProvider,
+            request,
+            attemptNumber: 1,
+            primaryProvider,
+            fallbackTriggered: false,
+            totalStartedAt,
+        });
     }
     logger.info('ai_request_completed', {
         eventType: 'ai_request_completed',

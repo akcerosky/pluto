@@ -4,7 +4,7 @@ test('routes text-only requests to nova micro', () => {
   expect(selectPrimaryProvider([])).toBe('nova-micro');
 });
 
-test('routes attachment requests to gemini', () => {
+test('routes attachment requests to nova lite', () => {
   expect(
     selectPrimaryProvider([
       {
@@ -14,5 +14,5 @@ test('routes attachment requests to gemini', () => {
         base64Data: 'QQ==',
       },
     ])
-  ).toBe('gemini');
+  ).toBe('nova-lite');
 });

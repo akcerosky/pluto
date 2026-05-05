@@ -56,6 +56,43 @@ export const aiChat = lazySecureCallable(async () => (await import('./handlers/a
 export const deleteThread = lazySecureCallable(
   async () => (await import('./handlers/chatState.js')).deleteThreadHandler as CloudCallableHandler
 );
+export const generateQuestionPaper = lazySecureCallable(
+  async () => (await import('./handlers/learning.js')).generateQuestionPaperHandler as CloudCallableHandler,
+  { minInstances: 1, timeoutSeconds: 120 }
+);
+export const getQuestionPapers = lazySecureCallable(
+  async () => (await import('./handlers/learning.js')).getQuestionPapersHandler as CloudCallableHandler
+);
+export const deleteQuestionPaper = lazySecureCallable(
+  async () => (await import('./handlers/learning.js')).deleteQuestionPaperHandler as CloudCallableHandler
+);
+export const generateQuestionPaperPdf = lazySecureCallable(
+  async () => (await import('./handlers/learning.js')).generateQuestionPaperPdfHandler as CloudCallableHandler,
+  { minInstances: 1, timeoutSeconds: 120 }
+);
+export const generateFlashcardSet = lazySecureCallable(
+  async () => (await import('./handlers/learning.js')).generateFlashcardSetHandler as CloudCallableHandler,
+  { minInstances: 1, timeoutSeconds: 120 }
+);
+export const getFlashcardSets = lazySecureCallable(
+  async () => (await import('./handlers/learning.js')).getFlashcardSetsHandler as CloudCallableHandler
+);
+export const getDueCards = lazySecureCallable(
+  async () => (await import('./handlers/learning.js')).getDueCardsHandler as CloudCallableHandler
+);
+export const submitCardReview = lazySecureCallable(
+  async () => (await import('./handlers/learning.js')).submitCardReviewHandler as CloudCallableHandler
+);
+export const deleteFlashcardSet = lazySecureCallable(
+  async () => (await import('./handlers/learning.js')).deleteFlashcardSetHandler as CloudCallableHandler
+);
+export const getFlashcardCards = lazySecureCallable(
+  async () => (await import('./handlers/learning.js')).getFlashcardCardsHandler as CloudCallableHandler
+);
+export const generatePaperFromPdfs = lazySecureCallable(
+  async () => (await import('./handlers/learning.js')).generatePaperFromPdfsHandler as CloudCallableHandler,
+  { minInstances: 1, timeoutSeconds: 120 }
+);
 
 export const billingCheckout = lazySecureCallable(
   async () => (await import('./handlers/billing.js')).billingCheckoutHandler as CloudCallableHandler,

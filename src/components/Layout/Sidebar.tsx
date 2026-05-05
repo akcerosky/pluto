@@ -8,12 +8,18 @@ import {
   ChevronLeft,
   Trash2,
   X,
+  BookOpen,
+  FileQuestion,
+  Layers3,
+  ScanSearch,
+  Lock,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Suspense, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { LazyProjectsModal } from '../Chat/LazyModePanels';
 import { formatTokenUsageSummary } from '../../lib/tokenQuota';
+import type { LearningMode } from '../../context/appContextTypes';
 
 interface SidebarProps {
   isMobile?: boolean;
@@ -36,15 +42,19 @@ export const Sidebar = ({
     setActiveProjectId,
     user,
     currentPlan,
+    planConfig,
     isSubscriptionHydrated,
     remainingTodayTokens,
     estimatedMessagesLeft,
+    selectedMode,
+    setSelectedMode,
+    dueFlashcardCount,
   } = useApp();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isProjectsOpen, setIsProjectsOpen] = useState(false);
   const navigate = useNavigate();
   const effectiveCollapsed = isMobile ? false : isCollapsed;
-  const showDiscover = import.meta.env.VITE_APP_ENV !== 'production';
+  const showDiscover = import.meta.env.DEV;
 
   const closeMobile = () => {
     if (isMobile) {
@@ -53,8 +63,9 @@ export const Sidebar = ({
   };
 
   const handleNewChat = () => {
+    setSelectedMode('chat');
     setActiveThreadId(null);
-    navigate('/chat');
+    navigate('/chat', { state: { skipModeSelector: true } });
     closeMobile();
   };
 
@@ -64,6 +75,47 @@ export const Sidebar = ({
 
   const handleComingSoon = (feature: string) => {
     alert(`${feature} feature coming soon!`);
+  };
+
+  const learningModes: Array<{
+    id: LearningMode;
+    label: string;
+    icon: ReactNode;
+    locked?: boolean;
+    badgeCount?: number;
+  }> = [
+    { id: 'chat', label: 'Chat', icon: <BookOpen size={19} /> },
+    {
+      id: 'questionPaper',
+      label: 'Question Paper',
+      icon: <FileQuestion size={19} />,
+      locked: !planConfig.features.learningFeatures,
+    },
+    {
+      id: 'flashcards',
+      label: 'Flash Cards',
+      icon: <Layers3 size={19} />,
+      locked: !planConfig.features.learningFeatures,
+      badgeCount: dueFlashcardCount,
+    },
+    {
+      id: 'pdfQuestionPaper',
+      label: 'PDF to Question Paper',
+      icon: <ScanSearch size={19} />,
+      locked: !planConfig.features.learningFeatures,
+    },
+  ];
+
+  const handleSelectLearningMode = (mode: LearningMode, locked?: boolean) => {
+    if (locked) {
+      navigate('/profile');
+      closeMobile();
+      return;
+    }
+
+    setSelectedMode(mode);
+    navigate('/chat', { state: { skipModeSelector: true } });
+    closeMobile();
   };
 
   return (
@@ -83,6 +135,15 @@ export const Sidebar = ({
         backdropFilter: 'blur(20px)',
       }}
     >
+      <div
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+      >
       <div
         style={{
           padding: '24px 18px 18px',
@@ -132,6 +193,59 @@ export const Sidebar = ({
           gap: '8px',
         }}
       >
+        {learningModes.map((mode) => {
+          const isActive = selectedMode === mode.id;
+          return (
+            <motion.button
+              key={mode.id}
+              whileHover={{ x: 2 }}
+              whileTap={{ scale: 0.985 }}
+              onClick={() => handleSelectLearningMode(mode.id, mode.locked)}
+              className="sidebar-link"
+              style={{
+                justifyContent: effectiveCollapsed ? 'center' : 'space-between',
+                background: isActive
+                  ? 'color-mix(in srgb, var(--primary) 14%, var(--glass-bg-active))'
+                  : undefined,
+                border: isActive
+                  ? '1px solid color-mix(in srgb, var(--primary) 30%, var(--glass-border))'
+                  : undefined,
+                color: mode.locked ? 'var(--text-secondary)' : isActive ? 'var(--text-primary)' : undefined,
+              }}
+            >
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  minWidth: 0,
+                }}
+              >
+                <span className="sidebar-link-icon">{mode.icon}</span>
+                {!effectiveCollapsed && <span>{mode.label}</span>}
+              </span>
+              {!effectiveCollapsed ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
+                  {mode.badgeCount && mode.badgeCount > 0 ? (
+                    <span
+                      style={{
+                        borderRadius: '999px',
+                        padding: '4px 8px',
+                        background: 'var(--warning-soft)',
+                        color: 'var(--warning)',
+                        fontSize: '0.72rem',
+                        fontWeight: 800,
+                      }}
+                    >
+                      {mode.badgeCount}
+                    </span>
+                  ) : null}
+                  {mode.locked ? <Lock size={14} /> : null}
+                </span>
+              ) : null}
+            </motion.button>
+          );
+        })}
         <SidebarLink
           icon={<LayoutGrid size={19} />}
           label="Projects"
@@ -218,8 +332,6 @@ export const Sidebar = ({
 
       <div
         style={{
-          flex: 1,
-          overflowY: 'auto',
           padding: '12px',
           display: 'flex',
           flexDirection: 'column',
@@ -316,7 +428,6 @@ export const Sidebar = ({
 
       <div
         style={{
-          marginTop: 'auto',
           padding: '14px 18px',
           borderTop: '1px solid var(--glass-border)',
           display: 'flex',
@@ -442,6 +553,7 @@ export const Sidebar = ({
               : 'Syncing subscription...'}
           </div>
         )}
+      </div>
       </div>
 
       <button

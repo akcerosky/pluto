@@ -123,3 +123,92 @@ export interface TokenUsage {
   totalTokens: number;
   usageSource: 'provider' | 'estimated';
 }
+
+export interface QuestionPaperFormatSection {
+  name: string;
+  instructions: string;
+  questionType: string;
+  questions: number;
+  marksPerQuestion: number;
+}
+
+export interface QuestionPaperQuestion {
+  id: string;
+  sectionName: string;
+  questionNumber: number;
+  text: string;
+  type: 'mcq' | 'short_answer' | 'long_answer' | 'fill_blank' | 'assertion_reason';
+  marks: number;
+  options?: string[];
+  subParts?: string[];
+}
+
+export interface QuestionPaperDoc {
+  id: string;
+  title: string;
+  subject: string;
+  educationLevel: string;
+  examBoard: string;
+  topic?: string;
+  sourceType: 'topic' | 'pdf';
+  sourcePdfNames?: string[];
+  sourcePdfTextLength?: number;
+  format: {
+    totalMarks: number;
+    duration: string;
+    sections: QuestionPaperFormatSection[];
+  };
+  questions: QuestionPaperQuestion[];
+  generatedAt: string;
+  status: 'generating' | 'ready' | 'failed';
+  pdfUrl?: string;
+  webSearchSources?: string[];
+  failureMessage?: string;
+}
+
+export interface FlashcardSetStats {
+  mastered: number;
+  reviewing: number;
+  learning: number;
+  new: number;
+  dueToday: number;
+}
+
+export interface FlashcardSetDoc {
+  id: string;
+  title: string;
+  subject: string;
+  topic: string;
+  educationLevel?: string;
+  totalCards: number;
+  createdAt: string;
+  lastReviewedAt?: string;
+  stats: FlashcardSetStats;
+}
+
+export interface FlashcardCardDoc {
+  id: string;
+  front: string;
+  back: string;
+  concept: string;
+  order: number;
+  interval: number;
+  easinessFactor: number;
+  repetitions: number;
+  nextReviewAt: string;
+  lastReviewedAt?: string;
+  lastRating?: 'easy' | 'good' | 'hard';
+  masteryLevel: 'new' | 'learning' | 'reviewing' | 'mastered';
+  timesReviewed: number;
+  timesCorrect: number;
+}
+
+export interface FlashcardSessionDoc {
+  id: string;
+  setId: string;
+  date: string;
+  cardsReviewed: number;
+  ratings: { easy: number; good: number; hard: number };
+  durationSeconds: number;
+  completedAt: string;
+}

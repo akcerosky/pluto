@@ -1,5 +1,4 @@
-export const OFF_TOPIC_REFUSAL =
-    "I can't help with that. Ask me something related to your studies or learning goals.";
+export const OFF_TOPIC_REFUSAL = "I can't help with that. Ask me something related to your studies or learning goals.";
 export const buildSystemInstruction = (educationLevel, mode, objective, plan) => {
     const toneLine = educationLevel === 'Elementary'
         ? '- Tone: Fun, encouraging, and friendly. Use playful metaphors, simple wording, and confidence-building language.'
