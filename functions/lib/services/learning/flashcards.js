@@ -1,4 +1,5 @@
 import { adminDb } from '../../lib/firebaseAdmin.js';
+import { estimateReservedTokens } from '../tokenUsage.js';
 import { executeHybridAiRequest } from '../ai/orchestrator.js';
 import { getIstDayKey, getIstNow } from '../../utils/time.js';
 import { updateCardAfterReview } from './sm2.js';
@@ -40,7 +41,7 @@ export const parseFlashcardGenerationResponse = (value) => {
     }
     return safeJsonParse(extractJsonCandidate(value));
 };
-const buildGenerationPrompt = ({ topic, subject, educationLevel, }) => `
+export const buildGenerationPrompt = ({ topic, subject, educationLevel, }) => `
 Generate flashcards for a student studying: "${topic}"
 ${subject ? `Subject: ${subject}` : ''}
 ${educationLevel ? `Education level: ${educationLevel}` : ''}
@@ -56,6 +57,24 @@ Return ONLY valid JSON:
 }
 
 Do not include markdown fences, commentary, or any text before or after the JSON.`.trim();
+export const buildFlashcardMeteringPayload = ({ topic, subject, educationLevel, plan, }) => {
+    const meteringContext = {
+        prompt: buildGenerationPrompt({ topic, subject, educationLevel }),
+        educationLevel: educationLevel || 'High School',
+        mode: 'Conversational',
+        objective: `Generate a machine-readable flashcard set for ${topic}`,
+        history: [],
+        contextSummaryText: undefined,
+    };
+    const reservation = estimateReservedTokens({
+        ...meteringContext,
+        plan,
+    });
+    return {
+        meteringContext,
+        reservedTokens: reservation.reservedTokens,
+    };
+};
 const computeStats = (cards) => {
     const now = Date.now();
     return cards.reduce((acc, card) => {
@@ -115,7 +134,7 @@ export const generateFlashcardSetForUser = async ({ uid, topic, subject, educati
         batch.set(setRef.collection('cards').doc(card.id), card);
     }
     await batch.commit();
-    return { setId: setRef.id };
+    return { setId: setRef.id, usage: response.usage };
 };
 export const getFlashcardSetsForUser = async (uid) => {
     const snapshot = await setCollection(uid).orderBy('createdAt', 'desc').get();

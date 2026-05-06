@@ -36,14 +36,14 @@ const isRetryableFailure = (error) => {
         isRetryableNovaError(error) ||
         isRetryableNovaLiteError(error));
 };
-const getAttemptTimeoutMs = ({ primaryProvider, totalStartedAt, totalTimeoutMs, }) => {
+const getAttemptTimeoutMs = ({ attemptProvider, totalStartedAt, totalTimeoutMs, }) => {
     const remainingMs = Math.max(totalTimeoutMs - (Date.now() - totalStartedAt), 0);
     if (remainingMs <= 0) {
         const error = new Error(`Total AI request timeout of ${totalTimeoutMs}ms exceeded.`);
         Object.assign(error, { code: 'TOTAL_TIMEOUT' });
         throw error;
     }
-    return primaryProvider === 'nova-micro'
+    return attemptProvider === 'nova-micro'
         ? Math.min(NOVA_ATTEMPT_TIMEOUT_MS, remainingMs)
         : remainingMs;
 };
@@ -105,7 +105,7 @@ const executeAttempt = async ({ provider, request, attemptNumber, primaryProvide
     const startedAt = Date.now();
     try {
         const result = await withTimeout(provider.execute(request), getAttemptTimeoutMs({
-            primaryProvider,
+            attemptProvider: provider.provider,
             totalStartedAt,
             totalTimeoutMs: request.totalTimeoutMs ?? TOTAL_REQUEST_TIMEOUT_MS,
         }));

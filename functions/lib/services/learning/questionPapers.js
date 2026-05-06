@@ -1,10 +1,15 @@
 import { adminDb } from '../../lib/firebaseAdmin.js';
+import { PLAN_DEFINITIONS } from '../../config/plans.js';
 import { executeHybridAiRequest } from '../ai/orchestrator.js';
+import { estimateAiInputTokens } from '../tokenUsage.js';
 import { generateQuestionPaperPdfBase64 } from './pdfGenerator.js';
 import { searchExamFormatSources } from './searchAdapter.js';
 const userRoot = (uid) => adminDb.collection('users').doc(uid);
 const questionPaperCollection = (uid) => userRoot(uid).collection('questionPapers');
 const MAX_PDF_SOURCE_TEXT_CHARS = 16000;
+const INFER_SUBJECT_TEXT_CHARS = 6000;
+const FORMAT_RESEARCH_TIMEOUT_MS = 60_000;
+const QUESTION_PAPER_GENERATION_TIMEOUT_MS = 90_000;
 const isNonEmptyString = (value) => typeof value === 'string' && value.trim().length > 0;
 const toStringList = (value, maxItems) => Array.isArray(value)
     ? value
@@ -97,6 +102,22 @@ ${digest.keyFacts.map((fact) => `- ${fact}`).join('\n')}
 Question boundaries:
 ${digest.questionBoundaries.map((boundary) => `- ${boundary}`).join('\n')}
 `.trim();
+const zeroUsage = () => ({
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    usageSource: 'provider',
+});
+const addUsages = (...usages) => usages.reduce((acc, usage) => ({
+    inputTokens: acc.inputTokens + (usage?.inputTokens ?? 0),
+    outputTokens: acc.outputTokens + (usage?.outputTokens ?? 0),
+    totalTokens: acc.totalTokens + (usage?.totalTokens ?? 0),
+    usageSource: acc.usageSource === 'estimated' || usage?.usageSource === 'estimated'
+        ? 'estimated'
+        : 'provider',
+}), zeroUsage());
+const reserveForTextCall = ({ plan, maxOutputTokens, }) => PLAN_DEFINITIONS[plan].maxInputTokensPerRequest + maxOutputTokens;
+const estimatePdfAttachmentTokens = (pdfAttachments) => pdfAttachments.reduce((sum, attachment) => sum + Math.ceil(attachment.sizeBytes / 128), 0);
 export const normalizePdfSourceDigest = (parsed) => {
     if (!parsed || typeof parsed !== 'object') {
         return null;
@@ -117,6 +138,43 @@ export const normalizePdfSourceDigest = (parsed) => {
         coveredConcepts,
         keyFacts,
         questionBoundaries,
+    };
+};
+export const buildQuestionPaperMeteringPlan = ({ plan, }) => ({
+    meteringContext: {
+        prompt: 'question-paper-generation',
+        educationLevel: 'General',
+        mode: 'ExamPrep',
+        objective: 'Generate question paper',
+        history: [],
+        contextSummaryText: undefined,
+    },
+    reservedTokens: reserveForTextCall({ plan, maxOutputTokens: 1200 }) +
+        reserveForTextCall({ plan, maxOutputTokens: 2500 }),
+});
+export const buildPdfQuestionPaperMeteringPlan = ({ plan, educationLevel, examBoard, pdfAttachments, }) => {
+    const prompt = `Extract all text content from these ${examBoard} ${educationLevel} documents. Preserve structure and do not summarize.`;
+    const extractionInputTokens = estimateAiInputTokens({
+        prompt,
+        educationLevel,
+        mode: 'ExamPrep',
+        objective: 'Extract document text',
+        history: [],
+    }) + estimatePdfAttachmentTokens(pdfAttachments);
+    return {
+        meteringContext: {
+            prompt: 'pdf-question-paper-generation',
+            educationLevel,
+            mode: 'ExamPrep',
+            objective: 'Generate paper from PDFs',
+            history: [],
+            contextSummaryText: undefined,
+        },
+        reservedTokens: extractionInputTokens + 4000 +
+            reserveForTextCall({ plan, maxOutputTokens: 1200 }) +
+            reserveForTextCall({ plan, maxOutputTokens: 50 }) +
+            reserveForTextCall({ plan, maxOutputTokens: 1200 }) +
+            reserveForTextCall({ plan, maxOutputTokens: 2500 }),
     };
 };
 const buildQuestionPaperPrompt = ({ subject, educationLevel, examBoard, topic, format, sourceContext, }) => `
@@ -321,6 +379,7 @@ export const researchQuestionPaperFormat = async ({ subject, educationLevel, exa
         return {
             format: normalizeFormatFallback({ subject, educationLevel, examBoard }),
             sources: [],
+            usage: zeroUsage(),
         };
     }
     const response = await executeHybridAiRequest({
@@ -334,6 +393,7 @@ export const researchQuestionPaperFormat = async ({ subject, educationLevel, exa
         summaryCandidates: [],
         attachments: [],
         maxOutputTokens: 1200,
+        totalTimeoutMs: FORMAT_RESEARCH_TIMEOUT_MS,
     });
     const parsed = safeJsonParse(response.text);
     return {
@@ -341,6 +401,7 @@ export const researchQuestionPaperFormat = async ({ subject, educationLevel, exa
             ? parsed
             : normalizeFormatFallback({ subject, educationLevel, examBoard }),
         sources: results.map((result) => result.url),
+        usage: response.usage,
     };
 };
 export const generateQuestionPaperForUser = async ({ uid, subject, educationLevel, examBoard, topic, plan, sourceType, sourcePdfNames, sourcePdfTextLength, sourceContext, }) => {
@@ -388,6 +449,7 @@ export const generateQuestionPaperForUser = async ({ uid, subject, educationLeve
             summaryCandidates: [],
             attachments: [],
             maxOutputTokens: 2500,
+            totalTimeoutMs: QUESTION_PAPER_GENERATION_TIMEOUT_MS,
         });
         const parsed = normalizeGeneratedPaperResponse(safeJsonParse(response.text));
         if (!parsed?.format || !validateQuestions(parsed.questions)) {
@@ -415,7 +477,7 @@ export const generateQuestionPaperForUser = async ({ uid, subject, educationLeve
             ...(typeof sourcePdfTextLength === 'number' ? { sourcePdfTextLength } : {}),
         };
         await paperRef.set(paper);
-        return paper;
+        return { paper, usage: addUsages(research.usage, response.usage) };
     }
     catch (error) {
         await paperRef.set({
@@ -467,11 +529,11 @@ export const extractPdfTextWithNovaLite = async ({ uid, plan, educationLevel, ex
         maxOutputTokens: 4000,
         totalTimeoutMs: 140_000,
     });
-    return response.text;
+    return { text: response.text, usage: response.usage };
 };
 export const inferSubjectFromText = async ({ uid, plan, educationLevel, extractedText, }) => {
     const response = await executeHybridAiRequest({
-        prompt: `What subject is this document about? Return one short subject label only.\n\n${extractedText.slice(0, 6000)}`,
+        prompt: `What subject is this document about? Return one short subject label only.\n\n${extractedText.slice(0, INFER_SUBJECT_TEXT_CHARS)}`,
         educationLevel,
         mode: 'Conversational',
         objective: 'Infer subject',
@@ -482,7 +544,10 @@ export const inferSubjectFromText = async ({ uid, plan, educationLevel, extracte
         attachments: [],
         maxOutputTokens: 50,
     });
-    return response.text.replace(/["'\n]/g, '').trim() || 'General Studies';
+    return {
+        subject: response.text.replace(/["'\n]/g, '').trim() || 'General Studies',
+        usage: response.usage,
+    };
 };
 export const summarizePdfSourceMaterial = async ({ uid, plan, educationLevel, examBoard, extractedText, }) => {
     const response = await executeHybridAiRequest({
@@ -501,7 +566,10 @@ export const summarizePdfSourceMaterial = async ({ uid, plan, educationLevel, ex
         attachments: [],
         maxOutputTokens: 1200,
     });
-    return normalizePdfSourceDigest(safeJsonParse(response.text));
+    return {
+        digest: normalizePdfSourceDigest(safeJsonParse(response.text)),
+        usage: response.usage,
+    };
 };
 export const buildFallbackPdfSourceContext = (extractedText) => `Source excerpt:\n${truncateSourceText(extractedText)}`;
 export const buildPdfTopicFromDigest = (digest) => digest?.primaryTopic && digest.primaryTopic.toLowerCase() !== digest.subject.toLowerCase()

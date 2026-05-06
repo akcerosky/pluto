@@ -52,11 +52,11 @@ const isRetryableFailure = (error: unknown) => {
 };
 
 const getAttemptTimeoutMs = ({
-  primaryProvider,
+  attemptProvider,
   totalStartedAt,
   totalTimeoutMs,
 }: {
-  primaryProvider: AiProvider;
+  attemptProvider: AiProvider;
   totalStartedAt: number;
   totalTimeoutMs: number;
 }) => {
@@ -67,7 +67,7 @@ const getAttemptTimeoutMs = ({
     throw error;
   }
 
-  return primaryProvider === 'nova-micro'
+  return attemptProvider === 'nova-micro'
     ? Math.min(NOVA_ATTEMPT_TIMEOUT_MS, remainingMs)
     : remainingMs;
 };
@@ -193,7 +193,7 @@ const executeAttempt = async ({
     const result = await withTimeout(
       provider.execute(request),
       getAttemptTimeoutMs({
-        primaryProvider,
+        attemptProvider: provider.provider,
         totalStartedAt,
         totalTimeoutMs: request.totalTimeoutMs ?? TOTAL_REQUEST_TIMEOUT_MS,
       })

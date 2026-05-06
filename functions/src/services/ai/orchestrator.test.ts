@@ -303,3 +303,41 @@ test('per-request timeout override allows longer attachment attempts', async () 
     jest.useRealTimers();
   }
 });
+
+test('gemini fallback is not capped to the 12 second nova attempt timeout', async () => {
+  jest.useFakeTimers();
+  try {
+    const novaFailure = { status: 503, message: 'temporary outage' };
+    novaExecute
+      .mockRejectedValueOnce(novaFailure)
+      .mockRejectedValueOnce(novaFailure)
+      .mockRejectedValueOnce(novaFailure);
+    isRetryableNovaErrorMock.mockReturnValue(true);
+
+    geminiExecute.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => {
+            resolve(
+              successResult('gemini', 'gemini-2.5-flash', 'gemini-2.5-flash')
+            );
+          }, 13_000);
+        })
+    );
+
+    const requestPromise = executeHybridAiRequest(baseRequest);
+
+    await jest.advanceTimersByTimeAsync(16_000);
+    await jest.advanceTimersByTimeAsync(16_000);
+    await jest.advanceTimersByTimeAsync(16_000);
+    await jest.advanceTimersByTimeAsync(13_000);
+
+    const result = await requestPromise;
+
+    expect(result.finalProvider).toBe('gemini');
+    expect(result.fallbackTriggered).toBe(true);
+    expect(geminiExecute).toHaveBeenCalledTimes(1);
+  } finally {
+    jest.useRealTimers();
+  }
+});

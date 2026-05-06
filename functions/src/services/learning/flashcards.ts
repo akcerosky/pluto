@@ -1,5 +1,6 @@
 import { adminDb } from '../../lib/firebaseAdmin.js';
 import type { SubscriptionPlan } from '../../config/plans.js';
+import { estimateReservedTokens } from '../tokenUsage.js';
 import { executeHybridAiRequest } from '../ai/orchestrator.js';
 import { getIstDayKey, getIstNow } from '../../utils/time.js';
 import { updateCardAfterReview } from './sm2.js';
@@ -9,6 +10,7 @@ import type {
   FlashcardSetDoc,
   FlashcardSetStats,
 } from '../../types/index.js';
+import type { TokenUsage } from '../../types/index.js';
 
 const userRoot = (uid: string) => adminDb.collection('users').doc(uid);
 const setCollection = (uid: string) => userRoot(uid).collection('flashcardSets');
@@ -55,7 +57,7 @@ export const parseFlashcardGenerationResponse = <T,>(value: string): T | null =>
   return safeJsonParse<T>(extractJsonCandidate(value));
 };
 
-const buildGenerationPrompt = ({
+export const buildGenerationPrompt = ({
   topic,
   subject,
   educationLevel,
@@ -79,6 +81,37 @@ Return ONLY valid JSON:
 }
 
 Do not include markdown fences, commentary, or any text before or after the JSON.`.trim();
+
+export const buildFlashcardMeteringPayload = ({
+  topic,
+  subject,
+  educationLevel,
+  plan,
+}: {
+  topic: string;
+  subject?: string;
+  educationLevel?: string;
+  plan: SubscriptionPlan;
+}) => {
+  const meteringContext = {
+    prompt: buildGenerationPrompt({ topic, subject, educationLevel }),
+    educationLevel: educationLevel || 'High School',
+    mode: 'Conversational' as const,
+    objective: `Generate a machine-readable flashcard set for ${topic}`,
+    history: [],
+    contextSummaryText: undefined,
+  };
+
+  const reservation = estimateReservedTokens({
+    ...meteringContext,
+    plan,
+  });
+
+  return {
+    meteringContext,
+    reservedTokens: reservation.reservedTokens,
+  };
+};
 
 const computeStats = (cards: FlashcardCardDoc[]): FlashcardSetStats => {
   const now = Date.now();
@@ -159,7 +192,7 @@ export const generateFlashcardSetForUser = async ({
     batch.set(setRef.collection('cards').doc(card.id), card);
   }
   await batch.commit();
-  return { setId: setRef.id };
+  return { setId: setRef.id, usage: response.usage satisfies TokenUsage };
 };
 
 export const getFlashcardSetsForUser = async (uid: string) => {

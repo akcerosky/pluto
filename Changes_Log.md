@@ -472,7 +472,7 @@
 - Tuned the global theme around the `#533afd` brand color with stronger glass surfaces, calmer indigo backgrounds, and more consistent blur, border, and shadow treatments.
 - Polished the core product experience by improving the floating chat composer, mobile chat/header behavior, sidebar/profile controls, and landing-page visual alignment.
 
-## 2026-05-06
+## 2026-05-05
 
 ### Learning Modes Mobile Navigation
 
@@ -506,3 +506,14 @@
 - Sanitized Nova Lite document names in `functions/src/services/ai/providers/novaLiteProvider.ts` to avoid Bedrock multimodal request failures from PDF filenames.
 - Added tolerant parsing and normalization for flashcard and question-paper AI responses so slight provider formatting drift does not surface as raw `500 INTERNAL` errors to the app.
 - Added safer mobile and compact-view state transitions across `src/pages/QuestionPaperPage.tsx`, `src/pages/PdfQuestionPaperPage.tsx`, and `src/pages/FlashcardsPage.tsx` to avoid hidden-panel state updates that looked like broken taps in the browser.
+
+## 2026-05-06
+
+### Learning Shell UX and Startup Improvements
+
+- Reworked `src/components/ModeSelector/ModeSelectorPopup.tsx` across mobile and desktop by removing redundant per-card footer CTAs, aligning mode titles beside icons, tightening desktop card composition, and simplifying the desktop intro layout.
+- Removed the redundant `Chat` mode entry from `src/components/Layout/Sidebar.tsx` so `New Chat` remains the single clear fresh-chat action in the sidebar.
+- Improved light-mode sidebar readability in `src/components/Layout/Sidebar.tsx` by strengthening the `RECENT CHATS` section label styling.
+- Refined `src/pages/QuestionPaperPage.tsx` so topic-based question paper generation now follows the same `New Papers` / `Previous Papers` behavior and layout logic as the PDF paper flow in both desktop and mobile views.
+- Fixed compact/mobile paper viewer overflow behavior in both `src/pages/QuestionPaperPage.tsx` and `src/pages/PdfQuestionPaperPage.tsx` so the paper background grows with the full question content instead of clipping early.
+- Reduced perceived startup latency by removing the blocking `/chat` hydration gate in `src/App.tsx`, adding a lightweight in-shell sync indicator in `src/components/Learning/LearningShell.tsx`, and allowing fresh chat creation to start after cloud hydration without waiting for subscription hydration in `src/context/AppContext.tsx`.

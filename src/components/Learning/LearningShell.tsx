@@ -18,6 +18,8 @@ export const LearningShell = () => {
     showModeSelector,
     setShowModeSelector,
     setDueFlashcardCount,
+    isCloudHydrated,
+    isSubscriptionHydrated,
   } = useApp();
   const navigate = useNavigate();
   const location = useLocation();
@@ -64,6 +66,7 @@ export const LearningShell = () => {
   };
 
   const isScrollableLearningMode = selectedMode !== 'chat';
+  const isShellSyncing = !isCloudHydrated || !isSubscriptionHydrated;
 
   const renderSelectedMode = () => {
     if (!planConfig.features.learningFeatures && selectedMode !== 'chat') {
@@ -127,6 +130,40 @@ export const LearningShell = () => {
             navigate('/profile');
           }}
         />
+      ) : null}
+      {isShellSyncing ? (
+        <div
+          style={{
+            position: 'absolute',
+            top: '16px',
+            right: '18px',
+            zIndex: 25,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 12px',
+            borderRadius: '999px',
+            border: '1px solid var(--glass-border)',
+            background: 'color-mix(in srgb, var(--glass-bg-strong) 88%, rgba(255,255,255,0.22))',
+            color: 'var(--text-secondary)',
+            fontSize: '0.76rem',
+            fontWeight: 700,
+            backdropFilter: 'blur(14px)',
+            boxShadow: 'var(--glass-shadow)',
+            pointerEvents: 'none',
+          }}
+        >
+          <span
+            style={{
+              width: '8px',
+              height: '8px',
+              borderRadius: '999px',
+              background: 'var(--primary)',
+              boxShadow: '0 0 0 6px color-mix(in srgb, var(--primary) 14%, transparent)',
+            }}
+          />
+          Syncing workspace...
+        </div>
       ) : null}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         <Suspense fallback={<div style={{ padding: '24px', color: 'var(--text-secondary)' }}>Loading learning mode...</div>}>

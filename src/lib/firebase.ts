@@ -30,9 +30,9 @@ const isAuthActionPage =
   typeof window !== 'undefined' && window.location.pathname.startsWith('/__/auth/action');
 
 if (app && appCheckSiteKey && !isAuthActionPage) {
-  if (isDevelopment && typeof self !== 'undefined') {
+  if (isDevelopment && appCheckDebugToken && typeof self !== 'undefined') {
     (self as AppCheckDebugGlobal).FIREBASE_APPCHECK_DEBUG_TOKEN =
-      appCheckDebugToken || true;
+      appCheckDebugToken;
   }
 
   initializeAppCheck(app, {

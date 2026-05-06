@@ -1,9 +1,10 @@
 import { adminDb } from '../../lib/firebaseAdmin.js';
-import type { SubscriptionPlan } from '../../config/plans.js';
+import { getEffectiveMaxOutputTokens, PLAN_DEFINITIONS, type SubscriptionPlan } from '../../config/plans.js';
 import { executeHybridAiRequest } from '../ai/orchestrator.js';
+import { estimateAiInputTokens } from '../tokenUsage.js';
 import { generateQuestionPaperPdfBase64 } from './pdfGenerator.js';
 import { searchExamFormatSources } from './searchAdapter.js';
-import type { QuestionPaperDoc, QuestionPaperFormatSection, QuestionPaperQuestion } from '../../types/index.js';
+import type { QuestionPaperDoc, QuestionPaperFormatSection, QuestionPaperQuestion, TokenUsage } from '../../types/index.js';
 
 const userRoot = (uid: string) => adminDb.collection('users').doc(uid);
 
@@ -18,6 +19,9 @@ type PdfSourceDigest = {
 };
 
 const MAX_PDF_SOURCE_TEXT_CHARS = 16000;
+const INFER_SUBJECT_TEXT_CHARS = 6000;
+const FORMAT_RESEARCH_TIMEOUT_MS = 60_000;
+const QUESTION_PAPER_GENERATION_TIMEOUT_MS = 90_000;
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0;
@@ -140,6 +144,38 @@ Question boundaries:
 ${digest.questionBoundaries.map((boundary) => `- ${boundary}`).join('\n')}
 `.trim();
 
+const zeroUsage = (): TokenUsage => ({
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  usageSource: 'provider',
+});
+
+const addUsages = (...usages: Array<TokenUsage | null | undefined>): TokenUsage =>
+  usages.reduce<TokenUsage>(
+    (acc, usage) => ({
+      inputTokens: acc.inputTokens + (usage?.inputTokens ?? 0),
+      outputTokens: acc.outputTokens + (usage?.outputTokens ?? 0),
+      totalTokens: acc.totalTokens + (usage?.totalTokens ?? 0),
+      usageSource:
+        acc.usageSource === 'estimated' || usage?.usageSource === 'estimated'
+          ? 'estimated'
+          : 'provider',
+    }),
+    zeroUsage()
+  );
+
+const reserveForTextCall = ({
+  plan,
+  maxOutputTokens,
+}: {
+  plan: SubscriptionPlan;
+  maxOutputTokens: number;
+}) => PLAN_DEFINITIONS[plan].maxInputTokensPerRequest + maxOutputTokens;
+
+const estimatePdfAttachmentTokens = (pdfAttachments: Array<{ sizeBytes: number }>) =>
+  pdfAttachments.reduce((sum, attachment) => sum + Math.ceil(attachment.sizeBytes / 128), 0);
+
 export const normalizePdfSourceDigest = (parsed: unknown): PdfSourceDigest | null => {
   if (!parsed || typeof parsed !== 'object') {
     return null;
@@ -171,6 +207,63 @@ export const normalizePdfSourceDigest = (parsed: unknown): PdfSourceDigest | nul
     coveredConcepts,
     keyFacts,
     questionBoundaries,
+  };
+};
+
+export const buildQuestionPaperMeteringPlan = ({
+  plan,
+}: {
+  plan: SubscriptionPlan;
+}) => ({
+  meteringContext: {
+    prompt: 'question-paper-generation',
+    educationLevel: 'General',
+    mode: 'ExamPrep' as const,
+    objective: 'Generate question paper',
+    history: [],
+    contextSummaryText: undefined,
+  },
+  reservedTokens:
+    reserveForTextCall({ plan, maxOutputTokens: 1200 }) +
+    reserveForTextCall({ plan, maxOutputTokens: 2500 }),
+});
+
+export const buildPdfQuestionPaperMeteringPlan = ({
+  plan,
+  educationLevel,
+  examBoard,
+  pdfAttachments,
+}: {
+  plan: SubscriptionPlan;
+  educationLevel: string;
+  examBoard: string;
+  pdfAttachments: Array<{ sizeBytes: number }>;
+}) => {
+  const prompt = `Extract all text content from these ${examBoard} ${educationLevel} documents. Preserve structure and do not summarize.`;
+  const extractionInputTokens =
+    estimateAiInputTokens({
+      prompt,
+      educationLevel,
+      mode: 'ExamPrep',
+      objective: 'Extract document text',
+      history: [],
+    }) + estimatePdfAttachmentTokens(pdfAttachments);
+
+  return {
+    meteringContext: {
+      prompt: 'pdf-question-paper-generation',
+      educationLevel,
+      mode: 'ExamPrep' as const,
+      objective: 'Generate paper from PDFs',
+      history: [],
+      contextSummaryText: undefined,
+    },
+    reservedTokens:
+      extractionInputTokens + 4000 +
+      reserveForTextCall({ plan, maxOutputTokens: 1200 }) +
+      reserveForTextCall({ plan, maxOutputTokens: 50 }) +
+      reserveForTextCall({ plan, maxOutputTokens: 1200 }) +
+      reserveForTextCall({ plan, maxOutputTokens: 2500 }),
   };
 };
 
@@ -444,6 +537,7 @@ export const researchQuestionPaperFormat = async ({
     return {
       format: normalizeFormatFallback({ subject, educationLevel, examBoard }),
       sources: [],
+      usage: zeroUsage(),
     };
   }
 
@@ -458,6 +552,7 @@ export const researchQuestionPaperFormat = async ({
     summaryCandidates: [],
     attachments: [],
     maxOutputTokens: 1200,
+    totalTimeoutMs: FORMAT_RESEARCH_TIMEOUT_MS,
   });
   const parsed = safeJsonParse<{
     totalMarks: number;
@@ -471,6 +566,7 @@ export const researchQuestionPaperFormat = async ({
         ? parsed
         : normalizeFormatFallback({ subject, educationLevel, examBoard }),
     sources: results.map((result) => result.url),
+    usage: response.usage,
   };
 };
 
@@ -544,6 +640,7 @@ export const generateQuestionPaperForUser = async ({
       summaryCandidates: [],
       attachments: [],
       maxOutputTokens: 2500,
+      totalTimeoutMs: QUESTION_PAPER_GENERATION_TIMEOUT_MS,
     });
 
     const parsed = normalizeGeneratedPaperResponse(
@@ -583,7 +680,7 @@ export const generateQuestionPaperForUser = async ({
     };
 
     await paperRef.set(paper);
-    return paper;
+    return { paper, usage: addUsages(research.usage, response.usage) };
   } catch (error) {
     await paperRef.set(
       {
@@ -654,7 +751,7 @@ export const extractPdfTextWithNovaLite = async ({
     maxOutputTokens: 4000,
     totalTimeoutMs: 140_000,
   });
-  return response.text;
+  return { text: response.text, usage: response.usage };
 };
 
 export const inferSubjectFromText = async ({
@@ -669,7 +766,7 @@ export const inferSubjectFromText = async ({
   extractedText: string;
 }) => {
   const response = await executeHybridAiRequest({
-    prompt: `What subject is this document about? Return one short subject label only.\n\n${extractedText.slice(0, 6000)}`,
+    prompt: `What subject is this document about? Return one short subject label only.\n\n${extractedText.slice(0, INFER_SUBJECT_TEXT_CHARS)}`,
     educationLevel,
     mode: 'Conversational',
     objective: 'Infer subject',
@@ -680,7 +777,10 @@ export const inferSubjectFromText = async ({
     attachments: [],
     maxOutputTokens: 50,
   });
-  return response.text.replace(/["'\n]/g, '').trim() || 'General Studies';
+  return {
+    subject: response.text.replace(/["'\n]/g, '').trim() || 'General Studies',
+    usage: response.usage,
+  };
 };
 
 export const summarizePdfSourceMaterial = async ({
@@ -713,7 +813,10 @@ export const summarizePdfSourceMaterial = async ({
     maxOutputTokens: 1200,
   });
 
-  return normalizePdfSourceDigest(safeJsonParse<PdfSourceDigest>(response.text));
+  return {
+    digest: normalizePdfSourceDigest(safeJsonParse<PdfSourceDigest>(response.text)),
+    usage: response.usage,
+  };
 };
 
 export const buildFallbackPdfSourceContext = (extractedText: string) =>

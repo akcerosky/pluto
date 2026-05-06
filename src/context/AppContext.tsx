@@ -541,12 +541,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
 
-        try {
-          await firebaseUser.reload();
-        } catch (error) {
-          runtimeLogger.warn('Unable to refresh Firebase auth user.', error);
-        }
-
         const freshUser = firebaseAuth.currentUser ?? firebaseUser;
         setIsSubscriptionHydrated(false);
 
@@ -1014,7 +1008,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       !user ||
       !shouldAutoCreateFreshThread ||
       !isCloudHydrated ||
-      !isSubscriptionHydrated ||
       activeThreadId !== null
     ) {
       return;
@@ -1027,7 +1020,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     activeThreadId,
     createThread,
     isCloudHydrated,
-    isSubscriptionHydrated,
     shouldAutoCreateFreshThread,
     user,
   ]);

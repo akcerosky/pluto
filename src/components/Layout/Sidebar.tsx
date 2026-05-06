@@ -8,7 +8,6 @@ import {
   ChevronLeft,
   Trash2,
   X,
-  BookOpen,
   FileQuestion,
   Layers3,
   ScanSearch,
@@ -84,7 +83,6 @@ export const Sidebar = ({
     locked?: boolean;
     badgeCount?: number;
   }> = [
-    { id: 'chat', label: 'Chat', icon: <BookOpen size={19} /> },
     {
       id: 'questionPaper',
       label: 'Question Paper',
@@ -341,11 +339,12 @@ export const Sidebar = ({
         {!effectiveCollapsed && (
           <div
             style={{
-              fontSize: '0.65rem',
-              color: 'var(--text-muted)',
+              fontSize: '0.72rem',
+              color: 'var(--text-secondary)',
               padding: '8px 12px',
               letterSpacing: '0.12em',
               fontWeight: '800',
+              opacity: 0.92,
             }}
           >
             RECENT CHATS

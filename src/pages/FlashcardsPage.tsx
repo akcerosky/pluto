@@ -64,6 +64,12 @@ export const FlashcardsPage = () => {
   const [isReviewLoading, setIsReviewLoading] = useState(false);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [unknownOnly, setUnknownOnly] = useState(false);
+  const [generationErrorMessage, setGenerationErrorMessage] = useState<string | null>(null);
+  const [failedGenerationAttempt, setFailedGenerationAttempt] = useState<{
+    topic: string;
+    subject?: string;
+    educationLevel?: string;
+  } | null>(null);
   const [mobileView, setMobileView] = useState<'create' | 'library'>('create');
   const [isCompactLayout, setIsCompactLayout] = useState(
     () => (typeof window !== 'undefined' ? window.innerWidth < 1024 : false)
@@ -89,20 +95,44 @@ export const FlashcardsPage = () => {
     void loadSets();
   }, [loadSets]);
 
-  const handleGenerate = async () => {
+  const extractGenerationErrorMessage = (error: unknown) => {
+    const raw =
+      error instanceof Error
+        ? error.message
+        : typeof error === 'string'
+          ? error
+          : '';
+    const normalized = raw.replace(/\s+/g, ' ').trim();
+    if (!normalized || normalized === 'INTERNAL') {
+      return 'Flashcard generation failed before Pluto could finish building the set. Please try again.';
+    }
+    return normalized;
+  };
+
+  const handleGenerate = async (overrideAttempt?: {
+    topic: string;
+    subject?: string;
+    educationLevel?: string;
+  }) => {
+    const attempt = overrideAttempt ?? {
+      topic: topic.trim(),
+      subject: subject.trim() || undefined,
+      educationLevel: educationLevel.trim() || undefined,
+    };
+
+    setGenerationErrorMessage(null);
+    setFailedGenerationAttempt(attempt);
     setIsLoading(true);
     try {
-      const normalizedSubject = subject.trim();
-      const normalizedEducationLevel = educationLevel.trim();
-      await generateFlashcardSet({
-        topic,
-        subject: normalizedSubject || undefined,
-        educationLevel: normalizedEducationLevel || undefined,
-      });
+      await generateFlashcardSet(attempt);
       setTopic('');
       setSubject('');
       setEducationLevel('');
+      setGenerationErrorMessage(null);
+      setFailedGenerationAttempt(null);
       await loadSets();
+    } catch (error) {
+      setGenerationErrorMessage(extractGenerationErrorMessage(error));
     } finally {
       setIsLoading(false);
     }
@@ -397,6 +427,25 @@ export const FlashcardsPage = () => {
               <span>Generate Flashcards</span>
             </button>
           </div>
+          {generationErrorMessage ? (
+            <div style={flashErrorCardStyle}>
+              <div style={flashErrorTitleStyle}>Generation failed</div>
+              <div style={flashErrorTextStyle}>{generationErrorMessage}</div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (failedGenerationAttempt) {
+                    void handleGenerate(failedGenerationAttempt);
+                  }
+                }}
+                disabled={isLoading || !failedGenerationAttempt}
+                className="outline-button"
+                style={flashRetryButtonStyle}
+              >
+                Retry generation
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {!isCompactLayout ? (
@@ -1194,4 +1243,31 @@ const reviewEmptyStateStyle: CSSProperties = {
   placeItems: 'center',
   textAlign: 'center',
   gap: '10px',
+};
+
+const flashErrorCardStyle: CSSProperties = {
+  marginTop: '12px',
+  display: 'grid',
+  gap: '10px',
+  borderRadius: '20px',
+  border: '1px solid color-mix(in srgb, rgba(198, 69, 83, 0.32) 78%, var(--glass-border))',
+  background: 'color-mix(in srgb, rgba(198, 69, 83, 0.1) 68%, var(--glass-bg-subtle))',
+  padding: '14px',
+};
+
+const flashErrorTitleStyle: CSSProperties = {
+  color: 'var(--text-primary)',
+  fontWeight: 800,
+};
+
+const flashErrorTextStyle: CSSProperties = {
+  color: 'var(--text-secondary)',
+  fontSize: '0.92rem',
+  lineHeight: 1.55,
+};
+
+const flashRetryButtonStyle: CSSProperties = {
+  minHeight: '40px',
+  borderRadius: '14px',
+  justifyContent: 'center',
 };

@@ -13,6 +13,12 @@ export const PdfQuestionPaperPage = () => {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [lastUploadRequest, setLastUploadRequest] = useState<{
+    files: File[];
+    educationLevel: string;
+    examBoard: string;
+    subject?: string;
+  } | null>(null);
   const [mobileView, setMobileView] = useState<'new' | 'previous'>('new');
   const [mobilePreviousPapersResetToken, setMobilePreviousPapersResetToken] = useState(0);
   const [isCompactLayout, setIsCompactLayout] = useState(
@@ -34,13 +40,41 @@ export const PdfQuestionPaperPage = () => {
     [files]
   );
 
-  const handleUpload = async () => {
+  const extractUploadErrorMessage = (error: unknown) => {
+    const raw =
+      typeof error === 'object' &&
+      error !== null &&
+      'message' in error &&
+      typeof (error as { message?: unknown }).message === 'string'
+        ? (error as { message: string }).message
+        : '';
+    const normalized = raw.replace(/\s+/g, ' ').trim();
+    if (!normalized || normalized === 'INTERNAL') {
+      return 'PDF generation failed before Pluto could finish building the paper. Please try again.';
+    }
+    return normalized;
+  };
+
+  const handleUpload = async (overrideRequest?: {
+    files: File[];
+    educationLevel: string;
+    examBoard: string;
+    subject?: string;
+  }) => {
+    const request = overrideRequest ?? {
+      files,
+      educationLevel,
+      examBoard,
+      subject: subject.trim() || undefined,
+    };
+
+    setLastUploadRequest(request);
     setIsUploading(true);
     setErrorMessage(null);
     setStatusMessage('Extracting your PDFs and generating a paper...');
     try {
       const pdfAttachments = await Promise.all(
-        files.map(async (file) => ({
+        request.files.map(async (file) => ({
           name: file.name,
           mimeType: 'application/pdf' as const,
           sizeBytes: file.size,
@@ -49,9 +83,9 @@ export const PdfQuestionPaperPage = () => {
       );
       await generatePaperFromPdfs({
         pdfAttachments,
-        educationLevel,
-        examBoard,
-        subject: subject || undefined,
+        educationLevel: request.educationLevel,
+        examBoard: request.examBoard,
+        subject: request.subject,
       });
       setFiles([]);
       setRefreshToken((current) => current + 1);
@@ -60,16 +94,9 @@ export const PdfQuestionPaperPage = () => {
       }
       setStatusMessage('Question paper generated. Check the generated papers list below.');
     } catch (error) {
-      const fallbackMessage = 'PDF generation failed. Please try again in a moment.';
-      const extractedMessage =
-        typeof error === 'object' &&
-        error !== null &&
-        'message' in error &&
-        typeof (error as { message?: unknown }).message === 'string'
-          ? (error as { message: string }).message
-          : fallbackMessage;
-      setErrorMessage(extractedMessage || fallbackMessage);
+      setErrorMessage(extractUploadErrorMessage(error));
       setStatusMessage(null);
+      setRefreshToken((current) => current + 1);
     } finally {
       setIsUploading(false);
     }
@@ -83,7 +110,7 @@ export const PdfQuestionPaperPage = () => {
         gridTemplateRows: isCompactLayout ? undefined : 'auto minmax(0, 1fr)',
         height: isCompactLayout ? 'auto' : '100%',
         minHeight: 0,
-        overflowY: isCompactLayout ? 'auto' : 'hidden',
+        overflowY: isCompactLayout ? 'visible' : 'hidden',
       }}
     >
       {isCompactLayout ? (
@@ -203,15 +230,22 @@ export const PdfQuestionPaperPage = () => {
               </div>
             ) : null}
             {errorMessage ? (
-              <div
-                style={{
-                  marginTop: '12px',
-                  color: 'var(--error, #c64d5f)',
-                  fontSize: '0.9rem',
-                  lineHeight: 1.5,
-                }}
-              >
-                {errorMessage}
+              <div style={pdfErrorCardStyle}>
+                <div style={pdfErrorTitleStyle}>Generation failed</div>
+                <div style={pdfErrorTextStyle}>{errorMessage}</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (lastUploadRequest) {
+                      void handleUpload(lastUploadRequest);
+                    }
+                  }}
+                  disabled={isUploading || !lastUploadRequest}
+                  className="outline-button"
+                  style={pdfRetryButtonStyle}
+                >
+                  Retry generation
+                </button>
               </div>
             ) : null}
           </div>
@@ -283,4 +317,31 @@ const mobilePaperSwitcherButtonActiveStyle: CSSProperties = {
   borderColor: 'color-mix(in srgb, var(--primary) 38%, var(--glass-border))',
   background: 'color-mix(in srgb, var(--primary) 14%, var(--glass-bg))',
   color: 'var(--text-primary)',
+};
+
+const pdfErrorCardStyle: CSSProperties = {
+  marginTop: '12px',
+  display: 'grid',
+  gap: '10px',
+  borderRadius: '20px',
+  border: '1px solid color-mix(in srgb, rgba(198, 69, 83, 0.32) 78%, var(--glass-border))',
+  background: 'color-mix(in srgb, rgba(198, 69, 83, 0.1) 68%, var(--glass-bg-subtle))',
+  padding: '14px',
+};
+
+const pdfErrorTitleStyle: CSSProperties = {
+  color: 'var(--text-primary)',
+  fontWeight: 800,
+};
+
+const pdfErrorTextStyle: CSSProperties = {
+  color: 'var(--text-secondary)',
+  fontSize: '0.9rem',
+  lineHeight: 1.55,
+};
+
+const pdfRetryButtonStyle: CSSProperties = {
+  minHeight: '40px',
+  borderRadius: '14px',
+  justifyContent: 'center',
 };

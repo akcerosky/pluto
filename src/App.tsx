@@ -37,27 +37,12 @@ const RouteFallback = () => (
   </div>
 );
 
-const ShellRouteFallback = () => (
-  <div
-    style={{
-      flex: 1,
-      display: 'grid',
-      placeItems: 'center',
-      background: 'var(--background)',
-      color: 'var(--foreground)',
-      fontWeight: 700,
-    }}
-  >
-    Loading Pluto...
-  </div>
-);
-
 const LazyRoute = ({ children }: { children: ReactNode }) => (
   <Suspense fallback={<RouteFallback />}>{children}</Suspense>
 );
 
 const AppRoutes = () => {
-  const { isCloudHydrated, isSubscriptionHydrated, user } = useApp();
+  const { user } = useApp();
   const isGoogleUser = Boolean(
     auth?.currentUser?.providerData.some((provider) => provider.providerId === 'google.com')
   );
@@ -87,11 +72,7 @@ const AppRoutes = () => {
             <LazyRoute>
               <ErrorBoundary>
                 <MainLayout>
-                  {isSubscriptionHydrated && isCloudHydrated ? (
-                    <LearningShell />
-                  ) : (
-                    <ShellRouteFallback />
-                  )}
+                  <LearningShell />
                 </MainLayout>
               </ErrorBoundary>
             </LazyRoute>
