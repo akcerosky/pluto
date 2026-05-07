@@ -207,6 +207,7 @@ export interface FlashcardSessionDoc {
   id: string;
   setId: string;
   date: string;
+  startedAt: string;
   cardsReviewed: number;
   ratings: { easy: number; good: number; hard: number };
   durationSeconds: number;

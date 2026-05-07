@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -20,13 +20,14 @@ import {
   submitCardReview,
 } from '../lib/plutoApi';
 import { useApp } from '../context/useApp';
+import { normalizeLearningErrorMessage } from '../lib/learningUi';
 import type { FlashcardCardDoc, FlashcardSetDoc } from '../types';
 
 type ReviewDeckItem = {
   card: FlashcardCardDoc;
   revealCount: number;
   pending: boolean;
-  known: boolean;
+  completed: boolean;
   originalOrder: number;
 };
 
@@ -35,7 +36,7 @@ const createReviewDeck = (sourceCards: FlashcardCardDoc[]): ReviewDeckItem[] =>
     card,
     revealCount: 0,
     pending: true,
-    known: false,
+    completed: false,
     originalOrder: index,
   }));
 
@@ -61,9 +62,10 @@ export const FlashcardsPage = () => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [sessionId, setSessionId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSetsLoading, setIsSetsLoading] = useState(true);
   const [isReviewLoading, setIsReviewLoading] = useState(false);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
-  const [unknownOnly, setUnknownOnly] = useState(false);
+  const [newOnly, setNewOnly] = useState(false);
   const [generationErrorMessage, setGenerationErrorMessage] = useState<string | null>(null);
   const [failedGenerationAttempt, setFailedGenerationAttempt] = useState<{
     topic: string;
@@ -86,9 +88,15 @@ export const FlashcardsPage = () => {
   }, []);
 
   const loadSets = useCallback(async () => {
-    const response = await getFlashcardSets();
-    setSets(response.sets);
-    setDueFlashcardCount(response.dueCount);
+    setIsSetsLoading(true);
+    try {
+      const response = await getFlashcardSets();
+      setSets(response.sets);
+      setDueFlashcardCount(response.dueCount);
+      return response.sets;
+    } finally {
+      setIsSetsLoading(false);
+    }
   }, [setDueFlashcardCount]);
 
   useEffect(() => {
@@ -96,17 +104,10 @@ export const FlashcardsPage = () => {
   }, [loadSets]);
 
   const extractGenerationErrorMessage = (error: unknown) => {
-    const raw =
-      error instanceof Error
-        ? error.message
-        : typeof error === 'string'
-          ? error
-          : '';
-    const normalized = raw.replace(/\s+/g, ' ').trim();
-    if (!normalized || normalized === 'INTERNAL') {
-      return 'Flashcard generation failed before Pluto could finish building the set. Please try again.';
-    }
-    return normalized;
+    return normalizeLearningErrorMessage({
+      error,
+      fallback: 'Flashcard generation failed before Pluto could finish building the set. Please try again.',
+    });
   };
 
   const handleGenerate = async (overrideAttempt?: {
@@ -141,17 +142,17 @@ export const FlashcardsPage = () => {
   const activeReviewCards = useMemo(
     () =>
       reviewDeck.filter(
-        (item) => item.pending && (!unknownOnly || item.card.masteryLevel === 'new')
+        (item) => item.pending && (!newOnly || item.card.masteryLevel === 'new')
       ),
-    [reviewDeck, unknownOnly]
+    [reviewDeck, newOnly]
   );
 
   const currentReviewItem =
     activeReviewCards[Math.min(reviewIndex, Math.max(activeReviewCards.length - 1, 0))] ?? null;
   const sessionTotalCards = reviewDeckSeed.length;
-  const knownCardsCount = reviewDeck.filter((item) => item.known).length;
+  const completedCardsCount = reviewDeck.filter((item) => item.completed).length;
   const progressPercent =
-    sessionTotalCards > 0 ? Math.round((knownCardsCount / sessionTotalCards) * 100) : 0;
+    sessionTotalCards > 0 ? Math.round((completedCardsCount / sessionTotalCards) * 100) : 0;
   const currentSessionPosition =
     currentReviewItem && sessionTotalCards > 0 ? Math.min(reviewIndex + 1, sessionTotalCards) : 0;
   const isReviewing = sessionTotalCards > 0;
@@ -188,7 +189,7 @@ export const FlashcardsPage = () => {
                 marginTop: '4px',
               }}
             >
-              {set.totalCards} cards · {set.stats.dueToday} due today
+              {`${set.totalCards} cards · ${set.stats.dueToday} due today`}
             </div>
           </div>
           <button
@@ -230,7 +231,7 @@ export const FlashcardsPage = () => {
     setReviewDeckSeed(seed);
     setReviewIndex(0);
     setIsFlipped(false);
-    setUnknownOnly(false);
+    setNewOnly(false);
     setSessionId(crypto.randomUUID());
   };
 
@@ -291,15 +292,8 @@ export const FlashcardsPage = () => {
     setIsFlipped(false);
   };
 
-  const handleReviewAction = async (direction: 'known' | 'unknown') => {
+  const handleReviewAction = async (rating: 'hard' | 'good' | 'easy') => {
     if (!currentReviewItem || !selectedSetId || isSubmittingReview) return;
-
-    const rating =
-      direction === 'known'
-        ? currentReviewItem.revealCount >= 2
-          ? 'easy'
-          : 'good'
-        : 'hard';
 
     setIsSubmittingReview(true);
     try {
@@ -316,19 +310,11 @@ export const FlashcardsPage = () => {
             ? {
                 ...item,
                 card: response.card,
-                known: direction === 'known',
-                pending: direction === 'unknown',
+                completed: true,
+                pending: false,
               }
             : item
         );
-
-        if (direction === 'unknown') {
-          const currentItem = next.find((item) => item.card.id === currentReviewItem.card.id);
-          return [
-            ...next.filter((item) => item.card.id !== currentReviewItem.card.id),
-            ...(currentItem ? [currentItem] : []),
-          ];
-        }
 
         return next;
       });
@@ -348,13 +334,14 @@ export const FlashcardsPage = () => {
         gridTemplateColumns: isCompactLayout ? '1fr' : '340px minmax(0, 1fr)',
         gridTemplateRows: isCompactLayout ? 'auto auto' : 'minmax(0, 1fr)',
         gap: '18px',
-        height: '100%',
+        height: isCompactLayout ? 'auto' : '100%',
         minHeight: 0,
         alignItems: isCompactLayout ? 'start' : 'stretch',
+        alignContent: isCompactLayout ? 'start' : 'stretch',
         overflowY: isCompactLayout ? 'auto' : 'hidden',
       }}
     >
-      {isCompactLayout && isReviewing ? (
+      {isCompactLayout ? (
         <div style={mobileSwitcherStyle}>
           <button
             type="button"
@@ -368,7 +355,13 @@ export const FlashcardsPage = () => {
           </button>
           <button
             type="button"
-            onClick={() => setMobileView('library')}
+            onClick={() => {
+              if (mobileView === 'library' && !isReviewing) {
+                setSelectedSetId(null);
+              } else {
+                setMobileView('library');
+              }
+            }}
             style={{
               ...mobileSwitcherButtonStyle,
               ...(mobileView === 'library' ? mobileSwitcherButtonActiveStyle : null),
@@ -379,7 +372,7 @@ export const FlashcardsPage = () => {
         </div>
       ) : null}
 
-      {!isCompactLayout || !isReviewing || mobileView === 'create' ? (
+      {!isCompactLayout || mobileView === 'create' ? (
         <div
           style={{
             ...flashPanelStyle,
@@ -400,7 +393,7 @@ export const FlashcardsPage = () => {
             <div
               style={{
                 ...flashInputRowStyle,
-                gridTemplateColumns: isCompactLayout ? '1fr' : '1fr 1fr',
+                gridTemplateColumns: '1fr',
               }}
             >
               <input
@@ -450,79 +443,71 @@ export const FlashcardsPage = () => {
 
         {!isCompactLayout ? (
           <div style={{ marginTop: '22px', display: 'grid', gap: '10px' }}>
-          {sets.map((set) => (
-            <div
-              key={set.id}
-              onClick={() => void beginReviewForSet(set.id)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' || event.key === ' ') {
-                  event.preventDefault();
-                  void beginReviewForSet(set.id);
-                }
-              }}
-              role="button"
-              tabIndex={0}
-              style={{
-                ...flashSetCardStyle,
-                borderColor:
-                  selectedSetId === set.id
-                    ? 'rgba(136, 104, 255, 0.45)'
-                    : 'var(--glass-border)',
-              }}
-            >
-              <div>
-                <div style={{ fontWeight: 800 }}>{set.title}</div>
-                <div
-                  style={{
-                    color: 'var(--text-secondary)',
-                    fontSize: '0.85rem',
-                    marginTop: '4px',
-                  }}
-                >
-                  {set.totalCards} cards · {set.stats.dueToday} due today
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  void deleteFlashcardSet({ setId: set.id }).then(async () => {
-                    if (selectedSetId === set.id) {
-                      setSelectedSetId(null);
-                      setReviewDeck([]);
-                      setReviewDeckSeed([]);
-                    }
-                    await loadSets();
-                  });
-                }}
-                className="ghost-button"
-                aria-label={`Delete ${set.title}`}
-              >
-                <Trash2 size={14} />
-              </button>
-            </div>
-          ))}
-          </div>
-        ) : !isReviewing ? (
-          <div style={{ marginTop: '22px', display: 'grid', gap: '12px' }}>
-            <div
-              style={{
-                color: 'var(--text-secondary)',
-                fontSize: '0.96rem',
-                lineHeight: 1.55,
-              }}
-            >
-              {sets.length > 0
-                ? 'Choose a flashcard set to browse or review it.'
-                : 'Your generated flashcard sets will appear here.'}
-            </div>
-            {sets.length > 0 ? flashcardSetList : null}
+            {isSetsLoading
+              ? Array.from({ length: 3 }).map((_, index) => (
+                  <div key={`flash-list-skeleton-${index}`} style={flashcardSkeletonStyle}>
+                    <div style={{ ...skeletonLineStyle, width: '62%' }} />
+                    <div style={{ ...skeletonLineStyle, width: '38%', height: '12px' }} />
+                  </div>
+                ))
+              : sets.map((set) => (
+                  <div
+                    key={set.id}
+                    onClick={() => void beginReviewForSet(set.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        void beginReviewForSet(set.id);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    style={{
+                      ...flashSetCardStyle,
+                      borderColor:
+                        selectedSetId === set.id
+                          ? 'rgba(136, 104, 255, 0.45)'
+                          : 'var(--glass-border)',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 800 }}>{set.title}</div>
+                      <div
+                        style={{
+                          color: 'var(--text-secondary)',
+                          fontSize: '0.85rem',
+                          marginTop: '4px',
+                        }}
+                      >
+                        {`${set.totalCards} cards · ${set.stats.dueToday} due today`}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void deleteFlashcardSet({ setId: set.id }).then(async () => {
+                          if (selectedSetId === set.id) {
+                            setSelectedSetId(null);
+                            setReviewDeck([]);
+                            setReviewDeckSeed([]);
+                          }
+                          await loadSets();
+                        });
+                      }}
+                      className="ghost-button"
+                      aria-label={`Delete ${set.title}`}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
           </div>
         ) : null}
         </div>
       ) : null}
 
-      {!isCompactLayout || isReviewing ? (
+      {!isCompactLayout || mobileView === 'library' ? (
         <div
           style={{
             ...flashPanelStyle,
@@ -549,7 +534,7 @@ export const FlashcardsPage = () => {
                 <div>
                   <div style={{ fontWeight: 800, color: 'var(--text-primary)' }}>{selectedSet.title}</div>
                   <div style={{ color: 'var(--text-secondary)', fontSize: '0.84rem', marginTop: '4px' }}>
-                    {selectedSet.totalCards} cards · {selectedSet.stats.dueToday} due today
+                    {`${selectedSet.totalCards} cards · ${selectedSet.stats.dueToday} due today`}
                   </div>
                 </div>
               </div>
@@ -566,18 +551,18 @@ export const FlashcardsPage = () => {
               >
                 <button
                   type="button"
-                  onClick={() => setUnknownOnly((value) => !value)}
+                  onClick={() => setNewOnly((value) => !value)}
                   style={{
                     ...reviewToolButtonStyle,
                     minHeight: isCompactLayout ? '42px' : reviewToolButtonStyle.minHeight,
                     padding: isCompactLayout ? '0 8px' : reviewToolButtonStyle.padding,
                     fontSize: isCompactLayout ? '0.76rem' : undefined,
                     gap: isCompactLayout ? '5px' : reviewToolButtonStyle.gap,
-                    ...(unknownOnly ? reviewToolButtonActiveStyle : null),
+                    ...(newOnly ? reviewToolButtonActiveStyle : null),
                   }}
                 >
                   <EyeOff size={isCompactLayout ? 14 : 16} />
-                  <span>Unknown Only</span>
+                  <span>New Only</span>
                 </button>
                 <button
                   type="button"
@@ -615,9 +600,9 @@ export const FlashcardsPage = () => {
                     {currentSessionPosition}/{sessionTotalCards}
                   </span>
                   <span style={reviewMetricSecondaryStyle}>
-                    Known:{' '}
+                    Completed:{' '}
                     <strong style={{ color: '#31e88e' }}>
-                      {knownCardsCount}/{sessionTotalCards}
+                      {completedCardsCount}/{sessionTotalCards}
                     </strong>
                   </span>
                   <span style={reviewPercentStyle}>{progressPercent}%</span>
@@ -684,9 +669,7 @@ export const FlashcardsPage = () => {
                       </div>
                       <div style={reviewCardFooterStyle}>
                         <div style={reviewCardHintStyle}>
-                          {currentReviewItem.revealCount >= 2
-                            ? 'Known will submit Easy for this card.'
-                            : 'Known will submit Good for this card.'}
+                          Choose Hard, Good, or Easy after checking how quickly you recalled the answer.
                         </div>
                       </div>
                     </div>
@@ -698,7 +681,7 @@ export const FlashcardsPage = () => {
                     style={{
                       ...reviewDecisionRowStyle,
                       display: isCompactLayout ? 'grid' : reviewDecisionRowStyle.display,
-                      gridTemplateColumns: isCompactLayout ? '1fr 1fr' : undefined,
+                      gridTemplateColumns: isCompactLayout ? '1fr 1fr 1fr' : undefined,
                       gap: isCompactLayout ? '10px' : reviewDecisionRowStyle.gap,
                     }}
                   >
@@ -706,45 +689,56 @@ export const FlashcardsPage = () => {
                       <>
                         <button
                           type="button"
-                          onClick={() => void handleReviewAction('unknown')}
+                          onClick={() => void handleReviewAction('hard')}
                           disabled={isSubmittingReview}
                           style={{
-                            ...reviewUnknownButtonStyle,
+                            ...reviewHardButtonStyle,
                             width: isCompactLayout ? '100%' : undefined,
-                            maxWidth: isCompactLayout ? 'none' : reviewUnknownButtonStyle.maxWidth,
-                            minHeight: isCompactLayout ? '44px' : reviewUnknownButtonStyle.minHeight,
+                            maxWidth: isCompactLayout ? 'none' : reviewHardButtonStyle.maxWidth,
+                            minHeight: isCompactLayout ? '44px' : reviewHardButtonStyle.minHeight,
                             fontSize: isCompactLayout ? '0.82rem' : undefined,
-                            gap: isCompactLayout ? '6px' : reviewUnknownButtonStyle.gap,
+                            gap: isCompactLayout ? '6px' : reviewHardButtonStyle.gap,
                           }}
                         >
                           <XCircle size={isCompactLayout ? 16 : 18} />
-                          <span>{isSubmittingReview ? 'Saving...' : 'Unknown'}</span>
+                          <span>{isSubmittingReview ? 'Saving...' : 'Hard'}</span>
                         </button>
                         <button
                           type="button"
-                          onClick={() => void handleReviewAction('known')}
+                          onClick={() => void handleReviewAction('good')}
                           disabled={isSubmittingReview}
                           style={{
-                            ...reviewKnownButtonStyle,
+                            ...reviewGoodButtonStyle,
                             width: isCompactLayout ? '100%' : undefined,
-                            maxWidth: isCompactLayout ? 'none' : reviewKnownButtonStyle.maxWidth,
-                            minHeight: isCompactLayout ? '44px' : reviewKnownButtonStyle.minHeight,
+                            maxWidth: isCompactLayout ? 'none' : reviewGoodButtonStyle.maxWidth,
+                            minHeight: isCompactLayout ? '44px' : reviewGoodButtonStyle.minHeight,
                             fontSize: isCompactLayout ? '0.82rem' : undefined,
-                            gap: isCompactLayout ? '6px' : reviewKnownButtonStyle.gap,
+                            gap: isCompactLayout ? '6px' : reviewGoodButtonStyle.gap,
                           }}
                         >
                           <CheckCircle2 size={isCompactLayout ? 16 : 18} />
-                          <span>
-                            {isSubmittingReview
-                              ? 'Saving...'
-                              : currentReviewItem.revealCount >= 2
-                                ? 'Known · Easy'
-                                : 'Known · Good'}
-                          </span>
+                          <span>{isSubmittingReview ? 'Saving...' : 'Good'}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleReviewAction('easy')}
+                          disabled={isSubmittingReview}
+                          style={{
+                            ...reviewEasyButtonStyle,
+                            width: isCompactLayout ? '100%' : undefined,
+                            maxWidth: isCompactLayout ? 'none' : reviewEasyButtonStyle.maxWidth,
+                            minHeight: isCompactLayout ? '44px' : reviewEasyButtonStyle.minHeight,
+                            fontSize: isCompactLayout ? '0.82rem' : undefined,
+                            gap: isCompactLayout ? '6px' : reviewEasyButtonStyle.gap,
+                          }}
+                        >
+                          <CheckCircle2 size={isCompactLayout ? 16 : 18} />
+                          <span>{isSubmittingReview ? 'Saving...' : 'Easy'}</span>
                         </button>
                       </>
                     ) : (
                       <>
+                        <div style={{ ...reviewDecisionPlaceholderStyle, width: '100%', maxWidth: 'none' }} />
                         <div style={{ ...reviewDecisionPlaceholderStyle, width: '100%', maxWidth: 'none' }} />
                         <div style={{ ...reviewDecisionPlaceholderStyle, width: '100%', maxWidth: 'none' }} />
                       </>
@@ -815,48 +809,83 @@ export const FlashcardsPage = () => {
             ) : (
               <div style={reviewEmptyStateStyle}>
                 <div style={{ fontSize: '1.3rem', fontWeight: 800 }}>
-                  {unknownOnly ? 'No new cards left in Unknown Only.' : 'Session complete.'}
+                  {newOnly ? 'No new cards left in New Only.' : 'Session complete.'}
                 </div>
                 <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                  {unknownOnly
-                    ? 'Toggle Unknown Only off to revisit the rest of the active session, or reset to start over.'
+                  {newOnly
+                    ? 'Turn New Only off to review the rest of this session, or reset to start over.'
                     : 'You have finished the current review queue. Reset the session or go back to the set overview.'}
                 </div>
               </div>
             )}
           </div>
         ) : isReviewLoading ? (
-          <div
-            style={{
-              display: 'grid',
-              placeItems: 'center',
-              height: '100%',
-              color: 'var(--text-secondary)',
-              gap: '12px',
-            }}
-          >
-            <Loader2 size={20} className="spin" />
-            <span>Preparing your review deck...</span>
+          <div style={reviewLoadingSkeletonCardStyle}>
+            <div style={{ ...skeletonLineStyle, width: '32%', height: '16px' }} />
+            <div style={{ ...skeletonLineStyle, width: '100%', height: '220px', borderRadius: '24px' }} />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', width: '100%' }}>
+              <div style={{ ...skeletonLineStyle, width: '100%', height: '48px', borderRadius: '18px' }} />
+              <div style={{ ...skeletonLineStyle, width: '100%', height: '48px', borderRadius: '18px' }} />
+              <div style={{ ...skeletonLineStyle, width: '100%', height: '48px', borderRadius: '18px' }} />
+            </div>
           </div>
         ) : isCompactLayout ? (
           <div style={{ display: 'grid', gap: '14px' }}>
-            <div style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>
-              Choose a flashcard set to browse or review it.
-            </div>
-            {flashcardSetList}
+            {isSetsLoading ? (
+              Array.from({ length: 3 }).map((_, index) => (
+                <div key={`mobile-flash-skeleton-${index}`} style={flashcardSkeletonStyle}>
+                  <div style={{ ...skeletonLineStyle, width: '62%' }} />
+                  <div style={{ ...skeletonLineStyle, width: '38%', height: '12px' }} />
+                </div>
+              ))
+            ) : sets.length > 0 ? (
+              flashcardSetList
+            ) : (
+              <div style={flashEmptyStateStyle}>
+                <div style={flashEmptyStateTitleStyle}>No flashcard sets yet</div>
+                <div style={flashEmptyStateTextStyle}>
+                  Generate your first set from a topic and Pluto will queue the cards here for daily review.
+                </div>
+                <button
+                  type="button"
+                  className="app-button"
+                  style={flashEmptyStateButtonStyle}
+                  onClick={() => setMobileView('create')}
+                >
+                  Create your first set
+                </button>
+              </div>
+            )}
           </div>
         ) : (
-          <div
-            style={{
-              display: 'grid',
-              placeItems: 'center',
-              height: '100%',
-              color: 'var(--text-secondary)',
-              textAlign: 'center',
-              padding: '24px',
-            }}
-          >
-            Choose a flashcard set to browse or review it.
+          <div style={flashLibraryEmptyPanelStyle}>
+            {isSetsLoading ? (
+              Array.from({ length: 3 }).map((_, index) => (
+                <div key={`desktop-flash-skeleton-${index}`} style={flashcardSkeletonStyle}>
+                  <div style={{ ...skeletonLineStyle, width: '62%' }} />
+                  <div style={{ ...skeletonLineStyle, width: '38%', height: '12px' }} />
+                </div>
+              ))
+            ) : sets.length > 0 ? (
+              <div style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>
+                Choose a flashcard set from the left panel to browse or review it.
+              </div>
+            ) : (
+              <div style={flashEmptyStateStyle}>
+                <div style={flashEmptyStateTitleStyle}>No flashcard sets yet</div>
+                <div style={flashEmptyStateTextStyle}>
+                  Create your first set to start building a spaced-repetition queue for this subject.
+                </div>
+                <button
+                  type="button"
+                  className="app-button"
+                  style={flashEmptyStateButtonStyle}
+                  onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                >
+                  Create your first set
+                </button>
+              </div>
+            )}
           </div>
         )}
         </div>
@@ -951,7 +980,9 @@ const mobileSwitcherStyle: CSSProperties = {
 const mobileSwitcherButtonStyle: CSSProperties = {
   minHeight: '40px',
   borderRadius: '999px',
-  border: '1px solid var(--glass-border)',
+  borderWidth: '1px',
+  borderStyle: 'solid',
+  borderColor: 'var(--glass-border)',
   background: 'var(--glass-bg-subtle)',
   color: 'var(--text-secondary)',
   fontWeight: 700,
@@ -983,7 +1014,9 @@ const reviewToolButtonStyle: CSSProperties = {
   minHeight: '50px',
   padding: '0 18px',
   borderRadius: '16px',
-  border: '1px solid color-mix(in srgb, var(--primary) 18%, var(--glass-border))',
+  borderWidth: '1px',
+  borderStyle: 'solid',
+  borderColor: 'color-mix(in srgb, var(--primary) 18%, var(--glass-border))',
   background: 'color-mix(in srgb, var(--glass-bg-strong) 92%, rgba(32, 48, 94, 0.04))',
   color: 'var(--text-primary)',
   fontWeight: 700,
@@ -1173,12 +1206,14 @@ const reviewDecisionPlaceholderStyle: CSSProperties = {
   visibility: 'hidden',
 };
 
-const reviewUnknownButtonStyle: CSSProperties = {
+const reviewHardButtonStyle: CSSProperties = {
   flex: '1 1 180px',
   maxWidth: '220px',
   minHeight: '54px',
   borderRadius: '18px',
-  border: '1px solid color-mix(in srgb, rgba(198, 69, 83, 0.35) 80%, var(--glass-border))',
+  borderWidth: '1px',
+  borderStyle: 'solid',
+  borderColor: 'color-mix(in srgb, rgba(198, 69, 83, 0.35) 80%, var(--glass-border))',
   background: 'color-mix(in srgb, rgba(198, 69, 83, 0.12) 75%, var(--glass-bg-strong))',
   color: 'color-mix(in srgb, #cf4860 86%, var(--text-primary))',
   fontWeight: 800,
@@ -1189,12 +1224,32 @@ const reviewUnknownButtonStyle: CSSProperties = {
   cursor: 'pointer',
 };
 
-const reviewKnownButtonStyle: CSSProperties = {
+const reviewGoodButtonStyle: CSSProperties = {
   flex: '1 1 180px',
   maxWidth: '220px',
   minHeight: '54px',
   borderRadius: '18px',
-  border: '1px solid color-mix(in srgb, rgba(58, 180, 123, 0.35) 82%, var(--glass-border))',
+  borderWidth: '1px',
+  borderStyle: 'solid',
+  borderColor: 'color-mix(in srgb, rgba(53, 144, 238, 0.38) 82%, var(--glass-border))',
+  background: 'color-mix(in srgb, rgba(53, 144, 238, 0.14) 76%, var(--glass-bg-strong))',
+  color: 'color-mix(in srgb, #2b86d9 86%, var(--text-primary))',
+  fontWeight: 800,
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  gap: '10px',
+  cursor: 'pointer',
+};
+
+const reviewEasyButtonStyle: CSSProperties = {
+  flex: '1 1 180px',
+  maxWidth: '220px',
+  minHeight: '54px',
+  borderRadius: '18px',
+  borderWidth: '1px',
+  borderStyle: 'solid',
+  borderColor: 'color-mix(in srgb, rgba(58, 180, 123, 0.35) 82%, var(--glass-border))',
   background: 'color-mix(in srgb, rgba(58, 180, 123, 0.14) 76%, var(--glass-bg-strong))',
   color: 'color-mix(in srgb, #2da871 86%, var(--text-primary))',
   fontWeight: 800,
@@ -1218,7 +1273,9 @@ const reviewNavButtonStyle: CSSProperties = {
   maxWidth: '170px',
   minHeight: '56px',
   borderRadius: '18px',
-  border: '1px solid color-mix(in srgb, var(--primary) 16%, var(--glass-border))',
+  borderWidth: '1px',
+  borderStyle: 'solid',
+  borderColor: 'color-mix(in srgb, var(--primary) 16%, var(--glass-border))',
   background: 'color-mix(in srgb, var(--glass-bg-strong) 92%, rgba(18, 30, 62, 0.04))',
   color: 'var(--text-primary)',
   fontWeight: 700,
@@ -1271,3 +1328,67 @@ const flashRetryButtonStyle: CSSProperties = {
   borderRadius: '14px',
   justifyContent: 'center',
 };
+
+const skeletonLineStyle: CSSProperties = {
+  height: '14px',
+  borderRadius: '999px',
+  background: 'linear-gradient(90deg, rgba(255,255,255,0.18), rgba(255,255,255,0.4), rgba(255,255,255,0.18))',
+};
+
+const flashcardSkeletonStyle: CSSProperties = {
+  display: 'grid',
+  gap: '10px',
+  borderRadius: '18px',
+  border: '1px solid var(--glass-border)',
+  background: 'var(--glass-bg-subtle)',
+  padding: '14px',
+};
+
+const flashEmptyStateStyle: CSSProperties = {
+  display: 'grid',
+  gap: '12px',
+  placeItems: 'start',
+  borderRadius: '20px',
+  border: '1px solid var(--glass-border)',
+  background: 'var(--glass-bg-subtle)',
+  padding: '18px',
+};
+
+const flashEmptyStateTitleStyle: CSSProperties = {
+  color: 'var(--text-primary)',
+  fontWeight: 800,
+  fontSize: '1rem',
+};
+
+const flashEmptyStateTextStyle: CSSProperties = {
+  color: 'var(--text-secondary)',
+  fontSize: '0.94rem',
+  lineHeight: 1.6,
+};
+
+const flashEmptyStateButtonStyle: CSSProperties = {
+  minHeight: '42px',
+  borderRadius: '14px',
+  justifyContent: 'center',
+};
+
+const flashLibraryEmptyPanelStyle: CSSProperties = {
+  display: 'grid',
+  gap: '14px',
+  placeItems: 'center',
+  alignContent: 'center',
+  minHeight: '100%',
+  color: 'var(--text-secondary)',
+  textAlign: 'center',
+  padding: '24px',
+};
+
+const reviewLoadingSkeletonCardStyle: CSSProperties = {
+  display: 'grid',
+  gap: '14px',
+  alignContent: 'center',
+  minHeight: '100%',
+};
+
+
+

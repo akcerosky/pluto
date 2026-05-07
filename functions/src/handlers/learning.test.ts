@@ -28,7 +28,7 @@ jest.mock('../services/firestoreRepo.js', () => ({
   reconcileUsageTokens,
 }));
 
-const buildFlashcardMeteringPayload = jest.fn(({ topic, subject, educationLevel }) => ({
+const buildFlashcardMeteringPayload = jest.fn(({ topic, educationLevel }) => ({
   reservedTokens: 6100,
   meteringContext: {
     prompt: `flashcards:${topic}`,
@@ -95,7 +95,7 @@ beforeEach(() => {
     premiumModeCount: 0,
     freePremiumModesRemainingToday: 0,
   });
-  buildFlashcardMeteringPayload.mockImplementation(({ topic, subject, educationLevel }) => ({
+  buildFlashcardMeteringPayload.mockImplementation(({ topic, educationLevel }) => ({
     reservedTokens: 6100,
     meteringContext: {
       prompt: `flashcards:${topic}`,

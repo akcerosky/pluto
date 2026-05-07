@@ -28,6 +28,7 @@ export interface ProviderResult {
   modelId: string;
   modelUsed: string;
   latencyMs: number;
+  providerStatus?: number;
 }
 
 export interface AttemptExecutionResult extends ProviderResult {

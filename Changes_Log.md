@@ -517,3 +517,20 @@
 - Refined `src/pages/QuestionPaperPage.tsx` so topic-based question paper generation now follows the same `New Papers` / `Previous Papers` behavior and layout logic as the PDF paper flow in both desktop and mobile views.
 - Fixed compact/mobile paper viewer overflow behavior in both `src/pages/QuestionPaperPage.tsx` and `src/pages/PdfQuestionPaperPage.tsx` so the paper background grows with the full question content instead of clipping early.
 - Reduced perceived startup latency by removing the blocking `/chat` hydration gate in `src/App.tsx`, adding a lightweight in-shell sync indicator in `src/components/Learning/LearningShell.tsx`, and allowing fresh chat creation to start after cloud hydration without waiting for subscription hydration in `src/context/AppContext.tsx`.
+
+## 2026-05-07
+
+### Learning Backend Observability and Validation
+
+- Added a Cloud Logging alert runbook in `functions/src/monitoring/novaLiteAlerts.ts` documenting the exact filters and metric guidance for Nova Lite success rate, fallback rate, p95 latency, 5xx rate, and token anomaly monitoring.
+- Extended AI observability in `functions/src/services/ai/orchestrator.ts`, `functions/src/services/ai/providers/novaLiteProvider.ts`, and related tests so Nova Lite success and fallback logs carry stricter usage, latency, and provider-status validation.
+- Added product-level learning events with `requestId` propagation across `functions/src/handlers/learning.ts`, `functions/src/services/learning/questionPapers.ts`, and `functions/src/services/learning/flashcards.ts` so paper generation, flashcard generation, and review-session outcomes are traceable end to end.
+- Tightened learning-data validation with Zod-backed schema checks in `functions/src/services/learning/questionPapers.ts` and `functions/src/services/learning/flashcards.ts` to catch malformed question-paper, flashcard, and review payloads before Firestore writes.
+
+### Learning Features UX and Retry Flow Fixes
+
+- Standardized learning error handling and recovery UI across `src/pages/QuestionPaperPage.tsx`, `src/pages/PdfQuestionPaperPage.tsx`, `src/pages/FlashcardsPage.tsx`, and `src/lib/learningUi.ts` with friendlier error messages, stronger empty states, loading skeletons, and clearer retry affordances.
+- Restored explicit `Hard`, `Good`, and `Easy` flashcard review controls in `src/pages/FlashcardsPage.tsx` and the matching SM-2 backend logic in `functions/src/services/learning/flashcards.ts`.
+- Fixed the PDF-to-question-paper retry crossover bug in `src/pages/QuestionPaperPage.tsx` and `src/pages/PdfQuestionPaperPage.tsx` so failed PDF papers no longer call `generateQuestionPaper`; they now route users back to the PDF upload flow instead of creating stray topic-paper retries.
+- Added explicit paper source labels in `src/pages/QuestionPaperPage.tsx` so question-paper cards and detail headers now show whether a paper came `From topic` or `From PDF`, making same-title collisions easier to distinguish.
+- Polished Flashcards and paper layout behavior across mobile and desktop by restoring the mobile Flashcards `New` / `Previous` flow, fixing desktop form alignment, and removing duplicate/ambiguous list content in the review panes.

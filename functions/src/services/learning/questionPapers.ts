@@ -1,5 +1,7 @@
+import { logger } from 'firebase-functions';
+import { z } from 'zod';
 import { adminDb } from '../../lib/firebaseAdmin.js';
-import { getEffectiveMaxOutputTokens, PLAN_DEFINITIONS, type SubscriptionPlan } from '../../config/plans.js';
+import { PLAN_DEFINITIONS, type SubscriptionPlan } from '../../config/plans.js';
 import { executeHybridAiRequest } from '../ai/orchestrator.js';
 import { estimateAiInputTokens } from '../tokenUsage.js';
 import { generateQuestionPaperPdfBase64 } from './pdfGenerator.js';
@@ -22,6 +24,55 @@ const MAX_PDF_SOURCE_TEXT_CHARS = 16000;
 const INFER_SUBJECT_TEXT_CHARS = 6000;
 const FORMAT_RESEARCH_TIMEOUT_MS = 60_000;
 const QUESTION_PAPER_GENERATION_TIMEOUT_MS = 90_000;
+
+const questionPaperFormatSectionSchema = z.object({
+  name: z.string().trim().min(1).max(160),
+  instructions: z.string().trim().min(1).max(2000),
+  questionType: z.string().trim().min(1).max(160),
+  questions: z.number().int().min(1),
+  marksPerQuestion: z.number().int().min(1),
+});
+
+const questionPaperQuestionSchema = z.object({
+  id: z.string().trim().min(1).max(200),
+  sectionName: z.string().trim().min(1).max(160),
+  questionNumber: z.number().int().min(1),
+  text: z.string().trim().min(1).max(6000),
+  type: z.enum(['mcq', 'short_answer', 'long_answer', 'fill_blank', 'assertion_reason']),
+  marks: z.number().int().min(1),
+  options: z.array(z.string().trim().min(1).max(1000)).max(8).optional(),
+  subParts: z.array(z.string().trim().min(1).max(2000)).max(8).optional(),
+});
+
+const questionPaperDocSchema = z.object({
+  id: z.string().trim().min(1).max(200),
+  title: z.string().trim().min(1).max(300),
+  subject: z.string().trim().min(1).max(120),
+  educationLevel: z.string().trim().min(1).max(80),
+  examBoard: z.string().trim().min(1).max(120),
+  topic: z.string().trim().min(1).max(200).optional(),
+  sourceType: z.enum(['topic', 'pdf']),
+  sourcePdfNames: z.array(z.string().trim().min(1).max(260)).max(8).optional(),
+  sourcePdfTextLength: z.number().int().min(0).optional(),
+  format: z.object({
+    totalMarks: z.number().int().min(1),
+    duration: z.string().trim().min(1).max(120),
+    sections: z.array(questionPaperFormatSectionSchema).min(1),
+  }),
+  questions: z.array(questionPaperQuestionSchema).min(1),
+  generatedAt: z.string().datetime(),
+  status: z.literal('ready'),
+  pdfUrl: z.string().trim().min(1).optional(),
+  webSearchSources: z.array(z.string().trim().min(1).max(500)).max(20).optional(),
+  failureMessage: z.string().trim().min(1).optional(),
+});
+
+const questionPaperFailureUpdateSchema = z.object({
+  status: z.literal('failed'),
+  failureMessage: z.string().trim().min(1).max(1000),
+});
+
+type PaperGenerationStep = 'format_research' | 'generation' | 'pdf';
 
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0;
@@ -518,12 +569,14 @@ export const researchQuestionPaperFormat = async ({
   examBoard,
   plan,
   uid,
+  requestId,
 }: {
   subject: string;
   educationLevel: string;
   examBoard: string;
   plan: SubscriptionPlan;
   uid: string;
+  requestId: string;
 }) => {
   const query = `${examBoard} ${educationLevel} ${subject} question paper format marking scheme`;
   let results: Awaited<ReturnType<typeof searchExamFormatSources>> = [];
@@ -548,6 +601,7 @@ export const researchQuestionPaperFormat = async ({
     objective: `Research ${examBoard} exam structure`,
     plan,
     uid,
+    requestId,
     history: [],
     summaryCandidates: [],
     attachments: [],
@@ -581,6 +635,7 @@ export const generateQuestionPaperForUser = async ({
   sourcePdfNames,
   sourcePdfTextLength,
   sourceContext,
+  requestId,
 }: {
   uid: string;
   subject: string;
@@ -592,9 +647,22 @@ export const generateQuestionPaperForUser = async ({
   sourcePdfNames?: string[];
   sourcePdfTextLength?: number;
   sourceContext?: string;
+  requestId: string;
 }) => {
   const paperRef = questionPaperCollection(uid).doc();
   const generatedAt = new Date().toISOString();
+  const startedAt = Date.now();
+  let failedStep: PaperGenerationStep = 'format_research';
+
+  logger.info('paper_generation_started', {
+    eventType: 'paper_generation_started',
+    requestId,
+    uid,
+    subject,
+    examBoard,
+    educationLevel,
+    sourceType,
+  });
 
   await paperRef.set({
     id: paperRef.id,
@@ -620,7 +688,9 @@ export const generateQuestionPaperForUser = async ({
       examBoard,
       plan,
       uid,
+      requestId,
     });
+    failedStep = 'generation';
 
     const response = await executeHybridAiRequest({
       prompt: buildQuestionPaperPrompt({
@@ -636,6 +706,7 @@ export const generateQuestionPaperForUser = async ({
       objective: `Generate ${examBoard} question paper`,
       plan,
       uid,
+      requestId,
       history: [],
       summaryCandidates: [],
       attachments: [],
@@ -662,7 +733,7 @@ export const generateQuestionPaperForUser = async ({
       questions: parsed.questions,
     });
 
-    const paper: QuestionPaperDoc = {
+    const paper = questionPaperDocSchema.parse({
       id: paperRef.id,
       title: normalized.title,
       subject,
@@ -677,16 +748,40 @@ export const generateQuestionPaperForUser = async ({
       ...(topic ? { topic } : {}),
       ...(sourcePdfNames?.length ? { sourcePdfNames } : {}),
       ...(typeof sourcePdfTextLength === 'number' ? { sourcePdfTextLength } : {}),
-    };
+    } satisfies QuestionPaperDoc);
 
     await paperRef.set(paper);
+    logger.info('paper_generation_completed', {
+      eventType: 'paper_generation_completed',
+      requestId,
+      uid,
+      subject,
+      examBoard,
+      educationLevel,
+      sourceType,
+      questionCount: paper.questions.length,
+      sectionCount: paper.format.sections.length,
+      latencyMs: Date.now() - startedAt,
+    });
     return { paper, usage: addUsages(research.usage, response.usage) };
   } catch (error) {
+    logger.warn('paper_generation_failed', {
+      eventType: 'paper_generation_failed',
+      requestId,
+      uid,
+      subject,
+      examBoard,
+      educationLevel,
+      sourceType,
+      step: failedStep,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      latencyMs: Date.now() - startedAt,
+    });
     await paperRef.set(
-      {
+      questionPaperFailureUpdateSchema.parse({
         status: 'failed',
         failureMessage: error instanceof Error ? error.message : String(error),
-      },
+      }),
       { merge: true }
     );
     throw error;
@@ -717,12 +812,36 @@ export const getQuestionPaper = async (uid: string, paperId: string) => {
   return snapshot.data() as QuestionPaperDoc;
 };
 
-export const generateQuestionPaperPdfForUser = async (uid: string, paperId: string) => {
+export const generateQuestionPaperPdfForUser = async ({
+  uid,
+  paperId,
+  requestId,
+}: {
+  uid: string;
+  paperId: string;
+  requestId: string;
+}) => {
   const paper = await getQuestionPaper(uid, paperId);
-  return {
-    base64Pdf: generateQuestionPaperPdfBase64(paper),
-    filename: `${paper.title.replace(/[^\w.-]+/g, '_')}.pdf`,
-  };
+  try {
+    return {
+      base64Pdf: generateQuestionPaperPdfBase64(paper),
+      filename: `${paper.title.replace(/[^\w.-]+/g, '_')}.pdf`,
+    };
+  } catch (error) {
+    logger.warn('paper_generation_failed', {
+      eventType: 'paper_generation_failed',
+      requestId,
+      uid,
+      subject: paper.subject,
+      examBoard: paper.examBoard,
+      educationLevel: paper.educationLevel,
+      sourceType: paper.sourceType,
+      step: 'pdf',
+      errorMessage: error instanceof Error ? error.message : String(error),
+      latencyMs: 0,
+    });
+    throw error;
+  }
 };
 
 export const extractPdfTextWithNovaLite = async ({
@@ -731,12 +850,14 @@ export const extractPdfTextWithNovaLite = async ({
   educationLevel,
   examBoard,
   pdfAttachments,
+  requestId,
 }: {
   uid: string;
   plan: SubscriptionPlan;
   educationLevel: string;
   examBoard: string;
   pdfAttachments: Array<{ name: string; mimeType: 'application/pdf'; sizeBytes: number; base64Data: string }>;
+  requestId: string;
 }) => {
   const response = await executeHybridAiRequest({
     prompt: `Extract all text content from these ${examBoard} ${educationLevel} documents. Preserve structure and do not summarize.`,
@@ -745,6 +866,7 @@ export const extractPdfTextWithNovaLite = async ({
     objective: 'Extract document text',
     plan,
     uid,
+    requestId,
     history: [],
     summaryCandidates: [],
     attachments: pdfAttachments,
@@ -759,11 +881,13 @@ export const inferSubjectFromText = async ({
   plan,
   educationLevel,
   extractedText,
+  requestId,
 }: {
   uid: string;
   plan: SubscriptionPlan;
   educationLevel: string;
   extractedText: string;
+  requestId: string;
 }) => {
   const response = await executeHybridAiRequest({
     prompt: `What subject is this document about? Return one short subject label only.\n\n${extractedText.slice(0, INFER_SUBJECT_TEXT_CHARS)}`,
@@ -772,6 +896,7 @@ export const inferSubjectFromText = async ({
     objective: 'Infer subject',
     plan,
     uid,
+    requestId,
     history: [],
     summaryCandidates: [],
     attachments: [],
@@ -789,12 +914,14 @@ export const summarizePdfSourceMaterial = async ({
   educationLevel,
   examBoard,
   extractedText,
+  requestId,
 }: {
   uid: string;
   plan: SubscriptionPlan;
   educationLevel: string;
   examBoard: string;
   extractedText: string;
+  requestId: string;
 }) => {
   const response = await executeHybridAiRequest({
     prompt: buildPdfSourceDigestPrompt({
@@ -807,6 +934,7 @@ export const summarizePdfSourceMaterial = async ({
     objective: 'Summarize PDF source coverage',
     plan,
     uid,
+    requestId,
     history: [],
     summaryCandidates: [],
     attachments: [],

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { Loader2, UploadCloud, X } from 'lucide-react';
 import { fileToBase64 } from '../lib/attachments';
+import { normalizeLearningErrorMessage } from '../lib/learningUi';
 import { generatePaperFromPdfs } from '../lib/plutoApi';
 import { QuestionPaperPage } from './QuestionPaperPage';
 
@@ -41,18 +42,10 @@ export const PdfQuestionPaperPage = () => {
   );
 
   const extractUploadErrorMessage = (error: unknown) => {
-    const raw =
-      typeof error === 'object' &&
-      error !== null &&
-      'message' in error &&
-      typeof (error as { message?: unknown }).message === 'string'
-        ? (error as { message: string }).message
-        : '';
-    const normalized = raw.replace(/\s+/g, ' ').trim();
-    if (!normalized || normalized === 'INTERNAL') {
-      return 'PDF generation failed before Pluto could finish building the paper. Please try again.';
-    }
-    return normalized;
+    return normalizeLearningErrorMessage({
+      error,
+      fallback: 'PDF generation failed before Pluto could finish building the paper. Please try again.',
+    });
   };
 
   const handleUpload = async (overrideRequest?: {
@@ -100,6 +93,15 @@ export const PdfQuestionPaperPage = () => {
     } finally {
       setIsUploading(false);
     }
+  };
+
+  const handleRequestNewGeneration = () => {
+    setMobileView('new');
+    setErrorMessage(null);
+    setStatusMessage(null);
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
   };
 
   return (
@@ -256,6 +258,7 @@ export const PdfQuestionPaperPage = () => {
           sourceType="pdf"
           refreshToken={refreshToken}
           mobilePreviousPapersResetToken={mobilePreviousPapersResetToken}
+          onRequestNewGeneration={handleRequestNewGeneration}
         />
       ) : null}
     </div>

@@ -2,6 +2,8 @@ import { env, requireEnv } from '../../../config/env.js';
 import { buildEstimatedUsage, normalizeTokenUsage } from '../../tokenUsage.js';
 import { buildContextSnapshotMessage, buildSystemInstruction, buildTurnSpecificInstruction, getHistoryText, } from '../prompting.js';
 const DEFAULT_NOVA_LITE_MODEL_ID = 'apac.amazon.nova-lite-v1:0';
+const NOVA_LITE_SUCCESS_STATUS = 200;
+const INVALID_OBSERVABILITY_PAYLOAD_CODE = 'INVALID_OBSERVABILITY_PAYLOAD';
 const getNovaApiKey = () => env.bedrockApiKey ||
     process.env.AWS_BEARER_TOKEN_BEDROCK ||
     process.env.AMAZON_BEDROCK_API_KEY ||
@@ -107,6 +109,51 @@ const extractUsage = (response) => {
         }
         : null;
 };
+const createObservabilityPayloadError = (message) => {
+    const error = new Error(message);
+    Object.assign(error, {
+        code: INVALID_OBSERVABILITY_PAYLOAD_CODE,
+        status: 500,
+    });
+    return error;
+};
+const isFiniteNumber = (value) => typeof value === 'number' && Number.isFinite(value);
+export function assertNovaLiteSuccessObservabilityPayload(payload) {
+    if (typeof payload.requestId !== 'string' || payload.requestId.trim().length === 0) {
+        throw createObservabilityPayloadError('Nova Lite success telemetry is missing requestId.');
+    }
+    if (!isFiniteNumber(payload.latencyMs) || payload.latencyMs < 0) {
+        throw createObservabilityPayloadError('Nova Lite success telemetry is missing a valid latencyMs.');
+    }
+    if (typeof payload.providerStatus !== 'number' || !Number.isInteger(payload.providerStatus) || payload.providerStatus <= 0) {
+        throw createObservabilityPayloadError('Nova Lite success telemetry is missing a valid providerStatus.');
+    }
+    if (!isFiniteNumber(payload.inputTokens) || payload.inputTokens < 0) {
+        throw createObservabilityPayloadError('Nova Lite success telemetry is missing a valid inputTokens value.');
+    }
+    if (!isFiniteNumber(payload.outputTokens) || payload.outputTokens < 0) {
+        throw createObservabilityPayloadError('Nova Lite success telemetry is missing a valid outputTokens value.');
+    }
+    if (!isFiniteNumber(payload.totalTokens) || payload.totalTokens < 0) {
+        throw createObservabilityPayloadError('Nova Lite success telemetry is missing a valid totalTokens value.');
+    }
+    if (payload.usageSource !== 'provider' && payload.usageSource !== 'estimated') {
+        throw createObservabilityPayloadError('Nova Lite success telemetry is missing a valid usageSource value.');
+    }
+}
+export const buildNovaLiteSuccessObservabilityPayload = ({ request, usage, latencyMs, }) => {
+    const payload = {
+        requestId: request.requestId,
+        latencyMs,
+        providerStatus: NOVA_LITE_SUCCESS_STATUS,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        totalTokens: usage.totalTokens,
+        usageSource: usage.usageSource,
+    };
+    assertNovaLiteSuccessObservabilityPayload(payload);
+    return payload;
+};
 const callNovaLiteConverse = async ({ request, systemInstruction, contextSummary, maxOutputTokens, }) => {
     const modelId = getNovaLiteModelId();
     const response = await fetch(getNovaEndpoint(modelId), {
@@ -189,6 +236,12 @@ export const generateNovaLiteResponse = async (request) => {
         estimatedInputTokens: estimatedUsage.inputTokens,
         maxOutputTokens: request.maxOutputTokens,
     });
+    const latencyMs = Date.now() - startedAt;
+    buildNovaLiteSuccessObservabilityPayload({
+        request,
+        usage: normalizedUsage.usage,
+        latencyMs,
+    });
     return {
         text,
         contextSummary: request.contextSummary,
@@ -197,7 +250,8 @@ export const generateNovaLiteResponse = async (request) => {
         provider: 'nova-lite',
         modelId: response.modelId,
         modelUsed: 'nova-lite',
-        latencyMs: Date.now() - startedAt,
+        latencyMs,
+        providerStatus: NOVA_LITE_SUCCESS_STATUS,
     };
 };
 export const novaLiteProvider = {

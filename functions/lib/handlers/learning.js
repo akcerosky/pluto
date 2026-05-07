@@ -6,6 +6,7 @@ import { getMeSnapshot } from '../services/firestoreRepo.js';
 import { reconcileUsageTokens, releaseReservedUsageTokens, reserveUsageTokens, } from '../services/firestoreRepo.js';
 import { buildFlashcardMeteringPayload, deleteFlashcardSetForUser, generateFlashcardSetForUser, getDueCardsForUser, getFlashcardCardsForSet, getFlashcardSetsForUser, submitCardReviewForUser, } from '../services/learning/flashcards.js';
 import { buildPdfQuestionPaperMeteringPlan, buildQuestionPaperMeteringPlan, buildPdfTopicFromDigest, buildSourceContextFromDigest, buildSubjectFromDigest, deleteQuestionPaperForUser, extractPdfTextWithNovaLite, generateQuestionPaperForUser, generateQuestionPaperPdfForUser, inferSubjectFromText, listQuestionPapers, summarizePdfSourceMaterial, } from '../services/learning/questionPapers.js';
+const optionalRequestIdSchema = z.string().trim().min(8).max(200).optional();
 const optionalTrimmedString = (maxLength) => z.preprocess((value) => {
     if (value === null || value === undefined) {
         return undefined;
@@ -19,6 +20,7 @@ const requireLearningPlan = async (uid, request) => {
     }
     return snapshot.subscription.plan;
 };
+const resolveLearningRequestId = (payload) => payload.requestId && payload.requestId.trim().length > 0 ? payload.requestId : crypto.randomUUID();
 const sumUsages = (...usages) => usages.reduce((acc, usage) => ({
     inputTokens: acc.inputTokens + (usage?.inputTokens ?? 0),
     outputTokens: acc.outputTokens + (usage?.outputTokens ?? 0),
@@ -69,20 +71,24 @@ const generateQuestionPaperSchema = z.object({
     educationLevel: z.string().trim().min(1).max(80),
     examBoard: z.string().trim().min(1).max(120),
     topic: optionalTrimmedString(200),
+    requestId: optionalRequestIdSchema,
 });
 const paperIdSchema = z.object({
     paperId: z.string().trim().min(1).max(200),
+    requestId: optionalRequestIdSchema,
 });
 const generateFlashcardSetSchema = z.object({
     topic: z.string().trim().min(1).max(200),
     subject: optionalTrimmedString(120),
     educationLevel: optionalTrimmedString(80),
+    requestId: optionalRequestIdSchema,
 });
 const submitCardReviewSchema = z.object({
     setId: z.string().trim().min(1).max(200),
     cardId: z.string().trim().min(1).max(200),
     rating: z.enum(['easy', 'good', 'hard']),
     sessionId: z.string().trim().min(1).max(200),
+    requestId: optionalRequestIdSchema,
 });
 const pdfAttachmentSchema = z.object({
     name: z.string().trim().min(1).max(260),
@@ -95,6 +101,7 @@ const generatePaperFromPdfsSchema = z.object({
     educationLevel: z.string().trim().min(1).max(80),
     examBoard: z.string().trim().min(1).max(120),
     subject: optionalTrimmedString(120),
+    requestId: optionalRequestIdSchema,
 });
 const getDueCardsSchema = z.object({
     setId: z.string().trim().min(1).max(200).optional(),
@@ -106,6 +113,7 @@ export const generateQuestionPaperHandler = async (request) => {
     const uid = assertAuth(request);
     const plan = await requireLearningPlan(uid, request);
     const payload = generateQuestionPaperSchema.parse(request.data ?? {});
+    const requestId = resolveLearningRequestId(payload);
     const metering = buildQuestionPaperMeteringPlan({ plan });
     return runMeteredLearningGeneration({
         uid,
@@ -120,6 +128,7 @@ export const generateQuestionPaperHandler = async (request) => {
                 topic: payload.topic,
                 plan,
                 sourceType: 'topic',
+                requestId,
             });
             return {
                 result: { paperId: generated.paper.id },
@@ -143,12 +152,17 @@ export const generateQuestionPaperPdfHandler = async (request) => {
     const uid = assertAuth(request);
     await requireLearningPlan(uid, request);
     const payload = paperIdSchema.parse(request.data ?? {});
-    return generateQuestionPaperPdfForUser(uid, payload.paperId);
+    return generateQuestionPaperPdfForUser({
+        uid,
+        paperId: payload.paperId,
+        requestId: resolveLearningRequestId(payload),
+    });
 };
 export const generateFlashcardSetHandler = async (request) => {
     const uid = assertAuth(request);
     const plan = await requireLearningPlan(uid, request);
     const payload = generateFlashcardSetSchema.parse(request.data ?? {});
+    const requestId = resolveLearningRequestId(payload);
     const metering = buildFlashcardMeteringPayload({
         topic: payload.topic,
         subject: payload.subject,
@@ -166,6 +180,7 @@ export const generateFlashcardSetHandler = async (request) => {
                 subject: payload.subject,
                 educationLevel: payload.educationLevel,
                 plan,
+                requestId,
             });
             return {
                 result: { setId: generated.setId },
@@ -189,7 +204,11 @@ export const submitCardReviewHandler = async (request) => {
     const uid = assertAuth(request);
     await requireLearningPlan(uid, request);
     const payload = submitCardReviewSchema.parse(request.data ?? {});
-    return submitCardReviewForUser({ uid, ...payload });
+    return submitCardReviewForUser({
+        uid,
+        ...payload,
+        requestId: resolveLearningRequestId(payload),
+    });
 };
 export const deleteFlashcardSetHandler = async (request) => {
     const uid = assertAuth(request);
@@ -207,6 +226,7 @@ export const generatePaperFromPdfsHandler = async (request) => {
     const uid = assertAuth(request);
     const plan = await requireLearningPlan(uid, request);
     const payload = generatePaperFromPdfsSchema.parse(request.data ?? {});
+    const requestId = resolveLearningRequestId(payload);
     const inlineBytes = Buffer.byteLength(JSON.stringify(payload.pdfAttachments), 'utf8');
     if (inlineBytes > INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES) {
         throw new HttpsError('invalid-argument', 'Attachments are too large to process together. Keep total size under 8 MB.');
@@ -228,6 +248,7 @@ export const generatePaperFromPdfsHandler = async (request) => {
                 educationLevel: payload.educationLevel,
                 examBoard: payload.examBoard,
                 pdfAttachments: payload.pdfAttachments,
+                requestId,
             });
             const sourceDigestResult = await summarizePdfSourceMaterial({
                 uid,
@@ -235,6 +256,7 @@ export const generatePaperFromPdfsHandler = async (request) => {
                 educationLevel: payload.educationLevel,
                 examBoard: payload.examBoard,
                 extractedText: extracted.text,
+                requestId,
             });
             const inferredSubjectResult = payload.subject || buildSubjectFromDigest(sourceDigestResult.digest)
                 ? null
@@ -243,6 +265,7 @@ export const generatePaperFromPdfsHandler = async (request) => {
                     plan,
                     educationLevel: payload.educationLevel,
                     extractedText: extracted.text,
+                    requestId,
                 });
             const subject = payload.subject ||
                 buildSubjectFromDigest(sourceDigestResult.digest) ||
@@ -259,6 +282,7 @@ export const generatePaperFromPdfsHandler = async (request) => {
                 sourcePdfTextLength: extracted.text.length,
                 topic: buildPdfTopicFromDigest(sourceDigestResult.digest),
                 sourceContext: buildSourceContextFromDigest(sourceDigestResult.digest, extracted.text),
+                requestId,
             });
             return {
                 result: { paperId: generated.paper.id },

@@ -33,6 +33,8 @@ import {
 } from '../services/learning/questionPapers.js';
 import type { TokenUsage } from '../types/index.js';
 
+const optionalRequestIdSchema = z.string().trim().min(8).max(200).optional();
+
 const optionalTrimmedString = (maxLength: number) =>
   z.preprocess(
     (value) => {
@@ -51,6 +53,9 @@ const requireLearningPlan = async (uid: string, request: CallableRequest<unknown
   }
   return snapshot.subscription.plan;
 };
+
+const resolveLearningRequestId = (payload: { requestId?: string }) =>
+  payload.requestId && payload.requestId.trim().length > 0 ? payload.requestId : crypto.randomUUID();
 
 const sumUsages = (...usages: Array<TokenUsage | null | undefined>): TokenUsage =>
   usages.reduce<TokenUsage>(
@@ -119,16 +124,19 @@ const generateQuestionPaperSchema = z.object({
   educationLevel: z.string().trim().min(1).max(80),
   examBoard: z.string().trim().min(1).max(120),
   topic: optionalTrimmedString(200),
+  requestId: optionalRequestIdSchema,
 });
 
 const paperIdSchema = z.object({
   paperId: z.string().trim().min(1).max(200),
+  requestId: optionalRequestIdSchema,
 });
 
 const generateFlashcardSetSchema = z.object({
   topic: z.string().trim().min(1).max(200),
   subject: optionalTrimmedString(120),
   educationLevel: optionalTrimmedString(80),
+  requestId: optionalRequestIdSchema,
 });
 
 const submitCardReviewSchema = z.object({
@@ -136,6 +144,7 @@ const submitCardReviewSchema = z.object({
   cardId: z.string().trim().min(1).max(200),
   rating: z.enum(['easy', 'good', 'hard']),
   sessionId: z.string().trim().min(1).max(200),
+  requestId: optionalRequestIdSchema,
 });
 
 const pdfAttachmentSchema = z.object({
@@ -150,6 +159,7 @@ const generatePaperFromPdfsSchema = z.object({
   educationLevel: z.string().trim().min(1).max(80),
   examBoard: z.string().trim().min(1).max(120),
   subject: optionalTrimmedString(120),
+  requestId: optionalRequestIdSchema,
 });
 
 const getDueCardsSchema = z.object({
@@ -164,6 +174,7 @@ export const generateQuestionPaperHandler = async (request: CallableRequest<unkn
   const uid = assertAuth(request);
   const plan = await requireLearningPlan(uid, request);
   const payload = generateQuestionPaperSchema.parse(request.data ?? {});
+  const requestId = resolveLearningRequestId(payload);
   const metering = buildQuestionPaperMeteringPlan({ plan });
   return runMeteredLearningGeneration({
     uid,
@@ -178,6 +189,7 @@ export const generateQuestionPaperHandler = async (request: CallableRequest<unkn
         topic: payload.topic,
         plan,
         sourceType: 'topic',
+        requestId,
       });
       return {
         result: { paperId: generated.paper.id },
@@ -204,13 +216,18 @@ export const generateQuestionPaperPdfHandler = async (request: CallableRequest<u
   const uid = assertAuth(request);
   await requireLearningPlan(uid, request);
   const payload = paperIdSchema.parse(request.data ?? {});
-  return generateQuestionPaperPdfForUser(uid, payload.paperId);
+  return generateQuestionPaperPdfForUser({
+    uid,
+    paperId: payload.paperId,
+    requestId: resolveLearningRequestId(payload),
+  });
 };
 
 export const generateFlashcardSetHandler = async (request: CallableRequest<unknown>) => {
   const uid = assertAuth(request);
   const plan = await requireLearningPlan(uid, request);
   const payload = generateFlashcardSetSchema.parse(request.data ?? {});
+  const requestId = resolveLearningRequestId(payload);
   const metering = buildFlashcardMeteringPayload({
     topic: payload.topic,
     subject: payload.subject,
@@ -228,6 +245,7 @@ export const generateFlashcardSetHandler = async (request: CallableRequest<unkno
         subject: payload.subject,
         educationLevel: payload.educationLevel,
         plan,
+        requestId,
       });
       return {
         result: { setId: generated.setId },
@@ -254,7 +272,11 @@ export const submitCardReviewHandler = async (request: CallableRequest<unknown>)
   const uid = assertAuth(request);
   await requireLearningPlan(uid, request);
   const payload = submitCardReviewSchema.parse(request.data ?? {});
-  return submitCardReviewForUser({ uid, ...payload });
+  return submitCardReviewForUser({
+    uid,
+    ...payload,
+    requestId: resolveLearningRequestId(payload),
+  });
 };
 
 export const deleteFlashcardSetHandler = async (request: CallableRequest<unknown>) => {
@@ -275,6 +297,7 @@ export const generatePaperFromPdfsHandler = async (request: CallableRequest<unkn
   const uid = assertAuth(request);
   const plan = await requireLearningPlan(uid, request);
   const payload = generatePaperFromPdfsSchema.parse(request.data ?? {});
+  const requestId = resolveLearningRequestId(payload);
   const inlineBytes = Buffer.byteLength(JSON.stringify(payload.pdfAttachments), 'utf8');
   if (inlineBytes > INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES) {
     throw new HttpsError('invalid-argument', 'Attachments are too large to process together. Keep total size under 8 MB.');
@@ -296,6 +319,7 @@ export const generatePaperFromPdfsHandler = async (request: CallableRequest<unkn
         educationLevel: payload.educationLevel,
         examBoard: payload.examBoard,
         pdfAttachments: payload.pdfAttachments,
+        requestId,
       });
       const sourceDigestResult = await summarizePdfSourceMaterial({
         uid,
@@ -303,6 +327,7 @@ export const generatePaperFromPdfsHandler = async (request: CallableRequest<unkn
         educationLevel: payload.educationLevel,
         examBoard: payload.examBoard,
         extractedText: extracted.text,
+        requestId,
       });
       const inferredSubjectResult =
         payload.subject || buildSubjectFromDigest(sourceDigestResult.digest)
@@ -312,6 +337,7 @@ export const generatePaperFromPdfsHandler = async (request: CallableRequest<unkn
               plan,
               educationLevel: payload.educationLevel,
               extractedText: extracted.text,
+              requestId,
             });
 
       const subject =
@@ -331,6 +357,7 @@ export const generatePaperFromPdfsHandler = async (request: CallableRequest<unkn
         sourcePdfTextLength: extracted.text.length,
         topic: buildPdfTopicFromDigest(sourceDigestResult.digest),
         sourceContext: buildSourceContextFromDigest(sourceDigestResult.digest, extracted.text),
+        requestId,
       });
 
       return {

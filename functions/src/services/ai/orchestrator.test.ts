@@ -83,6 +83,7 @@ const successResult = (provider: 'gemini' | 'nova-micro', modelId: string, model
 const successResultWithLite = (provider: 'gemini' | 'nova-micro' | 'nova-lite', modelId: string, modelUsed: string) => ({
   ...successResult(provider === 'nova-lite' ? 'gemini' : provider as 'gemini' | 'nova-micro', modelId, modelUsed),
   provider,
+  ...(provider === 'nova-lite' ? { providerStatus: 200 } : {}),
 });
 
 beforeEach(() => {
@@ -161,6 +162,37 @@ test('attachment request uses nova lite as primary', async () => {
   expect(result.finalProvider).toBe('nova-lite');
   expect(result.fallbackTriggered).toBe(false);
   expect(result.modelUsed).toBe('nova-lite');
+  expect(loggerInfo).toHaveBeenCalledWith(
+    'nova_lite_attempt_started',
+    expect.objectContaining({
+      eventType: 'nova_lite_attempt_started',
+      requestId: baseRequest.requestId,
+      attemptNumber: 1,
+      provider: 'nova-lite',
+      modelId: 'apac.amazon.nova-lite-v1:0',
+      modelUsed: 'nova-lite',
+      fallbackTriggered: false,
+    })
+  );
+  expect(loggerInfo).toHaveBeenCalledWith(
+    'nova_lite_success',
+    expect.objectContaining({
+      eventType: 'nova_lite_success',
+      requestId: baseRequest.requestId,
+      attemptNumber: 1,
+      provider: 'nova-lite',
+      modelId: 'apac.amazon.nova-lite-v1:0',
+      modelUsed: 'nova-lite',
+      fallbackTriggered: false,
+      latencyMs: 25,
+      inputTokens: 10,
+      outputTokens: 5,
+      totalTokens: 15,
+      usageSource: 'provider',
+      usageAnomaly: null,
+      providerStatus: 200,
+    })
+  );
 });
 
 test('non-retryable nova failure does not exceed retry cap before gemini fallback', async () => {
@@ -265,6 +297,79 @@ test('attachment request falls back from nova lite to gemini after retryable fai
   expect(result.primaryProvider).toBe('nova-lite');
   expect(result.finalProvider).toBe('gemini');
   expect(result.fallbackTriggered).toBe(true);
+  expect(loggerInfo).toHaveBeenCalledWith(
+    'nova_lite_failed',
+    expect.objectContaining({
+      eventType: 'nova_lite_failed',
+      requestId: baseRequest.requestId,
+      attemptNumber: 1,
+      provider: 'nova-lite',
+      modelId: 'apac.amazon.nova-lite-v1:0',
+      modelUsed: 'nova-lite',
+      fallbackTriggered: false,
+      retryEligible: true,
+      providerStatus: 503,
+      errorMessage: 'temporary outage',
+    })
+  );
+  expect(loggerWarn).toHaveBeenCalledWith(
+    'gemini_fallback_triggered_from_nova_lite',
+    expect.objectContaining({
+      eventType: 'gemini_fallback_triggered_from_nova_lite',
+      requestId: baseRequest.requestId,
+      primaryProvider: 'nova-lite',
+      finalProvider: 'gemini',
+      fallbackTriggered: true,
+      retryCount: NOVA_MAX_ATTEMPTS,
+      errorMessage: 'temporary outage',
+    })
+  );
+});
+
+test('nova lite observability preserves estimated token metadata when provider usage is unavailable', async () => {
+  novaLiteExecute.mockResolvedValueOnce({
+    text: 'Answer',
+    contextSummary: undefined,
+    usage: {
+      inputTokens: 21,
+      outputTokens: 13,
+      totalTokens: 34,
+      usageSource: 'estimated' as const,
+    },
+    usageAnomaly: 'provider_usage_missing',
+    provider: 'nova-lite',
+    modelId: 'apac.amazon.nova-lite-v1:0',
+    modelUsed: 'nova-lite',
+    latencyMs: 77,
+    providerStatus: 200,
+  });
+
+  await executeHybridAiRequest({
+    ...baseRequest,
+    attachments: [
+      {
+        name: 'worksheet.pdf',
+        mimeType: 'application/pdf',
+        sizeBytes: 100,
+        base64Data: 'QQ==',
+      },
+    ],
+  });
+
+  expect(loggerInfo).toHaveBeenCalledWith(
+    'nova_lite_success',
+    expect.objectContaining({
+      eventType: 'nova_lite_success',
+      requestId: baseRequest.requestId,
+      latencyMs: 77,
+      inputTokens: 21,
+      outputTokens: 13,
+      totalTokens: 34,
+      usageSource: 'estimated',
+      usageAnomaly: 'provider_usage_missing',
+      providerStatus: 200,
+    })
+  );
 });
 
 test('per-request timeout override allows longer attachment attempts', async () => {

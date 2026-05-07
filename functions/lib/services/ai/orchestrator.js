@@ -58,6 +58,17 @@ const logAttemptStarted = ({ requestId, provider, modelId, modelUsed, attemptNum
         fallbackTriggered,
     });
 };
+const logNovaLiteAttemptStarted = ({ requestId, modelId, modelUsed, attemptNumber, fallbackTriggered, }) => {
+    logger.info('nova_lite_attempt_started', {
+        eventType: 'nova_lite_attempt_started',
+        requestId: requestId ?? null,
+        attemptNumber,
+        provider: 'nova-lite',
+        modelId,
+        modelUsed: modelUsed ?? null,
+        fallbackTriggered,
+    });
+};
 const logAttemptFinished = ({ requestId, provider, modelId, modelUsed, attemptNumber, outcome, retryEligible, fallbackTriggered, latencyMs, usage, errorMessage, providerStatus, }) => {
     logger.info('ai_attempt_finished', {
         eventType: 'ai_attempt_finished',
@@ -77,9 +88,38 @@ const logAttemptFinished = ({ requestId, provider, modelId, modelUsed, attemptNu
         errorMessage: errorMessage ?? null,
     });
 };
+const logNovaLiteAttemptFinished = ({ requestId, modelId, modelUsed, attemptNumber, outcome, retryEligible, fallbackTriggered, latencyMs, usage, usageAnomaly, errorMessage, providerStatus, }) => {
+    logger.info(outcome === 'success' ? 'nova_lite_success' : 'nova_lite_failed', {
+        eventType: outcome === 'success' ? 'nova_lite_success' : 'nova_lite_failed',
+        requestId: requestId ?? null,
+        attemptNumber,
+        provider: 'nova-lite',
+        modelId,
+        modelUsed: modelUsed ?? null,
+        retryEligible,
+        fallbackTriggered,
+        latencyMs,
+        inputTokens: usage?.inputTokens ?? null,
+        outputTokens: usage?.outputTokens ?? null,
+        totalTokens: usage?.totalTokens ?? null,
+        usageSource: usage?.usageSource ?? null,
+        usageAnomaly: usageAnomaly ?? null,
+        providerStatus: providerStatus ?? null,
+        errorMessage: errorMessage ?? null,
+    });
+};
 const getProviderStatus = (error) => typeof error === 'object' && error !== null && typeof error.status === 'number'
     ? Number(error.status)
     : null;
+const getErrorMessage = (error) => {
+    if (error instanceof Error) {
+        return error.message;
+    }
+    if (typeof error === 'object' && error !== null && typeof error.message === 'string') {
+        return error.message;
+    }
+    return String(error);
+};
 const getErrorModelMetadata = (error) => {
     if (!(typeof error === 'object' && error !== null)) {
         return {
@@ -93,7 +133,7 @@ const getErrorModelMetadata = (error) => {
         modelUsed: typeof record.modelUsed === 'string' ? record.modelUsed : null,
     };
 };
-const executeAttempt = async ({ provider, request, attemptNumber, primaryProvider, fallbackTriggered, totalStartedAt, }) => {
+const executeAttempt = async ({ provider, request, attemptNumber, fallbackTriggered, totalStartedAt, }) => {
     logAttemptStarted({
         requestId: request.requestId,
         provider: provider.provider,
@@ -102,6 +142,15 @@ const executeAttempt = async ({ provider, request, attemptNumber, primaryProvide
         attemptNumber,
         fallbackTriggered,
     });
+    if (provider.provider === 'nova-lite') {
+        logNovaLiteAttemptStarted({
+            requestId: request.requestId,
+            modelId: provider.configuredModelId,
+            modelUsed: provider.configuredModelUsed,
+            attemptNumber,
+            fallbackTriggered,
+        });
+    }
     const startedAt = Date.now();
     try {
         const result = await withTimeout(provider.execute(request), getAttemptTimeoutMs({
@@ -121,6 +170,21 @@ const executeAttempt = async ({ provider, request, attemptNumber, primaryProvide
             latencyMs: result.latencyMs,
             usage: result.usage,
         });
+        if (result.provider === 'nova-lite') {
+            logNovaLiteAttemptFinished({
+                requestId: request.requestId,
+                modelId: result.modelId,
+                modelUsed: result.modelUsed,
+                attemptNumber,
+                outcome: 'success',
+                retryEligible: false,
+                fallbackTriggered,
+                latencyMs: result.latencyMs,
+                usage: result.usage,
+                usageAnomaly: result.usageAnomaly,
+                providerStatus: result.providerStatus,
+            });
+        }
         return {
             ...result,
             attemptNumber,
@@ -141,8 +205,24 @@ const executeAttempt = async ({ provider, request, attemptNumber, primaryProvide
             latencyMs: Date.now() - startedAt,
             usage: null,
             providerStatus: getProviderStatus(error),
-            errorMessage: error instanceof Error ? error.message : String(error),
+            errorMessage: getErrorMessage(error),
         });
+        if (provider.provider === 'nova-lite') {
+            logNovaLiteAttemptFinished({
+                requestId: request.requestId,
+                modelId: errorModelMetadata.modelId ?? provider.configuredModelId,
+                modelUsed: errorModelMetadata.modelUsed ?? provider.configuredModelUsed,
+                attemptNumber,
+                outcome: 'failure',
+                retryEligible: isRetryableFailure(error),
+                fallbackTriggered,
+                latencyMs: Date.now() - startedAt,
+                usage: null,
+                usageAnomaly: null,
+                providerStatus: getProviderStatus(error),
+                errorMessage: getErrorMessage(error),
+            });
+        }
         if (typeof error === 'object' && error !== null) {
             Object.assign(error, {
                 provider: provider.provider,
@@ -178,7 +258,6 @@ export const executeHybridAiRequest = async (request) => {
                     provider: primaryExecutor,
                     request,
                     attemptNumber: attempt,
-                    primaryProvider,
                     fallbackTriggered: false,
                     totalStartedAt,
                 });
@@ -223,19 +302,21 @@ export const executeHybridAiRequest = async (request) => {
         fallbackTriggered = true;
         finalProvider = 'gemini';
         logger.warn(primaryProvider === 'nova-lite' ? 'gemini_fallback_triggered_from_nova_lite' : 'ai_fallback_triggered', {
-            eventType: 'ai_fallback_triggered',
+            eventType: primaryProvider === 'nova-lite'
+                ? 'gemini_fallback_triggered_from_nova_lite'
+                : 'ai_fallback_triggered',
             requestId: request.requestId ?? null,
             primaryProvider,
             finalProvider,
             fallbackTriggered,
             retryCount: NOVA_MAX_ATTEMPTS,
-            errorMessage: lastError instanceof Error ? lastError.message : String(lastError),
+            totalLatencyMs: Date.now() - totalStartedAt,
+            errorMessage: getErrorMessage(lastError),
         });
         finalResult = await executeAttempt({
             provider: geminiProvider,
             request,
             attemptNumber: NOVA_MAX_ATTEMPTS + 1,
-            primaryProvider,
             fallbackTriggered: true,
             totalStartedAt,
         });
@@ -246,7 +327,6 @@ export const executeHybridAiRequest = async (request) => {
             provider: geminiProvider,
             request,
             attemptNumber: 1,
-            primaryProvider,
             fallbackTriggered: false,
             totalStartedAt,
         });

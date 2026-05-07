@@ -137,6 +137,7 @@ describe('normalizePdfSourceDigest', () => {
       topic: 'Force',
       plan: 'Plus',
       sourceType: 'topic',
+      requestId: 'req-question-paper-test',
     });
 
     expect(executeHybridAiRequest).toHaveBeenNthCalledWith(

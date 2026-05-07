@@ -6,6 +6,7 @@ import {
   generateQuestionPaperPdf,
   getQuestionPapers,
 } from '../lib/plutoApi';
+import { normalizeLearningErrorMessage } from '../lib/learningUi';
 import type { QuestionPaperDoc } from '../types';
 
 const downloadBase64File = (base64Data: string, filename: string, mimeType: string) => {
@@ -79,28 +80,26 @@ const getDisplayTitle = (paper: QuestionPaperDoc) => {
   return cleanedTitle || `${paper.educationLevel} ${paper.examBoard} ${inferDisplaySubject(paper)}`;
 };
 
+const getDisplaySourceLabel = (paper: QuestionPaperDoc) =>
+  inferPaperSourceType(paper) === 'pdf' ? 'From PDF' : 'From topic';
+
 const getDisplayFailureMessage = (paper: QuestionPaperDoc) => {
-  const message = stripMarkdownNoise(paper.failureMessage || '');
-  if (!message) {
-    return 'This paper could not be generated. Please delete it and try again.';
-  }
-  if (/Cannot use "undefined" as a Firestore value/i.test(message)) {
-    return 'This saved attempt failed before Pluto could finish building the paper. Please delete it and generate it again.';
-  }
-  if (/Question paper generation returned invalid JSON/i.test(message)) {
-    return 'Pluto could not structure this paper correctly on that attempt. Please generate it again.';
-  }
-  return message;
+  return normalizeLearningErrorMessage({
+    error: stripMarkdownNoise(paper.failureMessage || ''),
+    fallback: 'This paper could not be generated. Please delete it and try again.',
+  });
 };
 
 export const QuestionPaperPage = ({
   sourceType = 'topic',
   refreshToken = 0,
   mobilePreviousPapersResetToken = 0,
+  onRequestNewGeneration,
 }: {
   sourceType?: 'topic' | 'pdf';
   refreshToken?: number;
   mobilePreviousPapersResetToken?: number;
+  onRequestNewGeneration?: () => void;
 }) => {
   const isMountedRef = useRef(true);
   const [subject, setSubject] = useState('');
@@ -110,6 +109,7 @@ export const QuestionPaperPage = ({
   const [papers, setPapers] = useState<QuestionPaperDoc[]>([]);
   const [activePaperId, setActivePaperId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isListLoading, setIsListLoading] = useState(true);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [generationErrorMessage, setGenerationErrorMessage] = useState<string | null>(null);
   const [lastGenerationPayload, setLastGenerationPayload] = useState<{
@@ -143,12 +143,21 @@ export const QuestionPaperPage = ({
   }, []);
 
   const loadPapers = useCallback(async () => {
-    const response = await getQuestionPapers();
-    const filteredPapers = response.papers.filter((paper) => inferPaperSourceType(paper) === sourceType);
     if (isMountedRef.current) {
-      setPapers(filteredPapers);
+      setIsListLoading(true);
     }
-    return filteredPapers;
+    try {
+      const response = await getQuestionPapers();
+      const filteredPapers = response.papers.filter((paper) => inferPaperSourceType(paper) === sourceType);
+      if (isMountedRef.current) {
+        setPapers(filteredPapers);
+      }
+      return filteredPapers;
+    } finally {
+      if (isMountedRef.current) {
+        setIsListLoading(false);
+      }
+    }
   }, [sourceType]);
 
   useEffect(() => {
@@ -179,6 +188,8 @@ export const QuestionPaperPage = ({
     isCompactLayout && effectiveMobileView === 'previous' && activePaperId === null;
   const showCompactPreviousPaper =
     isCompactLayout && effectiveMobileView === 'previous' && activePaperId !== null;
+  const shouldShowEmbeddedMobileSwitcher = false;
+  const shouldShowInlineComposer = false;
 
   useEffect(() => {
     if (!isCompactLayout) return;
@@ -197,17 +208,34 @@ export const QuestionPaperPage = ({
   }, [effectiveMobileView, isCompactLayout, showCompactPreviousList, showCompactPreviousPaper]);
 
   const extractGenerationErrorMessage = (error: unknown) => {
-    const raw =
-      error instanceof Error
-        ? error.message
-        : typeof error === 'string'
-          ? error
-          : '';
-    const normalized = normalizeWhitespace(raw);
-    if (!normalized || normalized === 'INTERNAL') {
-      return 'Generation failed before Pluto could finish building the paper. Please try again.';
+    return normalizeLearningErrorMessage({
+      error,
+      fallback: 'Generation failed before Pluto could finish building the paper. Please try again.',
+    });
+  };
+
+  const openGeneratorView = () => {
+    if (isCompactLayout) {
+      setMobileView('new');
     }
-    return normalized;
+    setActivePaperId(null);
+    onRequestNewGeneration?.();
+  };
+
+  const handleRetryActivePaper = async () => {
+    if (!activePaper) return;
+
+    if (sourceType === 'pdf') {
+      openGeneratorView();
+      return;
+    }
+
+    await handleGenerate({
+      subject: activePaper.subject,
+      educationLevel: activePaper.educationLevel,
+      examBoard: activePaper.examBoard,
+      topic: activePaper.topic || undefined,
+    });
   };
 
   const findFailedPaperForPayload = (
@@ -296,19 +324,89 @@ export const QuestionPaperPage = ({
 
   const renderTopicComposer = () => (
     <div style={promptBarShellStyle}>
-      <div style={fieldStackStyle}>
-        <input
-          value={subject}
-          onChange={(event) => setSubject(event.target.value)}
-          placeholder="Subject"
-          style={composerInputStyle}
-        />
-        <div
-          style={{
-            ...stackedSelectRowStyle,
-            gridTemplateColumns: isCompactLayout ? '1fr' : '1fr 1fr',
-          }}
-        >
+      {isCompactLayout ? (
+        <div style={fieldStackStyle}>
+          <input
+            value={subject}
+            onChange={(event) => setSubject(event.target.value)}
+            placeholder="Subject"
+            style={composerInputStyle}
+          />
+          <div
+            style={{
+              ...stackedSelectRowStyle,
+              gridTemplateColumns: '1fr',
+            }}
+          >
+            <select
+              value={educationLevel}
+              onChange={(event) => setEducationLevel(event.target.value)}
+              style={composerInputStyle}
+            >
+              {[
+                'Class 6',
+                'Class 7',
+                'Class 8',
+                'Class 9',
+                'Class 10',
+                'Class 11',
+                'Class 12',
+                'Undergraduate',
+                'Postgraduate',
+              ].map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </select>
+            <select
+              value={examBoard}
+              onChange={(event) => setExamBoard(event.target.value)}
+              style={composerInputStyle}
+            >
+              {['CBSE', 'ICSE', 'IGCSE', 'IB', 'JEE Mains', 'JEE Advanced', 'NEET', 'UPSC'].map((board) => (
+                <option key={board} value={board}>
+                  {board}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div
+            style={{
+              ...actionRowStyle,
+              flexDirection: 'column',
+              alignItems: 'stretch',
+            }}
+          >
+            <input
+              value={topic}
+              onChange={(event) => setTopic(event.target.value)}
+              placeholder="Topic (optional)"
+              style={{ ...composerInputStyle, flex: 1 }}
+            />
+            <button
+              type="button"
+              onClick={() => void handleGenerate()}
+              disabled={isLoading || !subject.trim()}
+              className="app-button"
+              style={{
+                ...composerActionButtonStyle,
+                width: '100%',
+              }}
+            >
+              {isLoading ? <Loader2 size={18} className="spin" /> : null}
+              <span>Generate Paper</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={desktopComposerRowStyle}>
+          <input
+            value={subject}
+            onChange={(event) => setSubject(event.target.value)}
+            placeholder="Subject"
+            style={composerInputStyle}
+          />
           <select
             value={educationLevel}
             onChange={(event) => setEducationLevel(event.target.value)}
@@ -341,35 +439,24 @@ export const QuestionPaperPage = ({
               </option>
             ))}
           </select>
-        </div>
-        <div
-          style={{
-            ...actionRowStyle,
-            flexDirection: isCompactLayout ? 'column' : 'row',
-            alignItems: isCompactLayout ? 'stretch' : 'center',
-          }}
-        >
           <input
             value={topic}
             onChange={(event) => setTopic(event.target.value)}
             placeholder="Topic (optional)"
-            style={{ ...composerInputStyle, flex: 1 }}
+            style={composerInputStyle}
           />
           <button
             type="button"
             onClick={() => void handleGenerate()}
             disabled={isLoading || !subject.trim()}
             className="app-button"
-            style={{
-              ...composerActionButtonStyle,
-              width: isCompactLayout ? '100%' : undefined,
-            }}
+            style={composerActionButtonStyle}
           >
             {isLoading ? <Loader2 size={18} className="spin" /> : null}
             <span>Generate Paper</span>
           </button>
         </div>
-      </div>
+      )}
       {statusText ? (
         <div
           style={{
@@ -425,7 +512,16 @@ export const QuestionPaperPage = ({
       <div style={{ marginTop: withHeading ? '22px' : 0 }}>
         <div style={recentPapersLabelStyle}>RECENT PAPERS</div>
         <div style={{ display: 'grid', gap: '10px' }}>
-          {papers.map((paper) => (
+          {isListLoading
+            ? Array.from({ length: 3 }, (_, index) => (
+                <div key={`paper-skeleton-${index}`} style={paperCardSkeletonStyle}>
+                  <div style={{ display: 'grid', gap: '10px', width: '100%' }}>
+                    <div style={{ ...skeletonLineStyle, width: '72%' }} />
+                    <div style={{ ...skeletonLineStyle, width: '48%', height: '12px' }} />
+                  </div>
+                </div>
+              ))
+            : papers.map((paper) => (
             <div
               key={paper.id}
               onClick={() => setActivePaperId(paper.id)}
@@ -454,7 +550,7 @@ export const QuestionPaperPage = ({
                     marginTop: '4px',
                   }}
                 >
-                  {paper.examBoard} · {inferDisplaySubject(paper)} ·{' '}
+                  {paper.examBoard} · {inferDisplaySubject(paper)} · {getDisplaySourceLabel(paper)} ·{' '}
                   <span
                     style={
                       paper.status === 'failed'
@@ -482,6 +578,26 @@ export const QuestionPaperPage = ({
               </button>
             </div>
           ))}
+          {!isListLoading && papers.length === 0 ? (
+            <div style={emptyStateCardStyle}>
+              <div style={emptyStateTitleStyle}>
+                {sourceType === 'pdf' ? 'No PDF papers yet' : 'No question papers yet'}
+              </div>
+              <div style={emptyStateTextStyle}>
+                {sourceType === 'pdf'
+                  ? 'Upload your first PDF set above and Pluto will turn it into a structured paper here.'
+                  : 'Generate your first topic-based paper to start building your paper library.'}
+              </div>
+              <button
+                type="button"
+                onClick={openGeneratorView}
+                className="outline-button"
+                style={emptyStateButtonStyle}
+              >
+                {sourceType === 'pdf' ? 'Go to upload' : 'Create first paper'}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -514,7 +630,8 @@ export const QuestionPaperPage = ({
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{getDisplayTitle(activePaper)}</div>
               <div style={{ color: 'var(--text-secondary)', marginTop: '6px' }}>
-                {inferDisplaySubject(activePaper)} · {activePaper.examBoard} · {activePaper.educationLevel}
+                {inferDisplaySubject(activePaper)} · {activePaper.examBoard} · {activePaper.educationLevel} ·{' '}
+                {getDisplaySourceLabel(activePaper)}
               </div>
             </div>
             {isActivePaperReady ? (
@@ -534,9 +651,19 @@ export const QuestionPaperPage = ({
               <Loader2 size={20} className="spin" />
               <div style={{ fontWeight: 800 }}>Generating question paper...</div>
               <div style={paperStateTextStyle}>
-                Pluto is still extracting the format and drafting the paper. This panel will populate once the
-                paper is ready.
+                {sourceType === 'pdf'
+                  ? 'Pluto is still processing the uploaded PDFs and drafting the paper. This panel will populate once the paper is ready.'
+                  : 'Pluto is still extracting the format and drafting the paper. This panel will populate once the paper is ready.'}
               </div>
+              <button
+                type="button"
+                onClick={() => void handleRetryActivePaper()}
+                disabled={isLoading}
+                className="outline-button"
+                style={inlineRetryButtonStyle}
+              >
+                {sourceType === 'pdf' ? 'Upload PDFs again' : 'Try again'}
+              </button>
             </div>
           ) : activePaper.status === 'failed' ? (
             <div style={paperStateStyle}>
@@ -545,22 +672,17 @@ export const QuestionPaperPage = ({
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
                 <button
                   type="button"
-                  onClick={() =>
-                    void handleGenerate({
-                      subject: activePaper.subject,
-                      educationLevel: activePaper.educationLevel,
-                      examBoard: activePaper.examBoard,
-                      topic: activePaper.topic || undefined,
-                    })
-                  }
+                  onClick={() => void handleRetryActivePaper()}
                   disabled={isLoading}
                   className="outline-button"
                   style={inlineRetryButtonStyle}
                 >
-                  Retry generation
+                  {sourceType === 'pdf' ? 'Upload PDFs again' : 'Retry generation'}
                 </button>
                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', alignSelf: 'center' }}>
-                  Or delete this failed attempt and start fresh.
+                  {sourceType === 'pdf'
+                    ? 'Delete this failed attempt if you no longer need it, then re-upload the PDFs above.'
+                    : 'Or delete this failed attempt and start fresh.'}
                 </div>
               </div>
             </div>
@@ -736,7 +858,7 @@ export const QuestionPaperPage = ({
         overflowY: isCompactLayout ? 'visible' : 'hidden',
       }}
     >
-      {false ? (
+      {shouldShowEmbeddedMobileSwitcher ? (
         <div style={mobilePaperSwitcherStyle}>
           <button
             type="button"
@@ -779,7 +901,7 @@ export const QuestionPaperPage = ({
           }}
         >
         <h3 style={panelTitleStyle}>Generated from PDFs</h3>
-        {false ? (
+        {shouldShowInlineComposer ? (
           <div style={promptBarShellStyle}>
             <div style={fieldStackStyle}>
               <input
@@ -933,7 +1055,7 @@ export const QuestionPaperPage = ({
                       marginTop: '4px',
                     }}
                   >
-                    {paper.examBoard} · {inferDisplaySubject(paper)} ·{' '}
+                    {paper.examBoard} · {inferDisplaySubject(paper)} · {getDisplaySourceLabel(paper)} ·{' '}
                     <span
                       style={
                         paper.status === 'failed'
@@ -993,7 +1115,8 @@ export const QuestionPaperPage = ({
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: '1.4rem', fontWeight: 800 }}>{getDisplayTitle(activePaper)}</div>
                 <div style={{ color: 'var(--text-secondary)', marginTop: '6px' }}>
-                  {inferDisplaySubject(activePaper)} · {activePaper.examBoard} · {activePaper.educationLevel}
+                  {inferDisplaySubject(activePaper)} · {activePaper.examBoard} · {activePaper.educationLevel} ·{' '}
+                  {getDisplaySourceLabel(activePaper)}
                 </div>
               </div>
               {isActivePaperReady ? (
@@ -1013,9 +1136,19 @@ export const QuestionPaperPage = ({
                 <Loader2 size={20} className="spin" />
                 <div style={{ fontWeight: 800 }}>Generating question paper...</div>
                 <div style={paperStateTextStyle}>
-                  Pluto is still extracting the format and drafting the paper. This panel will populate once the
-                  paper is ready.
+                  {sourceType === 'pdf'
+                    ? 'Pluto is still processing the uploaded PDFs and drafting the paper. This panel will populate once the paper is ready.'
+                    : 'Pluto is still extracting the format and drafting the paper. This panel will populate once the paper is ready.'}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => void handleRetryActivePaper()}
+                  disabled={isLoading}
+                  className="outline-button"
+                  style={inlineRetryButtonStyle}
+                >
+                  {sourceType === 'pdf' ? 'Upload PDFs again' : 'Try again'}
+                </button>
               </div>
             ) : activePaper.status === 'failed' ? (
               <div style={paperStateStyle}>
@@ -1024,22 +1157,17 @@ export const QuestionPaperPage = ({
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'center' }}>
                   <button
                     type="button"
-                    onClick={() =>
-                      void handleGenerate({
-                        subject: activePaper.subject,
-                        educationLevel: activePaper.educationLevel,
-                        examBoard: activePaper.examBoard,
-                        topic: activePaper.topic || undefined,
-                      })
-                    }
+                    onClick={() => void handleRetryActivePaper()}
                     disabled={isLoading}
                     className="outline-button"
                     style={inlineRetryButtonStyle}
                   >
-                    Retry generation
+                    {sourceType === 'pdf' ? 'Upload PDFs again' : 'Retry generation'}
                   </button>
                   <div style={{ color: 'var(--text-secondary)', fontSize: '0.88rem', alignSelf: 'center' }}>
-                    Or delete this failed attempt and start fresh.
+                    {sourceType === 'pdf'
+                      ? 'Delete this failed attempt if you no longer need it, then re-upload the PDFs above.'
+                      : 'Or delete this failed attempt and start fresh.'}
                   </div>
                 </div>
               </div>
@@ -1116,16 +1244,23 @@ export const QuestionPaperPage = ({
             )}
           </>
         ) : (
-          <div
-            style={{
-              display: 'grid',
-              placeItems: 'center',
-              height: '100%',
-              color: 'var(--text-secondary)',
-              textAlign: 'center',
-            }}
-          >
-            Generate a paper to see it here.
+          <div style={emptyPreviewStateStyle}>
+            <div style={emptyStateTitleStyle}>
+              {sourceType === 'pdf' ? 'Your generated PDF paper will appear here' : 'Your next paper will appear here'}
+            </div>
+            <div style={emptyStateTextStyle}>
+              {sourceType === 'pdf'
+                ? 'Upload PDFs above, then open the generated paper here to review and download it.'
+                : 'Generate a paper from the left panel and Pluto will open the finished paper here.'}
+            </div>
+            <button
+              type="button"
+              onClick={openGeneratorView}
+              className="outline-button"
+              style={emptyStateButtonStyle}
+            >
+              {sourceType === 'pdf' ? 'Go to upload' : 'Create paper'}
+            </button>
           </div>
         )}
         </div>
@@ -1179,6 +1314,13 @@ const actionRowStyle: CSSProperties = {
   alignItems: 'center',
 };
 
+const desktopComposerRowStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(180px, 1.1fr) minmax(150px, 0.9fr) minmax(140px, 0.85fr) minmax(220px, 1.3fr) auto',
+  gap: '10px',
+  alignItems: 'center',
+};
+
 const composerInputStyle: CSSProperties = {
   minHeight: '46px',
   borderRadius: '18px',
@@ -1217,6 +1359,12 @@ const paperCardStyle: CSSProperties = {
   cursor: 'pointer',
   width: '100%',
   textAlign: 'left',
+};
+
+const paperCardSkeletonStyle: CSSProperties = {
+  ...paperCardStyle,
+  cursor: 'default',
+  pointerEvents: 'none',
 };
 
 const paperStateStyle: CSSProperties = {
@@ -1269,6 +1417,48 @@ const inlineRetryButtonStyle: CSSProperties = {
   minHeight: '40px',
   justifyContent: 'center',
   borderRadius: '14px',
+};
+
+const skeletonLineStyle: CSSProperties = {
+  height: '16px',
+  borderRadius: '999px',
+  background: 'linear-gradient(90deg, rgba(190, 200, 232, 0.24), rgba(255,255,255,0.5), rgba(190, 200, 232, 0.24))',
+};
+
+const emptyStateCardStyle: CSSProperties = {
+  display: 'grid',
+  gap: '10px',
+  borderRadius: '20px',
+  border: '1px dashed color-mix(in srgb, var(--primary) 24%, var(--glass-border))',
+  background: 'color-mix(in srgb, var(--glass-bg-subtle) 90%, rgba(136, 104, 255, 0.04))',
+  padding: '18px',
+  textAlign: 'left',
+};
+
+const emptyStateTitleStyle: CSSProperties = {
+  color: 'var(--text-primary)',
+  fontWeight: 800,
+  fontSize: '1rem',
+};
+
+const emptyStateTextStyle: CSSProperties = {
+  color: 'var(--text-secondary)',
+  lineHeight: 1.55,
+  fontSize: '0.92rem',
+};
+
+const emptyStateButtonStyle: CSSProperties = {
+  minHeight: '40px',
+  justifyContent: 'center',
+  borderRadius: '14px',
+};
+
+const emptyPreviewStateStyle: CSSProperties = {
+  minHeight: '260px',
+  display: 'grid',
+  placeItems: 'center',
+  textAlign: 'center',
+  gap: '10px',
 };
 
 const failedStatusPillStyle: CSSProperties = {
