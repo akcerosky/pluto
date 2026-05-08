@@ -30,6 +30,7 @@ export const getQuestionPapers = lazySecureCallable(async () => (await import('.
 export const deleteQuestionPaper = lazySecureCallable(async () => (await import('./handlers/learning.js')).deleteQuestionPaperHandler);
 export const generateQuestionPaperPdf = lazySecureCallable(async () => (await import('./handlers/learning.js')).generateQuestionPaperPdfHandler, { minInstances: 1, timeoutSeconds: 120 });
 export const generateFlashcardSet = lazySecureCallable(async () => (await import('./handlers/learning.js')).generateFlashcardSetHandler, { minInstances: 1, timeoutSeconds: 120 });
+export const addCardsToFlashcardSet = lazySecureCallable(async () => (await import('./handlers/learning.js')).addCardsToFlashcardSetHandler, { minInstances: 1, timeoutSeconds: 120 });
 export const getFlashcardSets = lazySecureCallable(async () => (await import('./handlers/learning.js')).getFlashcardSetsHandler);
 export const getDueCards = lazySecureCallable(async () => (await import('./handlers/learning.js')).getDueCardsHandler);
 export const submitCardReview = lazySecureCallable(async () => (await import('./handlers/learning.js')).submitCardReviewHandler);

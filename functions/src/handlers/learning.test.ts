@@ -48,9 +48,11 @@ const buildFlashcardMeteringPayload = jest.fn(({ topic, educationLevel }) => ({
 }));
 
 const generateFlashcardSetForUser = jest.fn();
+const addCardsToFlashcardSetForUser = jest.fn();
 
 jest.mock('../services/learning/flashcards.js', () => ({
   buildFlashcardMeteringPayload,
+  addCardsToFlashcardSetForUser,
   generateFlashcardSetForUser,
   deleteFlashcardSetForUser: jest.fn(),
   getDueCardsForUser: jest.fn(),
@@ -82,6 +84,7 @@ jest.mock('../services/learning/questionPapers.js', () => ({
 }));
 
 import {
+  addCardsToFlashcardSetHandler,
   generateFlashcardSetHandler,
   generatePaperFromPdfsHandler,
   generateQuestionPaperHandler,
@@ -313,6 +316,52 @@ test('generateFlashcardSet throws quota error when reservation exceeds quota', a
       'resource-exhausted',
       'You reached the Plus daily token limit for today. Upgrade to continue or wait for the 00:00 IST reset.'
     )
+  );
+});
+
+test('addCardsToFlashcardSet reserves and reconciles usage on success', async () => {
+  addCardsToFlashcardSetForUser.mockResolvedValue({
+    addedCount: 7,
+    setName: 'Biology Basics',
+    usage: { inputTokens: 120, outputTokens: 80, totalTokens: 200, usageSource: 'provider' },
+  });
+
+  const result = await addCardsToFlashcardSetHandler({
+    auth: { uid: 'user-1' },
+    data: {
+      setId: 'set-1',
+      topic: 'Cell Division',
+      subject: 'Biology',
+      educationLevel: 'Class 10',
+    },
+  } as never);
+
+  expect(result).toMatchObject({
+    addedCount: 7,
+    setName: 'Biology Basics',
+    usagePendingSync: false,
+  });
+  expect(buildFlashcardMeteringPayload).toHaveBeenCalledWith({
+    topic: 'Cell Division',
+    subject: 'Biology',
+    educationLevel: 'Class 10',
+    plan: 'Plus',
+  });
+  expect(addCardsToFlashcardSetForUser).toHaveBeenCalledWith(
+    expect.objectContaining({
+      uid: 'user-1',
+      setId: 'set-1',
+      topic: 'Cell Division',
+      subject: 'Biology',
+      educationLevel: 'Class 10',
+      plan: 'Plus',
+    })
+  );
+  expect(reconcileUsageTokens).toHaveBeenCalledWith(
+    'user-1',
+    'Plus',
+    6100,
+    { inputTokens: 120, outputTokens: 80, totalTokens: 200, usageSource: 'provider' }
   );
 });
 

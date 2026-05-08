@@ -1,30 +1,43 @@
-import { Moon, Sun } from 'lucide-react';
 import { useTheme } from '../context/useTheme';
+import type { PlutoThemePreference } from '../context/themeContextValue';
 
 interface ThemeToggleProps {
   label?: string;
   className?: string;
 }
 
+const OPTIONS: Array<{ value: PlutoThemePreference; label: string }> = [
+  { value: 'system', label: 'System' },
+  { value: 'white', label: 'White' },
+  { value: 'black', label: 'Black' },
+];
+
 export const ThemeToggle = ({
-  label = 'Toggle theme',
+  label = 'Select theme',
   className = '',
 }: ThemeToggleProps) => {
-  const { theme, toggleTheme } = useTheme();
-  const isDark = theme === 'dark';
+  const { preference, setThemePreference } = useTheme();
 
   return (
-    <button
-      type="button"
+    <div
       className={`theme-toggle ${className}`.trim()}
-      onClick={toggleTheme}
+      role="group"
       aria-label={label}
-      title={label}
     >
-      <span className="theme-toggle-icon" aria-hidden="true">
-        {isDark ? <Sun size={16} /> : <Moon size={16} />}
-      </span>
-      <span className="theme-toggle-label">{isDark ? 'Light mode' : 'Dark mode'}</span>
-    </button>
+      {OPTIONS.map((option) => {
+        const isActive = preference === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            className={`theme-toggle-segment ${isActive ? 'active' : ''}`.trim()}
+            onClick={() => setThemePreference(option.value)}
+            aria-pressed={isActive}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
   );
 };

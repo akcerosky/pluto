@@ -4,7 +4,6 @@ import {
   MessageSquare,
   Settings,
   LayoutGrid,
-  Search,
   ChevronLeft,
   Trash2,
   X,
@@ -19,6 +18,7 @@ import { useNavigate } from 'react-router-dom';
 import { LazyProjectsModal } from '../Chat/LazyModePanels';
 import { formatTokenUsageSummary } from '../../lib/tokenQuota';
 import type { LearningMode } from '../../context/appContextTypes';
+import { SearchOverlay } from '../Search/SearchOverlay';
 
 interface SidebarProps {
   isMobile?: boolean;
@@ -51,9 +51,9 @@ export const Sidebar = ({
   } = useApp();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isProjectsOpen, setIsProjectsOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const navigate = useNavigate();
   const effectiveCollapsed = isMobile ? false : isCollapsed;
-  const showDiscover = import.meta.env.DEV;
 
   const closeMobile = () => {
     if (isMobile) {
@@ -71,10 +71,6 @@ export const Sidebar = ({
   const filteredThreads = activeProjectId
     ? threads.filter((thread) => thread.projectId === activeProjectId)
     : threads;
-
-  const handleComingSoon = (feature: string) => {
-    alert(`${feature} feature coming soon!`);
-  };
 
   const learningModes: Array<{
     id: LearningMode;
@@ -144,7 +140,7 @@ export const Sidebar = ({
       >
       <div
         style={{
-          padding: '24px 18px 18px',
+          padding: '16px 14px 12px',
           borderBottom: '1px solid var(--glass-border)',
           position: 'relative',
           background: 'color-mix(in srgb, var(--glass-bg) 78%, rgba(108, 63, 197, 0.08))',
@@ -159,8 +155,8 @@ export const Sidebar = ({
             className="app-button"
             style={{
               width: '100%',
-              padding: effectiveCollapsed ? '0 14px' : '0 16px',
-              borderRadius: '16px',
+              padding: effectiveCollapsed ? '0 12px' : '0 14px',
+              borderRadius: '14px',
               justifyContent: effectiveCollapsed ? 'center' : 'flex-start',
               boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.16), 0 12px 28px rgba(108, 63, 197, 0.32)',
               flex: 1,
@@ -185,12 +181,22 @@ export const Sidebar = ({
 
       <div
         style={{
-          padding: '16px 12px',
+          padding: '12px',
           display: 'flex',
           flexDirection: 'column',
           gap: '8px',
         }}
       >
+        <SearchOverlay
+          key={isSearchOpen ? 'discover-open' : 'discover-closed'}
+          isOpen={isSearchOpen}
+          onOpen={() => {
+            setIsSearchOpen(true);
+            closeMobile();
+          }}
+          onClose={() => setIsSearchOpen(false)}
+          isCollapsed={effectiveCollapsed}
+        />
         {learningModes.map((mode) => {
           const isActive = selectedMode === mode.id;
           return (
@@ -250,17 +256,6 @@ export const Sidebar = ({
           isCollapsed={effectiveCollapsed}
           onClick={() => setIsProjectsOpen(true)}
         />
-        {showDiscover ? (
-          <SidebarLink
-            icon={<Search size={19} />}
-            label="Discover"
-            isCollapsed={effectiveCollapsed}
-            onClick={() => {
-              handleComingSoon('Discover');
-              closeMobile();
-            }}
-          />
-        ) : null}
       </div>
 
       {!effectiveCollapsed && projects.length > 0 && (
@@ -282,8 +277,9 @@ export const Sidebar = ({
                 onClick={() => {
                   const nextProjectId = activeProjectId === project.id ? null : project.id;
                   setActiveProjectId(nextProjectId);
+                  setSelectedMode('chat');
                   setActiveThreadId(null);
-                  navigate('/chat');
+                  navigate('/chat', { state: { skipModeSelector: true } });
                   closeMobile();
                 }}
                 style={{
@@ -364,8 +360,9 @@ export const Sidebar = ({
                 exit={{ opacity: 0, scale: 0.96 }}
                 whileHover={{ y: -1 }}
                 onClick={() => {
+                  setSelectedMode('chat');
                   setActiveThreadId(thread.id);
-                  navigate('/chat');
+                  navigate('/chat', { state: { skipModeSelector: true } });
                   closeMobile();
                 }}
                 style={{

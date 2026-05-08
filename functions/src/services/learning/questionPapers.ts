@@ -37,6 +37,13 @@ type QuestionPaperFormatPayload = {
   sections: QuestionPaperFormatSection[];
 };
 
+type ExamFormatHint = {
+  sections: QuestionPaperFormatSection[];
+  totalMarks: number;
+  duration: string;
+  instructions?: string[];
+};
+
 class QuestionPaperJsonParseError extends Error {
   parseErrorMessage: string;
   rawResponse: string;
@@ -77,6 +84,8 @@ const questionPaperFormatSectionSchema = z.object({
   questions: z.number().int().min(1),
   marksPerQuestion: z.number().int().min(1),
   totalMarks: z.number().int().min(1).optional(),
+  negativeMarking: z.number().optional(),
+  attemptRequired: z.number().int().min(1).optional(),
 });
 
 const questionPaperQuestionSchema = z.object({
@@ -84,7 +93,16 @@ const questionPaperQuestionSchema = z.object({
   sectionName: z.string().trim().min(1).max(160),
   questionNumber: z.number().int().min(1),
   text: z.string().trim().min(1).max(6000),
-  type: z.enum(['mcq', 'short_answer', 'long_answer', 'essay', 'fill_blank', 'assertion_reason']),
+  type: z.enum([
+    'mcq',
+    'short_answer',
+    'long_answer',
+    'essay',
+    'fill_blank',
+    'assertion_reason',
+    'numerical',
+    'integer',
+  ]),
   marks: z.number().int().min(1),
   options: z.array(z.string().trim().min(1).max(1000)).max(8).optional(),
   subParts: z.array(z.string().trim().min(1).max(2000)).max(8).optional(),
@@ -214,6 +232,125 @@ const buildFallbackGeneralInstructions = (examBoard: string, formatFamily: strin
     'Figures in the right margin indicate full marks for each question.',
     'Write clearly and support your answers with steps wherever relevant.',
   ];
+};
+
+const getExamFormatOverride = (examBoard: string): ExamFormatHint | null =>
+  EXAM_FORMAT_OVERRIDES[examBoard] ?? null;
+
+const toFormatPayloadFromOverride = (examBoard: string, override: ExamFormatHint): QuestionPaperFormatPayload => ({
+  totalMarks: override.totalMarks,
+  duration: override.duration,
+  headerBoardName: examBoard,
+  examinationTitle: `${examBoard} Examination`,
+  sessionLabel: String(new Date().getFullYear()),
+  generalInstructions: override.instructions?.map(sanitizeQuestionPaperText),
+  matchedFormatFamily: inferFormatFamily(examBoard),
+  formatSource: 'official',
+  sections: override.sections.map((section) => ({
+    ...section,
+    displayName: section.displayName || section.name,
+    instructions: sanitizeQuestionPaperText(section.instructions),
+    questionTypeDisplay: section.questionTypeDisplay || section.questionType,
+    totalMarks:
+      section.totalMarks ??
+      (section.attemptRequired ? section.attemptRequired * section.marksPerQuestion : section.questions * section.marksPerQuestion),
+  })),
+});
+
+export const EXAM_FORMAT_OVERRIDES: Record<string, ExamFormatHint> = {
+  'JEE Mains': {
+    sections: [
+      { name: 'Section A', type: 'MCQ (Single Correct)', questionType: 'MCQ (Single Correct)', questions: 20, marksPerQuestion: 4, negativeMarking: -1 },
+      { name: 'Section B', type: 'Numerical Value', questionType: 'Numerical Value', questions: 10, marksPerQuestion: 4, negativeMarking: 0, attemptRequired: 5 },
+    ].map(({ type, ...section }) => ({
+      ...section,
+      instructions: type === 'Numerical Value' ? 'Attempt any 5 of the 10 numerical value questions.' : 'Answer all MCQs by choosing the single correct option.',
+      questionTypeDisplay: type,
+      totalMarks: section.attemptRequired ? section.attemptRequired * section.marksPerQuestion : section.questions * section.marksPerQuestion,
+    })),
+    totalMarks: 100,
+    duration: '3 hours',
+    instructions: ['Each correct MCQ answer: +4 marks', 'Each wrong MCQ answer: -1 mark', 'Numerical: no negative marking', 'Attempt any 5 from Section B'],
+  },
+  'JEE Advanced': {
+    sections: [
+      { name: 'Paper 1 Section 1', type: 'MCQ Single Correct', questions: 6, marksPerQuestion: 3, negativeMarking: -1 },
+      { name: 'Paper 1 Section 2', type: 'MCQ Multiple Correct', questions: 8, marksPerQuestion: 4, negativeMarking: -2 },
+      { name: 'Paper 1 Section 3', type: 'Integer Type', questions: 6, marksPerQuestion: 3, negativeMarking: 0 },
+    ].map((section) => ({
+      ...section,
+      instructions: `Generate ${section.questions} ${section.type} questions for this section.`,
+      questionType: section.type,
+      questionTypeDisplay: section.type,
+      totalMarks: section.questions * section.marksPerQuestion,
+    })),
+    totalMarks: 54,
+    duration: '3 hours',
+    instructions: ['Full marks only for all correct options in multiple correct', 'Partial marking applies'],
+  },
+  'NEET UG': {
+    sections: [
+      { name: 'Section A', type: 'MCQ Single Correct', questions: 35, marksPerQuestion: 4, negativeMarking: -1 },
+      { name: 'Section B', type: 'MCQ Single Correct', questions: 15, marksPerQuestion: 4, negativeMarking: -1, attemptRequired: 10 },
+    ].map((section) => ({
+      ...section,
+      instructions: section.attemptRequired
+        ? `Attempt any ${section.attemptRequired} of the ${section.questions} questions in this section.`
+        : 'Answer all questions in this section.',
+      questionType: section.type,
+      questionTypeDisplay: section.type,
+      totalMarks: section.attemptRequired ? section.attemptRequired * section.marksPerQuestion : section.questions * section.marksPerQuestion,
+    })),
+    totalMarks: 180,
+    duration: '3 hours 20 minutes',
+    instructions: ['Each correct answer: +4', 'Each wrong answer: -1', 'Attempt any 10 from Section B'],
+  },
+  'UPSC CSE': {
+    sections: [
+      { name: 'General Studies I', type: 'Essay', questions: 8, marksPerQuestion: 15, attemptRequired: 5 },
+      { name: 'Essay', type: 'Essay', questions: 8, marksPerQuestion: 125, attemptRequired: 2 },
+    ].map((section) => ({
+      ...section,
+      instructions: `Attempt any ${section.attemptRequired} of the ${section.questions} essay questions.`,
+      questionType: section.type,
+      questionTypeDisplay: section.type,
+      totalMarks: section.attemptRequired ? section.attemptRequired * section.marksPerQuestion : section.questions * section.marksPerQuestion,
+    })),
+    totalMarks: 250,
+    duration: '3 hours',
+    instructions: ['Answer in English or Hindi', 'Write legibly'],
+  },
+  'CA Foundation': {
+    sections: [
+      { name: 'Paper 1', type: 'MCQ', questions: 60, marksPerQuestion: 1, negativeMarking: -0.25 },
+    ].map((section) => ({
+      ...section,
+      instructions: 'Answer all objective questions by choosing the best option.',
+      questionType: section.type,
+      questionTypeDisplay: section.type,
+      totalMarks: section.questions * section.marksPerQuestion,
+    })),
+    totalMarks: 60,
+    duration: '2 hours',
+    instructions: ['Negative marking: 0.25 marks deducted for wrong answers'],
+  },
+  GATE: {
+    sections: [
+      { name: 'Section 1', type: 'MCQ Single Correct', questions: 25, marksPerQuestion: 1, negativeMarking: -0.33 },
+      { name: 'Section 2', type: 'MCQ 2-mark', questions: 30, marksPerQuestion: 2, negativeMarking: -0.66 },
+      { name: 'Section 3', type: 'Numerical Answer Type', questions: 10, marksPerQuestion: 2, negativeMarking: 0 },
+    ].map((section) => ({
+      ...section,
+      instructions: section.type.includes('Numerical')
+        ? 'Enter the numerical answer in the answer box.'
+        : 'Choose the correct option from A, B, C, or D.',
+      questionType: section.type,
+      questionTypeDisplay: section.type,
+      totalMarks: section.questions * section.marksPerQuestion,
+    })),
+    totalMarks: 100,
+    duration: '3 hours',
+  },
 };
 
 export const buildFormatResearchQuery = ({
@@ -716,6 +853,8 @@ Requirements:
 4. Questions must be complete sentences and must not be truncated
 5. Use proper ${examBoard} terminology
 6. Questions must cover recall, understanding, application, and analysis where appropriate
+7. Respect each section's exact question type. MCQ sections must include four options A/B/C/D. Numerical sections must not include options and should require a numeric answer only. Integer sections must require an integer answer only.
+8. If a section includes negativeMarking or attemptRequired, align the style of the questions to that exam pattern exactly.
 
 Paper structure:
 ${JSON.stringify(format.sections)}
@@ -778,6 +917,7 @@ Requirements:
 5. Question numbers must start at ${questionNumberStart} and continue sequentially
 6. Questions must be complete sentences and must not be truncated
 7. If the source material is narrow, create varied questions from the same covered concepts instead of reducing question count or marks
+8. If this is an MCQ section, every question must include exactly four options A/B/C/D. If this is a numerical or integer type section, do not include options and make the expected answer numeric only.
 
 Overall paper structure for context:
 ${JSON.stringify(format.sections)}
@@ -852,6 +992,8 @@ const validateQuestions = (questions: QuestionPaperQuestion[]) =>
 
 const inferQuestionType = (value: unknown): QuestionPaperQuestion['type'] => {
   const normalized = String(value || '').toLowerCase();
+  if (normalized.includes('numerical')) return 'numerical';
+  if (normalized.includes('integer')) return 'integer';
   if (normalized.includes('mcq') || normalized.includes('multiple')) return 'mcq';
   if (normalized.includes('fill')) return 'fill_blank';
   if (normalized.includes('assertion')) return 'assertion_reason';
@@ -885,6 +1027,9 @@ const getQuestionMarksRange = (type: QuestionPaperQuestion['type']) => {
     case 'assertion_reason':
     case 'fill_blank':
       return { min: 1, max: 2 };
+    case 'numerical':
+    case 'integer':
+      return { min: 1, max: 10 };
     default:
       return { min: 1, max: 15 };
   }
@@ -915,6 +1060,20 @@ export const validateQuestionPaperStructure = ({
     const sectionQuestions = questions.filter((question) => question.sectionName === section.name);
     if (sectionQuestions.length === 0) {
       throw new Error(`Section ${section.name} has no questions.`);
+    }
+    if (/mcq/i.test(section.questionType)) {
+      for (const question of sectionQuestions) {
+        if (!question.options || question.options.length !== 4) {
+          throw new Error(`Section ${section.name} requires exactly four MCQ options per question.`);
+        }
+      }
+    }
+    if (/numerical/i.test(section.questionType) || /integer/i.test(section.questionType)) {
+      for (const question of sectionQuestions) {
+        if (question.options?.length) {
+          throw new Error(`Section ${section.name} should not include options for numerical or integer questions.`);
+        }
+      }
     }
   }
 };
@@ -954,6 +1113,12 @@ const validateSectionBatch = ({
       throw new Error(
         `Section ${section.name} returned ${question.marks} marks for a question that requires ${section.marksPerQuestion}.`
       );
+    }
+    if (/mcq/i.test(section.questionType) && (!question.options || question.options.length !== 4)) {
+      throw new Error(`Section ${section.name} requires exactly four MCQ options per question.`);
+    }
+    if ((/numerical/i.test(section.questionType) || /integer/i.test(section.questionType)) && question.options?.length) {
+      throw new Error(`Section ${section.name} should not include options for numerical or integer questions.`);
     }
   }
 };
@@ -1012,69 +1177,6 @@ const toQuestionList = (
       } satisfies QuestionPaperQuestion;
     })
     .filter((question): question is QuestionPaperQuestion => Boolean(question));
-};
-
-const normalizeGeneratedPaperResponse = (parsed: unknown) => {
-  if (!parsed || typeof parsed !== 'object') {
-    return null;
-  }
-
-  const record = parsed as Record<string, unknown>;
-  const format =
-    record.format && typeof record.format === 'object'
-      ? (record.format as QuestionPaperDoc['format'])
-      : null;
-
-  if (!format || !Array.isArray(format.sections) || format.sections.length === 0) {
-    return null;
-  }
-
-  let questions = toQuestionList(record.questions, format.sections[0]?.name || 'Section A');
-
-  if (questions.length === 0) {
-    questions = format.sections.flatMap((section, sectionIndex) => {
-      const matchingSection =
-        Array.isArray(record.sections) && record.sections[sectionIndex] && typeof record.sections[sectionIndex] === 'object'
-          ? (record.sections[sectionIndex] as Record<string, unknown>)
-          : null;
-
-      return toQuestionList(
-        matchingSection?.questions,
-        section.name,
-        section.questionType
-      );
-    });
-  }
-
-  if (!validateQuestions(questions)) {
-    return null;
-  }
-
-  return {
-    title:
-      typeof record.title === 'string' && record.title.trim()
-        ? record.title
-        : '',
-    headerBoardName:
-      typeof record.headerBoardName === 'string' && record.headerBoardName.trim()
-        ? sanitizeQuestionPaperText(record.headerBoardName)
-        : undefined,
-    examinationTitle:
-      typeof record.examinationTitle === 'string' && record.examinationTitle.trim()
-        ? sanitizeQuestionPaperText(record.examinationTitle)
-        : undefined,
-    sessionLabel:
-      typeof record.sessionLabel === 'string' && record.sessionLabel.trim()
-        ? sanitizeQuestionPaperText(record.sessionLabel)
-        : undefined,
-    subjectCode:
-      typeof record.subjectCode === 'string' && record.subjectCode.trim()
-        ? sanitizeQuestionPaperText(record.subjectCode)
-        : undefined,
-    generalInstructions: toStringList(record.generalInstructions, 20).map(sanitizeQuestionPaperText),
-    format,
-    questions,
-  };
 };
 
 const normalizeGeneratedStructureResponse = (parsed: unknown) => {
@@ -1401,6 +1503,15 @@ export const researchQuestionPaperFormat = async ({
   uid: string;
   requestId: string;
 }) => {
+  const override = getExamFormatOverride(examBoard);
+  if (override) {
+    return {
+      format: toFormatPayloadFromOverride(examBoard, override),
+      sources: [],
+      usage: zeroUsage(),
+    };
+  }
+
   const query = buildFormatResearchQuery({ examBoard, educationLevel, subject });
   let results: Awaited<ReturnType<typeof searchExamFormatSources>> = [];
   try {
@@ -1529,6 +1640,7 @@ export const generateQuestionPaperForUser = async ({
       requestId,
     });
     failedStep = 'generation';
+    const formatOverride = getExamFormatOverride(examBoard);
     const structurePrompt = buildQuestionPaperStructurePrompt({
       subject,
       educationLevel,
@@ -1537,21 +1649,23 @@ export const generateQuestionPaperForUser = async ({
       format: research.format,
       sourceContext,
     });
-    const structureResponse = await executeHybridAiRequest({
-      prompt: structurePrompt,
-      educationLevel,
-      mode: 'ExamPrep',
-      objective: `Generate ${examBoard} question paper`,
-      plan,
-      uid,
-      requestId,
-      history: [],
-      summaryCandidates: [],
-      attachments: [],
-      maxOutputTokens: 1600,
-      totalTimeoutMs: QUESTION_PAPER_GENERATION_TIMEOUT_MS,
-    });
-    rawGenerationResponsePreview = structureResponse.text.slice(0, 500);
+    const structureResponse = formatOverride
+      ? null
+      : await executeHybridAiRequest({
+          prompt: structurePrompt,
+          educationLevel,
+          mode: 'ExamPrep',
+          objective: `Generate ${examBoard} question paper`,
+          plan,
+          uid,
+          requestId,
+          history: [],
+          summaryCandidates: [],
+          attachments: [],
+          maxOutputTokens: 1600,
+          totalTimeoutMs: QUESTION_PAPER_GENERATION_TIMEOUT_MS,
+        });
+    rawGenerationResponsePreview = structureResponse?.text.slice(0, 500);
     const parseStructureResponse = (rawResponse: string, isRetry: boolean) =>
       normalizeGeneratedStructureResponse(
         parseJsonWithRepair<{
@@ -1586,16 +1700,26 @@ export const generateQuestionPaperForUser = async ({
         format
       );
 
-    let parsedStructure = (() => {
-      try {
-        return parseStructureResponse(structureResponse.text, false);
-      } catch (error) {
-        if (!(error instanceof QuestionPaperJsonParseError)) {
-          throw error;
+    let parsedStructure = formatOverride
+      ? {
+          title: `${examBoard} ${subject}`,
+          headerBoardName: research.format.headerBoardName,
+          examinationTitle: research.format.examinationTitle,
+          sessionLabel: research.format.sessionLabel,
+          subjectCode: research.format.subjectCode,
+          generalInstructions: research.format.generalInstructions,
+          format: research.format,
         }
-        return null;
-      }
-    })();
+      : (() => {
+          try {
+            return parseStructureResponse(structureResponse!.text, false);
+          } catch (error) {
+            if (!(error instanceof QuestionPaperJsonParseError)) {
+              throw error;
+            }
+            return null;
+          }
+        })();
 
     let structureUsage: TokenUsage | null = null;
     if (parsedStructure === null) {
@@ -1622,11 +1746,13 @@ export const generateQuestionPaperForUser = async ({
       throw new Error('Question paper generation returned invalid JSON.');
     }
 
-    const mergedFormat = {
-      ...research.format,
-      ...parsedStructure.format,
-      sections: parsedStructure.format.sections,
-    };
+    const mergedFormat = formatOverride
+      ? research.format
+      : {
+          ...research.format,
+          ...parsedStructure.format,
+          sections: parsedStructure.format.sections,
+        };
 
     const questionsPrompt = buildQuestionPaperQuestionsPrompt({
       subject,
@@ -1794,7 +1920,7 @@ export const generateQuestionPaperForUser = async ({
       paper,
       usage: addUsages(
         research.usage,
-        structureResponse.usage,
+        structureResponse?.usage,
         structureUsage,
         questionsResponse.usage,
         questionsUsage,

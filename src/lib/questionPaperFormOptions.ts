@@ -1,196 +1,183 @@
-export type QuestionPaperSelectOption = {
+export type AcademicCategory = 'school' | 'undergraduate' | 'postgraduate' | 'competitive';
+
+export type AcademicStepOneOption = {
+  id: string;
+  label: string;
+  category: AcademicCategory;
+};
+
+export type AcademicStepOption = {
   label: string;
   value: string;
   requiresCustomInput?: boolean;
   customPlaceholder?: string;
 };
 
-export type QuestionPaperOptionGroup = {
-  label: string;
-  options: QuestionPaperSelectOption[];
+export type AcademicSelectionState = {
+  stepOneId: string;
+  specificLevel: string;
+  boardExam: string;
+  customBoardExam: string;
 };
 
-export const DEFAULT_QUESTION_PAPER_EDUCATION_LEVEL = 'Class 10';
-export const DEFAULT_QUESTION_PAPER_EXAM_BOARD = 'CBSE';
+const OTHER_EXAM_PLACEHOLDER = 'e.g. State Engineering Entrance';
 
-const EDUCATION_LEVEL_CUSTOM_PLACEHOLDER = 'e.g. BPT, Diploma in Pharmacy, CFP';
-const STATE_BOARD_PLACEHOLDER =
-  'e.g. Maharashtra State Board, Tamil Nadu State Board, UP Board';
-const OTHER_BOARD_PLACEHOLDER =
-  'e.g. Mumbai University, Anna University, AIIMS Internal';
+export const STEP_ONE_OPTIONS: AcademicStepOneOption[] = [
+  { id: 'school', label: 'School', category: 'school' },
+  { id: 'undergraduate', label: 'Undergraduate', category: 'undergraduate' },
+  { id: 'postgraduate', label: 'Postgraduate', category: 'postgraduate' },
+  { id: 'competitive', label: 'Competitive Exam', category: 'competitive' },
+];
 
-export const QUESTION_PAPER_EDUCATION_LEVEL_GROUPS: QuestionPaperOptionGroup[] = [
+const SCHOOL_SPECIFIC_LEVELS = [
+  'Class 6',
+  'Class 7',
+  'Class 8',
+  'Class 9',
+  'Class 10',
+  'Class 11',
+  'Class 12',
+];
+
+const UNDERGRAD_SPECIFIC_LEVELS = [
+  'B.Tech/B.E.',
+  'MBBS/BDS',
+  'B.Sc',
+  'B.Com',
+  'B.A',
+  'BBA',
+  'LLB',
+  'BCA',
+  'B.Pharm',
+  'Nursing',
+];
+
+const POSTGRAD_SPECIFIC_LEVELS = [
+  'M.Tech/M.E.',
+  'MD/MS',
+  'M.Sc',
+  'M.Com',
+  'MBA',
+  'LLM',
+  'MCA',
+  'M.Pharm',
+];
+
+const SCHOOL_BOARDS: AcademicStepOption[] = [
+  { label: 'CBSE', value: 'CBSE' },
+  { label: 'ICSE', value: 'ICSE' },
+  { label: 'IGCSE', value: 'IGCSE' },
+  { label: 'IB', value: 'IB' },
+  { label: 'Cambridge O/A Level', value: 'Cambridge O/A Level' },
+  { label: 'State Board', value: 'State Board' },
+];
+
+const UNIVERSITY_BOARDS: AcademicStepOption[] = [
+  { label: 'University Internal', value: 'University Internal' },
+  { label: 'End Semester', value: 'End Semester' },
+  { label: 'Mid Semester', value: 'Mid Semester' },
+];
+
+const COMPETITIVE_EXAMS: AcademicStepOption[] = [
+  { label: 'JEE Mains', value: 'JEE Mains' },
+  { label: 'JEE Advanced', value: 'JEE Advanced' },
+  { label: 'NEET UG', value: 'NEET UG' },
+  { label: 'NEET PG', value: 'NEET PG' },
+  { label: 'UPSC CSE', value: 'UPSC CSE' },
+  { label: 'CAT', value: 'CAT' },
+  { label: 'CLAT', value: 'CLAT' },
+  { label: 'GATE', value: 'GATE' },
+  { label: 'CA Foundation', value: 'CA Foundation' },
+  { label: 'CA Intermediate', value: 'CA Intermediate' },
+  { label: 'CA Final', value: 'CA Final' },
+  { label: 'CUET', value: 'CUET' },
+  { label: 'SAT', value: 'SAT' },
+  { label: 'GRE', value: 'GRE' },
+  { label: 'GMAT', value: 'GMAT' },
+  { label: 'IELTS', value: 'IELTS' },
+  { label: 'State PSC', value: 'State PSC' },
   {
-    label: 'School',
-    options: [
-      { label: 'Class 6', value: 'Class 6' },
-      { label: 'Class 7', value: 'Class 7' },
-      { label: 'Class 8', value: 'Class 8' },
-      { label: 'Class 9', value: 'Class 9' },
-      { label: 'Class 10', value: 'Class 10' },
-      { label: 'Class 11', value: 'Class 11' },
-      { label: 'Class 12', value: 'Class 12' },
-    ],
-  },
-  {
-    label: 'Undergraduate',
-    options: [
-      { label: 'B.Tech / B.E.', value: 'B.Tech / B.E.' },
-      { label: 'MBBS / BDS', value: 'MBBS / BDS' },
-      { label: 'B.Sc', value: 'B.Sc' },
-      { label: 'B.Com', value: 'B.Com' },
-      { label: 'B.A', value: 'B.A' },
-      { label: 'BBA', value: 'BBA' },
-      { label: 'B.Arch', value: 'B.Arch' },
-      { label: 'B.Pharm', value: 'B.Pharm' },
-      { label: 'LLB', value: 'LLB' },
-      { label: 'BCA', value: 'BCA' },
-      { label: 'B.Ed', value: 'B.Ed' },
-      { label: 'Nursing (GNM/BSc)', value: 'Nursing (GNM/BSc)' },
-    ],
-  },
-  {
-    label: 'Postgraduate',
-    options: [
-      { label: 'M.Tech / M.E.', value: 'M.Tech / M.E.' },
-      { label: 'MD / MS (Medical)', value: 'MD / MS (Medical)' },
-      { label: 'M.Sc', value: 'M.Sc' },
-      { label: 'M.Com', value: 'M.Com' },
-      { label: 'MBA', value: 'MBA' },
-      { label: 'MA', value: 'MA' },
-      { label: 'LLM', value: 'LLM' },
-      { label: 'MCA', value: 'MCA' },
-      { label: 'M.Pharm', value: 'M.Pharm' },
-    ],
-  },
-  {
-    label: 'Competitive Exams',
-    options: [
-      { label: 'JEE Mains', value: 'JEE Mains' },
-      { label: 'JEE Advanced', value: 'JEE Advanced' },
-      { label: 'NEET UG', value: 'NEET UG' },
-      { label: 'NEET PG', value: 'NEET PG' },
-      { label: 'UPSC CSE', value: 'UPSC CSE' },
-      { label: 'UPSC IFoS', value: 'UPSC IFoS' },
-      { label: 'CAT', value: 'CAT' },
-      { label: 'CLAT', value: 'CLAT' },
-      { label: 'GATE', value: 'GATE' },
-      { label: 'CA Foundation', value: 'CA Foundation' },
-      { label: 'CA Intermediate', value: 'CA Intermediate' },
-      { label: 'CA Final', value: 'CA Final' },
-      { label: 'CS Foundation', value: 'CS Foundation' },
-      { label: 'CS Executive', value: 'CS Executive' },
-      { label: 'CMA', value: 'CMA' },
-      { label: 'CUET', value: 'CUET' },
-      { label: 'IELTS', value: 'IELTS' },
-      { label: 'GMAT', value: 'GMAT' },
-      { label: 'GRE', value: 'GRE' },
-      { label: 'SAT', value: 'SAT' },
-    ],
-  },
-  {
-    label: 'Professional / Other',
-    options: [
-      {
-        label: 'Custom (specify below)',
-        value: 'Custom (specify below)',
-        requiresCustomInput: true,
-        customPlaceholder: EDUCATION_LEVEL_CUSTOM_PLACEHOLDER,
-      },
-    ],
+    label: 'Other',
+    value: 'Other',
+    requiresCustomInput: true,
+    customPlaceholder: OTHER_EXAM_PLACEHOLDER,
   },
 ];
 
-export const QUESTION_PAPER_EXAM_BOARD_GROUPS: QuestionPaperOptionGroup[] = [
-  {
-    label: 'School Boards',
-    options: [
-      { label: 'CBSE', value: 'CBSE' },
-      { label: 'ICSE', value: 'ICSE' },
-      { label: 'IGCSE', value: 'IGCSE' },
-      { label: 'IB', value: 'IB' },
-      {
-        label: 'State Board (specify)',
-        value: 'State Board (specify)',
-        requiresCustomInput: true,
-        customPlaceholder: STATE_BOARD_PLACEHOLDER,
-      },
-      { label: 'Cambridge O/A Level', value: 'Cambridge O/A Level' },
-    ],
-  },
-  {
-    label: 'University Exams',
-    options: [
-      { label: 'University Internal Exam', value: 'University Internal Exam' },
-      { label: 'University End Semester', value: 'University End Semester' },
-      { label: 'University Mid Semester', value: 'University Mid Semester' },
-      { label: 'Autonomous College Exam', value: 'Autonomous College Exam' },
-    ],
-  },
-  {
-    label: 'Competitive',
-    options: [
-      { label: 'NTA', value: 'NTA' },
-      { label: 'UPSC', value: 'UPSC' },
-      { label: 'SSC', value: 'SSC' },
-      { label: 'IBPS', value: 'IBPS' },
-      { label: 'RBI', value: 'RBI' },
-      { label: 'SEBI', value: 'SEBI' },
-      { label: 'ISRO', value: 'ISRO' },
-      { label: 'DRDO', value: 'DRDO' },
-      { label: 'State PSC', value: 'State PSC' },
-    ],
-  },
-  {
-    label: 'Professional Bodies',
-    options: [
-      { label: 'ICAI (CA)', value: 'ICAI (CA)' },
-      { label: 'ICSI (CS)', value: 'ICSI (CS)' },
-      { label: 'ICMAI (CMA)', value: 'ICMAI (CMA)' },
-      { label: 'NMC (MBBS)', value: 'NMC (MBBS)' },
-      { label: 'Bar Council (Law)', value: 'Bar Council (Law)' },
-      { label: 'AICTE (Engineering)', value: 'AICTE (Engineering)' },
-    ],
-  },
-  {
-    label: 'Custom',
-    options: [
-      {
-        label: 'Other (specify below)',
-        value: 'Other (specify below)',
-        requiresCustomInput: true,
-        customPlaceholder: OTHER_BOARD_PLACEHOLDER,
-      },
-    ],
-  },
-];
+export const DEFAULT_ACADEMIC_SELECTION: AcademicSelectionState = {
+  stepOneId: '',
+  specificLevel: '',
+  boardExam: '',
+  customBoardExam: '',
+};
 
-const flattenOptions = (groups: QuestionPaperOptionGroup[]) =>
-  groups.flatMap((group) => group.options);
+export const getStepOneOption = (stepOneId: string) =>
+  STEP_ONE_OPTIONS.find((option) => option.id === stepOneId) ?? STEP_ONE_OPTIONS[0];
 
-const EDUCATION_LEVEL_OPTIONS = flattenOptions(QUESTION_PAPER_EDUCATION_LEVEL_GROUPS);
-const EXAM_BOARD_OPTIONS = flattenOptions(QUESTION_PAPER_EXAM_BOARD_GROUPS);
+export const shouldSkipSpecificLevelStep = (selection: AcademicSelectionState) =>
+  getStepOneOption(selection.stepOneId).category === 'competitive';
 
-const optionLookup = (options: QuestionPaperSelectOption[], value: string) =>
-  options.find((option) => option.value === value);
+export const getSpecificLevelOptions = (selection: AcademicSelectionState) => {
+  const option = getStepOneOption(selection.stepOneId);
+  switch (option.category) {
+    case 'school':
+      return SCHOOL_SPECIFIC_LEVELS;
+    case 'undergraduate':
+      return UNDERGRAD_SPECIFIC_LEVELS;
+    case 'postgraduate':
+      return POSTGRAD_SPECIFIC_LEVELS;
+    case 'competitive':
+    default:
+      return [];
+  }
+};
 
-export const getQuestionPaperEducationLevelOption = (value: string) =>
-  optionLookup(EDUCATION_LEVEL_OPTIONS, value);
+export const getBoardExamOptions = (selection: AcademicSelectionState) => {
+  const option = getStepOneOption(selection.stepOneId);
+  switch (option.category) {
+    case 'school':
+      return SCHOOL_BOARDS;
+    case 'undergraduate':
+    case 'postgraduate':
+      return UNIVERSITY_BOARDS;
+    case 'competitive':
+    default:
+      return COMPETITIVE_EXAMS;
+  }
+};
 
-export const getQuestionPaperExamBoardOption = (value: string) =>
-  optionLookup(EXAM_BOARD_OPTIONS, value);
+export const getBoardExamOption = (selection: AcademicSelectionState) =>
+  getBoardExamOptions(selection).find((option) => option.value === selection.boardExam);
 
-export const questionPaperEducationLevelRequiresCustomInput = (value: string) =>
-  Boolean(getQuestionPaperEducationLevelOption(value)?.requiresCustomInput);
+export const getResolvedAcademicSelection = (selection: AcademicSelectionState) => {
+  const stepOne = getStepOneOption(selection.stepOneId);
+  const boardOption = getBoardExamOption(selection);
+  const resolvedBoardExam = boardOption?.requiresCustomInput
+    ? selection.customBoardExam.trim()
+    : selection.boardExam.trim();
 
-export const questionPaperExamBoardRequiresCustomInput = (value: string) =>
-  Boolean(getQuestionPaperExamBoardOption(value)?.requiresCustomInput);
+  let educationLevel = '';
+  switch (stepOne.category) {
+    case 'school':
+      educationLevel = selection.specificLevel.trim();
+      break;
+    case 'undergraduate':
+    case 'postgraduate':
+      educationLevel = `${stepOne.label} ${selection.specificLevel.trim()}`.trim();
+      break;
+    case 'competitive':
+      educationLevel = 'Competitive Exam';
+      break;
+  }
 
-export const getQuestionPaperEducationLevelPlaceholder = (value: string) =>
-  getQuestionPaperEducationLevelOption(value)?.customPlaceholder ?? EDUCATION_LEVEL_CUSTOM_PLACEHOLDER;
-
-export const getQuestionPaperExamBoardPlaceholder = (value: string) =>
-  getQuestionPaperExamBoardOption(value)?.customPlaceholder ?? OTHER_BOARD_PLACEHOLDER;
-
-export const resolveQuestionPaperSelectValue = (selectedValue: string, customValue: string, requiresCustomInput: boolean) =>
-  requiresCustomInput ? customValue.trim() : selectedValue;
+  return {
+    educationLevel,
+    examBoard: resolvedBoardExam,
+    isComplete: Boolean(
+      selection.stepOneId &&
+        (shouldSkipSpecificLevelStep(selection) || selection.specificLevel.trim()) &&
+        selection.boardExam.trim() &&
+        resolvedBoardExam
+    ),
+  };
+};

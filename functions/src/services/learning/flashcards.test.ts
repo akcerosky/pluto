@@ -1,4 +1,4 @@
-import { parseFlashcardGenerationResponse } from './flashcards.js';
+import { filterDuplicateFlashcardsByConcept, parseFlashcardGenerationResponse } from './flashcards.js';
 
 describe('parseFlashcardGenerationResponse', () => {
   test('parses raw JSON', () => {
@@ -43,5 +43,20 @@ Good luck studying!
 
   test('returns null for invalid payloads', () => {
     expect(parseFlashcardGenerationResponse('not json at all')).toBeNull();
+  });
+
+  test('filters duplicate flashcards by normalized concept', () => {
+    const filtered = filterDuplicateFlashcardsByConcept(
+      [
+        { concept: 'Photosynthesis', front: 'Q1', back: 'A1', order: 1 },
+        { concept: '  chlorophyll  ', front: 'Q2', back: 'A2', order: 2 },
+        { concept: 'PHOTOSYNTHESIS', front: 'Q3', back: 'A3', order: 3 },
+      ],
+      new Set(['photosynthesis'])
+    );
+
+    expect(filtered).toEqual([
+      { concept: '  chlorophyll  ', front: 'Q2', back: 'A2', order: 2 },
+    ]);
   });
 });

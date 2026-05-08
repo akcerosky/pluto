@@ -12,6 +12,7 @@ import {
   type SubscriptionPlan,
 } from '../config/subscription';
 import {
+  createTextPart,
   getMessageText,
   normalizeMessage,
   normalizeThreadContextSummary,
@@ -906,7 +907,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setPremiumModeCount(0);
     setFreePremiumModesRemainingToday(FREE_PREMIUM_MODE_DAILY_LIMIT);
     localStorage.clear();
-    if (storedTheme === 'dark' || storedTheme === 'light') {
+    if (storedTheme === 'white' || storedTheme === 'black' || storedTheme === 'system') {
       localStorage.setItem('pluto-theme', storedTheme);
     }
     if (storedCookieConsent === 'accepted' || storedCookieConsent === 'rejected') {
@@ -1174,6 +1175,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       });
   }, [persistMessageAndThreadUpdate]);
 
+  const startChatWithPrompt = useCallback(
+    (prompt: string) => {
+      const trimmedPrompt = prompt.trim();
+      if (!trimmedPrompt) {
+        return null;
+      }
+
+      setSelectedMode('chat');
+      setShowModeSelector(false);
+      const threadId = createThread('Conversational', activeProjectId || undefined);
+      addMessageToThread(threadId, {
+        id: crypto.randomUUID(),
+        role: 'user',
+        parts: [createTextPart(trimmedPrompt)],
+        mode: 'Conversational',
+        timestamp: Date.now(),
+      });
+      return threadId;
+    },
+    [activeProjectId, addMessageToThread, createThread]
+  );
+
   const createProject = useCallback(
     (name: string, color: string) => {
       if (planConfig.maxProjects !== null && projects.length >= planConfig.maxProjects) {
@@ -1210,6 +1233,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       activeThreadId,
       setActiveThreadId,
       startNewChat,
+      startChatWithPrompt,
       createThread,
       assignThreadToProject,
       updateThread,
@@ -1282,6 +1306,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       showModeSelector,
       setUser,
       startNewChat,
+      startChatWithPrompt,
       threads,
       updateThread,
       usageTodayTokens,

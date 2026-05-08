@@ -5,7 +5,7 @@ import { INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES } from '../config/plans.js';
 import { assertAuth, getBootstrapIdentity } from '../lib/http.js';
 import { getMeSnapshot } from '../services/firestoreRepo.js';
 import { reconcileUsageTokens, releaseReservedUsageTokens, reserveUsageTokens, } from '../services/firestoreRepo.js';
-import { buildFlashcardMeteringPayload, deleteFlashcardSetForUser, generateFlashcardSetForUser, getDueCardsForUser, getFlashcardCardsForSet, getFlashcardSetsForUser, submitCardReviewForUser, } from '../services/learning/flashcards.js';
+import { addCardsToFlashcardSetForUser, buildFlashcardMeteringPayload, deleteFlashcardSetForUser, generateFlashcardSetForUser, getDueCardsForUser, getFlashcardCardsForSet, getFlashcardSetsForUser, submitCardReviewForUser, } from '../services/learning/flashcards.js';
 import { buildPdfQuestionPaperMeteringPlan, buildQuestionPaperMeteringPlan, buildPdfTopicFromDigest, buildSourceContextFromDigest, buildSubjectFromDigest, deleteQuestionPaperForUser, extractPdfTextWithNovaLite, generateQuestionPaperForUser, generateQuestionPaperPdfForUser, inferSubjectFromText, listQuestionPapers, summarizePdfSourceMaterial, } from '../services/learning/questionPapers.js';
 const optionalRequestIdSchema = z.string().trim().min(8).max(200).optional();
 const optionalTrimmedString = (maxLength) => z.preprocess((value) => {
@@ -79,6 +79,13 @@ const paperIdSchema = z.object({
     requestId: optionalRequestIdSchema,
 });
 const generateFlashcardSetSchema = z.object({
+    topic: z.string().trim().min(1).max(200),
+    subject: optionalTrimmedString(120),
+    educationLevel: optionalTrimmedString(80),
+    requestId: optionalRequestIdSchema,
+});
+const addCardsToFlashcardSetSchema = z.object({
+    setId: z.string().trim().min(1).max(200),
     topic: z.string().trim().min(1).max(200),
     subject: optionalTrimmedString(120),
     educationLevel: optionalTrimmedString(80),
@@ -209,6 +216,38 @@ export const generateFlashcardSetHandler = async (request) => {
             });
             return {
                 result: { setId: generated.setId },
+                usage: generated.usage,
+            };
+        },
+    });
+};
+export const addCardsToFlashcardSetHandler = async (request) => {
+    const uid = assertAuth(request);
+    const plan = await requireLearningPlan(uid, request);
+    const payload = addCardsToFlashcardSetSchema.parse(request.data ?? {});
+    const requestId = resolveLearningRequestId(payload);
+    const metering = buildFlashcardMeteringPayload({
+        topic: payload.topic,
+        subject: payload.subject,
+        educationLevel: payload.educationLevel,
+        plan,
+    });
+    return runMeteredLearningGeneration({
+        uid,
+        plan,
+        reservedTokens: metering.reservedTokens,
+        run: async () => {
+            const generated = await addCardsToFlashcardSetForUser({
+                uid,
+                setId: payload.setId,
+                topic: payload.topic,
+                subject: payload.subject,
+                educationLevel: payload.educationLevel,
+                plan,
+                requestId,
+            });
+            return {
+                result: { addedCount: generated.addedCount, setName: generated.setName },
                 usage: generated.usage,
             };
         },

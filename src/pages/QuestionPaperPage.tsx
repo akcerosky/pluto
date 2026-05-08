@@ -7,18 +7,12 @@ import {
   getQuestionPapers,
 } from '../lib/plutoApi';
 import {
-  DEFAULT_QUESTION_PAPER_EDUCATION_LEVEL,
-  DEFAULT_QUESTION_PAPER_EXAM_BOARD,
-  QUESTION_PAPER_EDUCATION_LEVEL_GROUPS,
-  QUESTION_PAPER_EXAM_BOARD_GROUPS,
-  getQuestionPaperEducationLevelPlaceholder,
-  getQuestionPaperExamBoardPlaceholder,
-  questionPaperEducationLevelRequiresCustomInput,
-  questionPaperExamBoardRequiresCustomInput,
-  resolveQuestionPaperSelectValue,
+  DEFAULT_ACADEMIC_SELECTION,
+  getResolvedAcademicSelection,
 } from '../lib/questionPaperFormOptions';
 import { normalizeLearningErrorMessage } from '../lib/learningUi';
 import type { QuestionPaperDoc } from '../types';
+import { CascadingAcademicSelector } from '../components/Learning/CascadingAcademicSelector';
 
 const downloadBase64File = (base64Data: string, filename: string, mimeType: string) => {
   const bytes = Uint8Array.from(atob(base64Data), (character) => character.charCodeAt(0));
@@ -114,10 +108,7 @@ export const QuestionPaperPage = ({
 }) => {
   const isMountedRef = useRef(true);
   const [subject, setSubject] = useState('');
-  const [educationLevel, setEducationLevel] = useState(DEFAULT_QUESTION_PAPER_EDUCATION_LEVEL);
-  const [educationLevelCustomValue, setEducationLevelCustomValue] = useState('');
-  const [examBoard, setExamBoard] = useState(DEFAULT_QUESTION_PAPER_EXAM_BOARD);
-  const [examBoardCustomValue, setExamBoardCustomValue] = useState('');
+  const [academicSelection, setAcademicSelection] = useState(DEFAULT_ACADEMIC_SELECTION);
   const [topic, setTopic] = useState('');
   const [papers, setPapers] = useState<QuestionPaperDoc[]>([]);
   const [activePaperId, setActivePaperId] = useState<string | null>(null);
@@ -203,23 +194,11 @@ export const QuestionPaperPage = ({
     isCompactLayout && effectiveMobileView === 'previous' && activePaperId !== null;
   const shouldShowEmbeddedMobileSwitcher = false;
   const shouldShowInlineComposer = false;
-  const educationLevelNeedsCustomInput = questionPaperEducationLevelRequiresCustomInput(educationLevel);
-  const examBoardNeedsCustomInput = questionPaperExamBoardRequiresCustomInput(examBoard);
-  const resolvedEducationLevel = resolveQuestionPaperSelectValue(
-    educationLevel,
-    educationLevelCustomValue,
-    educationLevelNeedsCustomInput
-  );
-  const resolvedExamBoard = resolveQuestionPaperSelectValue(
-    examBoard,
-    examBoardCustomValue,
-    examBoardNeedsCustomInput
-  );
+  const resolvedAcademicSelection = getResolvedAcademicSelection(academicSelection);
   const isGenerateDisabled =
     isLoading ||
     !subject.trim() ||
-    (educationLevelNeedsCustomInput && !educationLevelCustomValue.trim()) ||
-    (examBoardNeedsCustomInput && !examBoardCustomValue.trim());
+    !resolvedAcademicSelection.isComplete;
 
   useEffect(() => {
     if (!isCompactLayout) return;
@@ -306,8 +285,8 @@ export const QuestionPaperPage = ({
   }) => {
     const payload = overridePayload ?? {
       subject: normalizeWhitespace(subject),
-      educationLevel: resolvedEducationLevel,
-      examBoard: resolvedExamBoard,
+      educationLevel: resolvedAcademicSelection.educationLevel,
+      examBoard: resolvedAcademicSelection.examBoard,
       topic: normalizeWhitespace(topic) || undefined,
     };
 
@@ -352,62 +331,6 @@ export const QuestionPaperPage = ({
     downloadBase64File(result.base64Pdf, result.filename, 'application/pdf');
   };
 
-  const renderEducationLevelSelect = () => (
-    <>
-      <select
-        value={educationLevel}
-        onChange={(event) => setEducationLevel(event.target.value)}
-        style={composerInputStyle}
-      >
-        {QUESTION_PAPER_EDUCATION_LEVEL_GROUPS.map((group) => (
-          <optgroup key={group.label} label={group.label}>
-            {group.options.map((level) => (
-              <option key={level.value} value={level.value}>
-                {level.label}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-      {educationLevelNeedsCustomInput ? (
-        <input
-          value={educationLevelCustomValue}
-          onChange={(event) => setEducationLevelCustomValue(event.target.value)}
-          placeholder={getQuestionPaperEducationLevelPlaceholder(educationLevel)}
-          style={composerInputStyle}
-        />
-      ) : null}
-    </>
-  );
-
-  const renderExamBoardSelect = () => (
-    <>
-      <select
-        value={examBoard}
-        onChange={(event) => setExamBoard(event.target.value)}
-        style={composerInputStyle}
-      >
-        {QUESTION_PAPER_EXAM_BOARD_GROUPS.map((group) => (
-          <optgroup key={group.label} label={group.label}>
-            {group.options.map((board) => (
-              <option key={board.value} value={board.value}>
-                {board.label}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-      {examBoardNeedsCustomInput ? (
-        <input
-          value={examBoardCustomValue}
-          onChange={(event) => setExamBoardCustomValue(event.target.value)}
-          placeholder={getQuestionPaperExamBoardPlaceholder(examBoard)}
-          style={composerInputStyle}
-        />
-      ) : null}
-    </>
-  );
-
   const renderTopicComposer = () => (
     <div style={promptBarShellStyle}>
       {isCompactLayout ? (
@@ -424,8 +347,10 @@ export const QuestionPaperPage = ({
               gridTemplateColumns: '1fr',
             }}
           >
-            {renderEducationLevelSelect()}
-            {renderExamBoardSelect()}
+            <CascadingAcademicSelector
+              selection={academicSelection}
+              onChange={setAcademicSelection}
+            />
           </div>
           <div
             style={{
@@ -463,8 +388,12 @@ export const QuestionPaperPage = ({
             placeholder="Subject"
             style={composerInputStyle}
           />
-          <div style={stackedInlineFieldStyle}>{renderEducationLevelSelect()}</div>
-          <div style={stackedInlineFieldStyle}>{renderExamBoardSelect()}</div>
+          <div style={{ gridColumn: 'span 2', minWidth: 0 }}>
+            <CascadingAcademicSelector
+              selection={academicSelection}
+              onChange={setAcademicSelection}
+            />
+          </div>
           <input
             value={topic}
             onChange={(event) => setTopic(event.target.value)}
@@ -939,11 +868,13 @@ export const QuestionPaperPage = ({
               <div
                 style={{
                   ...stackedSelectRowStyle,
-                  gridTemplateColumns: isCompactLayout ? '1fr' : '1fr 1fr',
+                  gridTemplateColumns: '1fr',
                 }}
               >
-                {renderEducationLevelSelect()}
-                {renderExamBoardSelect()}
+                <CascadingAcademicSelector
+                  selection={academicSelection}
+                  onChange={setAcademicSelection}
+                />
               </div>
               <div
                 style={{
@@ -1303,14 +1234,9 @@ const actionRowStyle: CSSProperties = {
 
 const desktopComposerRowStyle: CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'minmax(180px, 1.1fr) minmax(150px, 0.9fr) minmax(140px, 0.85fr) minmax(220px, 1.3fr) auto',
+  gridTemplateColumns: 'minmax(140px, 0.8fr) minmax(180px, 0.95fr) minmax(180px, 0.95fr) minmax(170px, 0.9fr) minmax(150px, 0.7fr)',
   gap: '10px',
   alignItems: 'center',
-};
-
-const stackedInlineFieldStyle: CSSProperties = {
-  display: 'grid',
-  gap: '10px',
 };
 
 const composerInputStyle: CSSProperties = {

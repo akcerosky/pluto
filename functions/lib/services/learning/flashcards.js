@@ -109,6 +109,18 @@ export const parseFlashcardGenerationResponse = (value) => {
     }
     return safeJsonParse(extractJsonCandidate(value));
 };
+const normalizeConceptKey = (value) => value.trim().replace(/\s+/g, ' ').toLowerCase();
+export const filterDuplicateFlashcardsByConcept = (cards, existingConceptKeys) => {
+    const seen = new Set(existingConceptKeys);
+    return cards.filter((card) => {
+        const key = normalizeConceptKey(card.concept);
+        if (!key || seen.has(key)) {
+            return false;
+        }
+        seen.add(key);
+        return true;
+    });
+};
 export const buildGenerationPrompt = ({ topic, subject, educationLevel, }) => `
 Generate flashcards for a student studying: "${topic}"
 ${subject ? `Subject: ${subject}` : ''}
@@ -224,6 +236,80 @@ export const generateFlashcardSetForUser = async ({ uid, topic, subject, educati
         latencyMs: Date.now() - startedAt,
     });
     return { setId: setRef.id, usage: response.usage };
+};
+export const addCardsToFlashcardSetForUser = async ({ uid, setId, topic, subject, educationLevel, plan, requestId, }) => {
+    const setRef = setCollection(uid).doc(setId);
+    const [setSnap, cardsSnap] = await Promise.all([
+        setRef.get(),
+        setRef.collection('cards').orderBy('order', 'asc').get(),
+    ]);
+    if (!setSnap.exists) {
+        throw new Error('Flashcard set not found.');
+    }
+    const setDoc = flashcardSetDocSchema.parse(setSnap.data());
+    const existingCards = cardsSnap.docs.map((doc) => flashcardCardDocSchema.parse(doc.data()));
+    const existingConceptKeys = new Set(existingCards.map((card) => normalizeConceptKey(card.concept)));
+    const nextOrderStart = existingCards.reduce((max, card) => Math.max(max, card.order), 0) + 1;
+    const response = await executeHybridAiRequest({
+        prompt: buildGenerationPrompt({
+            topic,
+            subject: subject || setDoc.subject,
+            educationLevel: educationLevel || setDoc.educationLevel,
+        }),
+        educationLevel: educationLevel || setDoc.educationLevel || 'High School',
+        mode: 'Conversational',
+        objective: `Generate a machine-readable flashcard set for ${topic}`,
+        plan,
+        uid,
+        requestId,
+        history: [],
+        summaryCandidates: [],
+        attachments: [],
+        maxOutputTokens: 1400,
+    });
+    const parsed = parseFlashcardGenerationResponse(response.text);
+    const validatedGeneration = flashcardGenerationResponseSchema.safeParse(parsed);
+    if (!validatedGeneration.success) {
+        throw new Error('Flashcard generation returned invalid JSON.');
+    }
+    const uniqueCards = filterDuplicateFlashcardsByConcept(validatedGeneration.data.cards, existingConceptKeys);
+    const nowIso = new Date().toISOString();
+    const nextCards = uniqueCards.map((card, index) => flashcardCardDocSchema.parse({
+        id: crypto.randomUUID(),
+        front: card.front,
+        back: card.back,
+        concept: card.concept,
+        order: nextOrderStart + index,
+        interval: 0,
+        easinessFactor: 2.5,
+        repetitions: 0,
+        nextReviewAt: nowIso,
+        masteryLevel: 'new',
+        timesReviewed: 0,
+        timesCorrect: 0,
+    }));
+    if (nextCards.length === 0) {
+        return { addedCount: 0, setName: setDoc.title, usage: response.usage };
+    }
+    const allCards = [...existingCards, ...nextCards];
+    const stats = computeStats(allCards);
+    const batch = adminDb.batch();
+    for (const card of nextCards) {
+        batch.set(setRef.collection('cards').doc(card.id), card);
+    }
+    batch.set(setRef, flashcardSetDocSchema.partial().parse({
+        totalCards: allCards.length,
+        stats,
+        topic,
+        subject: subject || setDoc.subject,
+        educationLevel: educationLevel || setDoc.educationLevel,
+    }), { merge: true });
+    await batch.commit();
+    return {
+        addedCount: nextCards.length,
+        setName: setDoc.title,
+        usage: response.usage,
+    };
 };
 export const getFlashcardSetsForUser = async (uid) => {
     const snapshot = await setCollection(uid).orderBy('createdAt', 'desc').get();

@@ -412,6 +412,16 @@ export const generateFlashcardSet = async (payload: {
   return result.data;
 };
 
+export const addCardsToFlashcardSet = async (payload: { setId: string; topic: string }) => {
+  const call = httpsCallable<typeof payload, {
+    addedCount: number;
+    setName: string;
+    usagePendingSync: boolean;
+  }>(requireFunctions(), 'addCardsToFlashcardSet');
+  const result = await call(payload);
+  return result.data;
+};
+
 export const getFlashcardSets = async () => {
   const call = httpsCallable<undefined, { sets: FlashcardSetDoc[]; dueCount: number }>(
     requireFunctions(),

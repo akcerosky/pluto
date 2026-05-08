@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { CheckCircle2, GraduationCap, LogOut, Mail, Save, Target, User } from 'lucide-react';
 import { useApp } from '../context/useApp';
 import type { EducationLevel } from '../context/appContextTypes';
@@ -308,10 +308,10 @@ export const ProfilePage = () => {
               <div>
                 <div style={{ fontWeight: 700, marginBottom: '4px' }}>Appearance</div>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                  Switch between Pluto&apos;s refined dark and light surfaces.
+                  Choose White, System, or Black. White is the default unless you prefer your OS theme.
                 </p>
               </div>
-              <ThemeToggle label="Toggle Pluto theme from settings" />
+              <ThemeToggle label="Choose Pluto theme from settings" />
             </div>
           </section>
 
@@ -566,7 +566,7 @@ export const ProfilePage = () => {
   );
 };
 
-const sectionStyle: React.CSSProperties = {
+const sectionStyle: CSSProperties = {
   background: 'var(--glass-bg-strong)',
   padding: '32px',
   borderRadius: '24px',
@@ -575,59 +575,60 @@ const sectionStyle: React.CSSProperties = {
   backdropFilter: 'blur(40px)',
 };
 
-const sectionTitleStyle: React.CSSProperties = {
+const sectionTitleStyle: CSSProperties = {
   fontSize: '1.2rem',
   fontWeight: '700',
   marginBottom: '24px',
   color: 'var(--text-primary)',
 };
 
-const gridStyle: React.CSSProperties = {
+const gridStyle: CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
   gap: '24px',
 };
 
-const inputGroupStyle: React.CSSProperties = {
+const inputGroupStyle: CSSProperties = {
   display: 'flex',
   flexDirection: 'column',
   gap: '8px',
 };
 
-const labelStyle: React.CSSProperties = {
+const labelStyle: CSSProperties = {
   fontSize: '0.75rem',
   fontWeight: '700',
   color: 'var(--text-secondary)',
 };
 
-const inputContainerStyle: React.CSSProperties = {
+const inputContainerStyle: CSSProperties = {
   position: 'relative',
 };
 
-const iconStyle: React.CSSProperties = {
+const iconStyle: CSSProperties = {
   position: 'absolute',
   left: '16px',
   top: '50%',
   transform: 'translateY(-50%)',
-  color: 'color-mix(in srgb, var(--text-secondary) 78%, white 22%)',
-  opacity: 0.92,
+  color: 'color-mix(in srgb, var(--text-primary) 72%, var(--primary) 28%)',
+  opacity: 1,
   pointerEvents: 'none',
+  zIndex: 1,
 };
 
-const profileInputStyle: React.CSSProperties = {
+const profileInputStyle: CSSProperties = {
   width: '100%',
   padding: '14px 14px 14px 48px',
-  background: 'color-mix(in srgb, var(--surface-2) 88%, transparent)',
-  border: '1px solid color-mix(in srgb, var(--glass-border-strong) 74%, transparent)',
+  background: 'color-mix(in srgb, var(--surface-1) 94%, white 6%)',
+  border: '1px solid color-mix(in srgb, var(--border-color) 72%, white 28%)',
   borderRadius: '16px',
   color: 'var(--text-primary)',
   fontSize: '0.95rem',
   outline: 'none',
   backdropFilter: 'blur(14px)',
-  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.03), inset 0 -1px 0 rgba(0,0,0,0.2)',
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.72), 0 1px 2px rgba(15,23,42,0.04)',
 };
 
-const primaryButtonStyle = (disabled?: boolean): React.CSSProperties => ({
+const primaryButtonStyle = (disabled?: boolean): CSSProperties => ({
   padding: '12px 24px',
   borderRadius: '12px',
   background: 'var(--action-bg)',
@@ -643,7 +644,7 @@ const primaryButtonStyle = (disabled?: boolean): React.CSSProperties => ({
   boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18), 0 12px 28px rgba(108,63,197,0.34)',
 });
 
-const secondaryButtonStyle: React.CSSProperties = {
+const secondaryButtonStyle: CSSProperties = {
   padding: '10px 16px',
   borderRadius: '10px',
   background: 'var(--glass-bg)',
@@ -654,26 +655,26 @@ const secondaryButtonStyle: React.CSSProperties = {
   backdropFilter: 'blur(20px)',
 };
 
-const mutedDangerButtonStyle: React.CSSProperties = {
+const mutedDangerButtonStyle: CSSProperties = {
   ...secondaryButtonStyle,
   background: 'var(--danger-soft)',
   border: '1px solid color-mix(in srgb, var(--danger) 36%, transparent)',
   color: 'var(--danger)',
 };
 
-const resumeButtonStyle: React.CSSProperties = {
+const resumeButtonStyle: CSSProperties = {
   ...secondaryButtonStyle,
   background: 'var(--primary-soft)',
   border: '1px solid var(--primary-border)',
   color: 'var(--primary)',
 };
 
-const selectOptionStyle: React.CSSProperties = {
+const selectOptionStyle: CSSProperties = {
   color: 'var(--text-primary)',
   background: 'var(--surface-2)',
 };
 
-const dangerButtonStyle: React.CSSProperties = {
+const dangerButtonStyle: CSSProperties = {
   padding: '12px 24px',
   borderRadius: '12px',
   background: 'color-mix(in srgb, var(--danger-soft) 78%, var(--glass-bg))',

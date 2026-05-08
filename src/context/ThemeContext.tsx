@@ -1,31 +1,71 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { ThemeContext, type PlutoTheme, type ThemeContextValue } from './themeContextValue';
+import {
+  ThemeContext,
+  type PlutoTheme,
+  type PlutoThemePreference,
+  type ThemeContextValue,
+} from './themeContextValue';
 
 const STORAGE_KEY = 'pluto-theme';
 
 const getSystemTheme = (): PlutoTheme =>
   window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 
-const getInitialTheme = (): { theme: PlutoTheme; hasExplicitPreference: boolean } => {
+const resolvePreferenceTheme = (preference: PlutoThemePreference): PlutoTheme => {
+  if (preference === 'black') return 'dark';
+  if (preference === 'white') return 'light';
+  return getSystemTheme();
+};
+
+const normalizeStoredPreference = (value: string | null): PlutoThemePreference | null => {
+  if (value === 'white' || value === 'black' || value === 'system') {
+    return value;
+  }
+  if (value === 'light') {
+    return 'white';
+  }
+  if (value === 'dark') {
+    return 'black';
+  }
+  return null;
+};
+
+const getInitialTheme = (): {
+  theme: PlutoTheme;
+  preference: PlutoThemePreference;
+  hasExplicitPreference: boolean;
+} => {
   if (typeof window === 'undefined') {
-    return { theme: 'dark', hasExplicitPreference: false };
+    return { theme: 'light', preference: 'white', hasExplicitPreference: false };
   }
 
-  const storedTheme = window.localStorage.getItem(STORAGE_KEY);
-  if (storedTheme === 'dark' || storedTheme === 'light') {
-    return { theme: storedTheme, hasExplicitPreference: true };
+  const storedPreference = normalizeStoredPreference(window.localStorage.getItem(STORAGE_KEY));
+  if (storedPreference) {
+    return {
+      theme: resolvePreferenceTheme(storedPreference),
+      preference: storedPreference,
+      hasExplicitPreference: storedPreference !== 'system',
+    };
   }
 
   const htmlTheme = document.documentElement.dataset.theme;
   if (htmlTheme === 'dark' || htmlTheme === 'light') {
-    return { theme: htmlTheme, hasExplicitPreference: false };
+    return {
+      theme: htmlTheme,
+      preference: htmlTheme === 'dark' ? 'black' : 'white',
+      hasExplicitPreference: false,
+    };
   }
 
-  return { theme: getSystemTheme(), hasExplicitPreference: false };
+  return { theme: 'light', preference: 'white', hasExplicitPreference: false };
 };
 
 const applyTheme = (theme: PlutoTheme) => {
-  document.documentElement.dataset.theme = theme;
+  if (theme === 'dark') {
+    document.documentElement.dataset.theme = 'dark';
+    return;
+  }
+  delete document.documentElement.dataset.theme;
 };
 
 export const ThemeProvider = ({ children }: { children: ReactNode }) => {
@@ -43,10 +83,11 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => {
       setState((current) =>
-        current.hasExplicitPreference
+        current.preference !== 'system'
           ? current
           : {
               theme: mediaQuery.matches ? 'dark' : 'light',
+              preference: 'system',
               hasExplicitPreference: false,
             }
       );
@@ -54,25 +95,25 @@ export const ThemeProvider = ({ children }: { children: ReactNode }) => {
 
     mediaQuery.addEventListener('change', handleChange);
     return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [state.hasExplicitPreference]);
+  }, [state.hasExplicitPreference, state.preference]);
 
   const value = useMemo<ThemeContextValue>(
     () => ({
       theme: state.theme,
+      preference: state.preference,
       hasExplicitPreference: state.hasExplicitPreference,
-      setTheme: (theme) => {
-        window.localStorage.setItem(STORAGE_KEY, theme);
-        applyTheme(theme);
-        setState({ theme, hasExplicitPreference: true });
-      },
-      toggleTheme: () => {
-        const nextTheme = state.theme === 'dark' ? 'light' : 'dark';
-        window.localStorage.setItem(STORAGE_KEY, nextTheme);
+      setThemePreference: (preference) => {
+        window.localStorage.setItem(STORAGE_KEY, preference);
+        const nextTheme = resolvePreferenceTheme(preference);
         applyTheme(nextTheme);
-        setState({ theme: nextTheme, hasExplicitPreference: true });
+        setState({
+          theme: nextTheme,
+          preference,
+          hasExplicitPreference: preference !== 'system',
+        });
       },
     }),
-    [state]
+    [state.hasExplicitPreference, state.preference, state.theme]
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

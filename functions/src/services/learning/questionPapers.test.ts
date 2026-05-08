@@ -37,9 +37,11 @@ jest.mock('./searchAdapter.js', () => ({
 
 import {
   buildFormatResearchQuery,
+  EXAM_FORMAT_OVERRIDES,
   generateQuestionPaperForUser,
   normalizePdfSourceDigest,
   normalizeQuestionPaperPayload,
+  researchQuestionPaperFormat,
   validateQuestionPaperStructure,
 } from './questionPapers.js';
 import { sanitizePdfRenderableText } from './questionPaperSanitizer.js';
@@ -229,6 +231,35 @@ describe('normalizePdfSourceDigest', () => {
       educationLevel: 'Class 10',
       subject: 'Physics',
     })).toBe('CBSE Class 10 Physics sample question paper marking scheme official');
+  });
+
+  test('uses exam format overrides directly for known competitive exams without running search research', async () => {
+    const result = await researchQuestionPaperFormat({
+      uid: 'user-1',
+      subject: 'Physics',
+      educationLevel: 'Competitive Exam',
+      examBoard: 'JEE Mains',
+      plan: 'Plus',
+      requestId: 'req-override-jee-mains',
+    });
+
+    expect(searchExamFormatSources).not.toHaveBeenCalled();
+    expect(executeHybridAiRequest).not.toHaveBeenCalled();
+    expect(result.format.totalMarks).toBe(EXAM_FORMAT_OVERRIDES['JEE Mains'].totalMarks);
+    expect(result.format.sections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'Section A',
+          questionType: 'MCQ (Single Correct)',
+          negativeMarking: -1,
+        }),
+        expect.objectContaining({
+          name: 'Section B',
+          questionType: 'Numerical Value',
+          attemptRequired: 5,
+        }),
+      ])
+    );
   });
 
   test('validateQuestionPaperStructure enforces type-based mark ranges and exact totals', () => {

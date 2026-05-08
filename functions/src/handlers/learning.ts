@@ -10,6 +10,7 @@ import {
   reserveUsageTokens,
 } from '../services/firestoreRepo.js';
 import {
+  addCardsToFlashcardSetForUser,
   buildFlashcardMeteringPayload,
   deleteFlashcardSetForUser,
   generateFlashcardSetForUser,
@@ -134,6 +135,14 @@ const paperIdSchema = z.object({
 });
 
 const generateFlashcardSetSchema = z.object({
+  topic: z.string().trim().min(1).max(200),
+  subject: optionalTrimmedString(120),
+  educationLevel: optionalTrimmedString(80),
+  requestId: optionalRequestIdSchema,
+});
+
+const addCardsToFlashcardSetSchema = z.object({
+  setId: z.string().trim().min(1).max(200),
   topic: z.string().trim().min(1).max(200),
   subject: optionalTrimmedString(120),
   educationLevel: optionalTrimmedString(80),
@@ -279,6 +288,39 @@ export const generateFlashcardSetHandler = async (request: CallableRequest<unkno
       });
       return {
         result: { setId: generated.setId },
+        usage: generated.usage,
+      };
+    },
+  });
+};
+
+export const addCardsToFlashcardSetHandler = async (request: CallableRequest<unknown>) => {
+  const uid = assertAuth(request);
+  const plan = await requireLearningPlan(uid, request);
+  const payload = addCardsToFlashcardSetSchema.parse(request.data ?? {});
+  const requestId = resolveLearningRequestId(payload);
+  const metering = buildFlashcardMeteringPayload({
+    topic: payload.topic,
+    subject: payload.subject,
+    educationLevel: payload.educationLevel,
+    plan,
+  });
+  return runMeteredLearningGeneration({
+    uid,
+    plan,
+    reservedTokens: metering.reservedTokens,
+    run: async () => {
+      const generated = await addCardsToFlashcardSetForUser({
+        uid,
+        setId: payload.setId,
+        topic: payload.topic,
+        subject: payload.subject,
+        educationLevel: payload.educationLevel,
+        plan,
+        requestId,
+      });
+      return {
+        result: { addedCount: generated.addedCount, setName: generated.setName },
         usage: generated.usage,
       };
     },

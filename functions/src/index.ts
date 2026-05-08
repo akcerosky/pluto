@@ -74,6 +74,10 @@ export const generateFlashcardSet = lazySecureCallable(
   async () => (await import('./handlers/learning.js')).generateFlashcardSetHandler as CloudCallableHandler,
   { minInstances: 1, timeoutSeconds: 120 }
 );
+export const addCardsToFlashcardSet = lazySecureCallable(
+  async () => (await import('./handlers/learning.js')).addCardsToFlashcardSetHandler as CloudCallableHandler,
+  { minInstances: 1, timeoutSeconds: 120 }
+);
 export const getFlashcardSets = lazySecureCallable(
   async () => (await import('./handlers/learning.js')).getFlashcardSetsHandler as CloudCallableHandler
 );

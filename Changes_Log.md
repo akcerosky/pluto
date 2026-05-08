@@ -534,3 +534,21 @@
 - Fixed the PDF-to-question-paper retry crossover bug in `src/pages/QuestionPaperPage.tsx` and `src/pages/PdfQuestionPaperPage.tsx` so failed PDF papers no longer call `generateQuestionPaper`; they now route users back to the PDF upload flow instead of creating stray topic-paper retries.
 - Added explicit paper source labels in `src/pages/QuestionPaperPage.tsx` so question-paper cards and detail headers now show whether a paper came `From topic` or `From PDF`, making same-title collisions easier to distinguish.
 - Polished Flashcards and paper layout behavior across mobile and desktop by restoring the mobile Flashcards `New` / `Previous` flow, fixing desktop form alignment, and removing duplicate/ambiguous list content in the review panes.
+
+## 2026-05-08
+
+### Learning Search, Navigation, and Theme Overhaul
+
+- Added a real sidebar `Discover` experience with `src/components/Search/SearchOverlay.tsx`, keyword-based learning suggestions, inline chat-start behavior for unmatched queries, and recent-chat routing that always returns learning tabs to `chat`.
+- Reworked question-paper and PDF-paper setup around a shared cascading academic selector with `School`, `Undergraduate`, `Postgraduate`, and `Competitive Exam` flows, course-specific undergrad/postgrad options, refined board/exam handling, and desktop row alignment that keeps `Generate Paper` inline.
+- Added the new theme preference model `white | system | black`, kept `white` as the default stored preference, and updated the Profile settings segmented control plus root CSS token handling for system-aware theming.
+- Added inline “Add Cards” support for existing flashcard sets, including the new callable backend path that appends non-duplicate cards to a set and updates stored card totals.
+- Reworked question-paper generation for known exams with explicit format overrides, richer PDF rendering, and improved exam-specific paper structure instead of the old generic fallback.
+
+### Question Paper Reliability and PDF Flow Hardening
+
+- Added structured JSON recovery and retry handling for question-paper generation so malformed provider output is repaired or retried before failing, with better error messages surfaced to both logs and the learning UI.
+- Improved `generatePaperFromPdfs` progress feedback in `src/pages/PdfQuestionPaperPage.tsx` with staged in-flight status updates while extraction, analysis, and generation are running.
+- Added incomplete-question-output detection in `functions/src/services/learning/questionPapers.ts` so suspiciously short question-generation responses trigger an immediate retry with a stricter follow-up prompt and optional `temperature` override.
+- Increased `generatePaperFromPdfs` runtime budget to support larger PDF jobs and threaded the new retry controls through the AI provider configuration path.
+- Verified the backend changes with frontend build, Functions build, and Functions test coverage, then deployed the updated functions to Firebase project `pluto-ef61b`.

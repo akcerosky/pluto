@@ -38,7 +38,16 @@ export const PDF_SYMBOL_FALLBACKS: Record<string, string> = {
 };
 
 const stripUnsupportedControlChars = (value: string) =>
-  value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ');
+  Array.from(value, (character) => {
+    const code = character.charCodeAt(0);
+    const isUnsupportedControl =
+      (code >= 0x00 && code <= 0x08) ||
+      code === 0x0b ||
+      code === 0x0c ||
+      (code >= 0x0e && code <= 0x1f) ||
+      code === 0x7f;
+    return isUnsupportedControl ? ' ' : character;
+  }).join('');
 
 const replaceAll = (value: string, replacements: Array<[RegExp, string]>) =>
   replacements.reduce((current, [pattern, replacement]) => current.replace(pattern, replacement), value);

@@ -133,6 +133,8 @@ export interface QuestionPaperFormatSection {
   questions: number;
   marksPerQuestion: number;
   totalMarks?: number;
+  negativeMarking?: number;
+  attemptRequired?: number;
 }
 
 export interface QuestionPaperQuestion {
@@ -140,7 +142,15 @@ export interface QuestionPaperQuestion {
   sectionName: string;
   questionNumber: number;
   text: string;
-  type: 'mcq' | 'short_answer' | 'long_answer' | 'essay' | 'fill_blank' | 'assertion_reason';
+  type:
+    | 'mcq'
+    | 'short_answer'
+    | 'long_answer'
+    | 'essay'
+    | 'fill_blank'
+    | 'assertion_reason'
+    | 'numerical'
+    | 'integer';
   marks: number;
   options?: string[];
   subParts?: string[];

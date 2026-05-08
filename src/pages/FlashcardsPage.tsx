@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   EyeOff,
   Loader2,
+  Plus,
   RefreshCw,
   RotateCcw,
   Shuffle,
@@ -12,6 +13,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import {
+  addCardsToFlashcardSet,
   deleteFlashcardSet,
   generateFlashcardSet,
   getDueCards,
@@ -67,6 +69,10 @@ export const FlashcardsPage = () => {
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const [newOnly, setNewOnly] = useState(false);
   const [generationErrorMessage, setGenerationErrorMessage] = useState<string | null>(null);
+  const [addCardsNotice, setAddCardsNotice] = useState<string | null>(null);
+  const [activeAddCardsSetId, setActiveAddCardsSetId] = useState<string | null>(null);
+  const [addCardsTopicBySetId, setAddCardsTopicBySetId] = useState<Record<string, string>>({});
+  const [addCardsLoadingSetId, setAddCardsLoadingSetId] = useState<string | null>(null);
   const [failedGenerationAttempt, setFailedGenerationAttempt] = useState<{
     topic: string;
     subject?: string;
@@ -102,6 +108,18 @@ export const FlashcardsPage = () => {
   useEffect(() => {
     void loadSets();
   }, [loadSets]);
+
+  useEffect(() => {
+    if (!addCardsNotice) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setAddCardsNotice(null);
+    }, 4000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [addCardsNotice]);
 
   const extractGenerationErrorMessage = (error: unknown) => {
     return normalizeLearningErrorMessage({
@@ -158,60 +176,187 @@ export const FlashcardsPage = () => {
   const isReviewing = sessionTotalCards > 0;
   const selectedSet = sets.find((set) => set.id === selectedSetId) ?? null;
 
-  const flashcardSetList = (
-    <div style={{ display: 'grid', gap: '10px' }}>
-      {sets.map((set) => (
-        <div
-          key={set.id}
-          onClick={() => void beginReviewForSet(set.id)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              void beginReviewForSet(set.id);
-            }
-          }}
-          role="button"
-          tabIndex={0}
-          style={{
-            ...flashSetCardStyle,
-            borderColor:
-              selectedSetId === set.id
-                ? 'rgba(136, 104, 255, 0.45)'
-                : 'var(--glass-border)',
-          }}
-        >
-          <div>
-            <div style={{ fontWeight: 800 }}>{set.title}</div>
-            <div
-              style={{
-                color: 'var(--text-secondary)',
-                fontSize: '0.85rem',
-                marginTop: '4px',
-              }}
-            >
-              {`${set.totalCards} cards · ${set.stats.dueToday} due today`}
+  const handleDeleteSet = async (setId: string) => {
+    await deleteFlashcardSet({ setId });
+    if (selectedSetId === setId) {
+      setSelectedSetId(null);
+      setReviewDeck([]);
+      setReviewDeckSeed([]);
+    }
+    if (activeAddCardsSetId === setId) {
+      setActiveAddCardsSetId(null);
+    }
+    await loadSets();
+  };
+
+  const toggleAddCardsForm = (setId: string) => {
+    setAddCardsNotice(null);
+    setActiveAddCardsSetId((current) => (current === setId ? null : setId));
+    setAddCardsTopicBySetId((current) => ({
+      ...current,
+      [setId]: current[setId] ?? '',
+    }));
+  };
+
+  const handleAddCards = async (set: FlashcardSetDoc) => {
+    const topicValue = addCardsTopicBySetId[set.id]?.trim() ?? '';
+    if (!topicValue) {
+      setAddCardsNotice(`Enter a topic to add more cards to ${set.title}.`);
+      return;
+    }
+
+    setAddCardsLoadingSetId(set.id);
+    setAddCardsNotice(null);
+
+    try {
+      const response = await addCardsToFlashcardSet({
+        setId: set.id,
+        topic: topicValue,
+      });
+      await loadSets();
+      setActiveAddCardsSetId(null);
+      setAddCardsTopicBySetId((current) => ({ ...current, [set.id]: '' }));
+      setAddCardsNotice(
+        response.addedCount > 0
+          ? `${response.addedCount} new cards added to ${response.setName}`
+          : `No new cards were added to ${response.setName}. Pluto skipped duplicate concepts.`
+      );
+    } catch (error) {
+      setAddCardsNotice(
+        normalizeLearningErrorMessage({
+          error,
+          fallback: `Unable to add more cards to ${set.title} right now.`,
+        })
+      );
+    } finally {
+      setAddCardsLoadingSetId(null);
+    }
+  };
+
+  const renderSetCard = (set: FlashcardSetDoc) => {
+    const isSelected = selectedSetId === set.id;
+    const isAddCardsOpen = activeAddCardsSetId === set.id;
+    const addCardsTopic = addCardsTopicBySetId[set.id] ?? '';
+    const isAddingCards = addCardsLoadingSetId === set.id;
+
+    return (
+      <div
+        key={set.id}
+        onClick={() => void beginReviewForSet(set.id)}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            void beginReviewForSet(set.id);
+          }
+        }}
+        role="button"
+        tabIndex={0}
+        style={{
+          ...flashSetCardStyle,
+          borderColor: isSelected ? 'rgba(136, 104, 255, 0.45)' : 'var(--glass-border)',
+        }}
+      >
+        <div style={{ display: 'grid', gap: '14px', width: '100%' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              justifyContent: 'space-between',
+              gap: '12px',
+              flexWrap: 'wrap',
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontWeight: 800 }}>{set.title}</div>
+              <div
+                style={{
+                  color: 'var(--text-secondary)',
+                  fontSize: '0.85rem',
+                  marginTop: '4px',
+                }}
+              >
+                {`${set.totalCards} cards · ${set.stats.dueToday} due today`}
+              </div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void beginReviewForSet(set.id);
+                }}
+                className="outline-button"
+                style={flashCardActionButtonStyle}
+              >
+                Review
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  toggleAddCardsForm(set.id);
+                }}
+                className="outline-button"
+                style={flashCardActionButtonStyle}
+              >
+                <Plus size={14} />
+                <span>Add Cards</span>
+              </button>
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleDeleteSet(set.id);
+                }}
+                className="ghost-button"
+                aria-label={`Delete ${set.title}`}
+              >
+                <Trash2 size={14} />
+              </button>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              void deleteFlashcardSet({ setId: set.id }).then(async () => {
-                if (selectedSetId === set.id) {
-                  setSelectedSetId(null);
-                  setReviewDeck([]);
-                  setReviewDeckSeed([]);
+          {isAddCardsOpen ? (
+            <div
+              onClick={(event) => event.stopPropagation()}
+              style={flashInlineFormStyle}
+            >
+              <input
+                value={addCardsTopic}
+                onChange={(event) =>
+                  setAddCardsTopicBySetId((current) => ({
+                    ...current,
+                    [set.id]: event.target.value,
+                  }))
                 }
-                await loadSets();
-              });
-            }}
-            className="ghost-button"
-            aria-label={`Delete ${set.title}`}
-          >
-            <Trash2 size={14} />
-          </button>
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    void handleAddCards(set);
+                  }
+                }}
+                placeholder="Topic for new cards"
+                style={flashComposerInputStyle}
+              />
+              <button
+                type="button"
+                onClick={() => void handleAddCards(set)}
+                disabled={isAddingCards || !addCardsTopic.trim()}
+                className="app-button"
+                style={flashInlineGenerateButtonStyle}
+              >
+                {isAddingCards ? <Loader2 size={15} className="spin" /> : null}
+                <span>Generate</span>
+              </button>
+            </div>
+          ) : null}
         </div>
-      ))}
+      </div>
+    );
+  };
+
+  const flashcardSetList = (
+    <div style={{ display: 'grid', gap: '10px' }}>
+      {sets.map((set) => renderSetCard(set))}
     </div>
   );
 
@@ -440,6 +585,19 @@ export const FlashcardsPage = () => {
             </div>
           ) : null}
         </div>
+        {addCardsNotice ? (
+          <div
+            style={{
+              ...flashErrorCardStyle,
+              marginTop: '14px',
+              borderColor: 'color-mix(in srgb, var(--primary) 20%, var(--glass-border))',
+              background: 'color-mix(in srgb, var(--primary) 8%, var(--glass-bg-subtle))',
+            }}
+          >
+            <div style={flashErrorTitleStyle}>Flashcard library update</div>
+            <div style={flashErrorTextStyle}>{addCardsNotice}</div>
+          </div>
+        ) : null}
 
         {!isCompactLayout ? (
           <div style={{ marginTop: '22px', display: 'grid', gap: '10px' }}>
@@ -450,58 +608,7 @@ export const FlashcardsPage = () => {
                     <div style={{ ...skeletonLineStyle, width: '38%', height: '12px' }} />
                   </div>
                 ))
-              : sets.map((set) => (
-                  <div
-                    key={set.id}
-                    onClick={() => void beginReviewForSet(set.id)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        void beginReviewForSet(set.id);
-                      }
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    style={{
-                      ...flashSetCardStyle,
-                      borderColor:
-                        selectedSetId === set.id
-                          ? 'rgba(136, 104, 255, 0.45)'
-                          : 'var(--glass-border)',
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 800 }}>{set.title}</div>
-                      <div
-                        style={{
-                          color: 'var(--text-secondary)',
-                          fontSize: '0.85rem',
-                          marginTop: '4px',
-                        }}
-                      >
-                        {`${set.totalCards} cards · ${set.stats.dueToday} due today`}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void deleteFlashcardSet({ setId: set.id }).then(async () => {
-                          if (selectedSetId === set.id) {
-                            setSelectedSetId(null);
-                            setReviewDeck([]);
-                            setReviewDeckSeed([]);
-                          }
-                          await loadSets();
-                        });
-                      }}
-                      className="ghost-button"
-                      aria-label={`Delete ${set.title}`}
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </div>
-                ))}
+              : sets.map((set) => renderSetCard(set))}
           </div>
         ) : null}
         </div>
@@ -947,16 +1054,34 @@ const flashActionButtonStyle: CSSProperties = {
 };
 
 const flashSetCardStyle: CSSProperties = {
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'space-between',
-  gap: '12px',
+  display: 'block',
   borderRadius: '16px',
   border: '1px solid var(--glass-border)',
   background: 'var(--glass-bg-subtle)',
   padding: '14px',
   color: 'inherit',
   cursor: 'pointer',
+};
+
+const flashCardActionButtonStyle: CSSProperties = {
+  minHeight: '36px',
+  borderRadius: '12px',
+  padding: '0 12px',
+  gap: '8px',
+};
+
+const flashInlineFormStyle: CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'minmax(0, 1fr) auto',
+  gap: '10px',
+  paddingTop: '6px',
+};
+
+const flashInlineGenerateButtonStyle: CSSProperties = {
+  minHeight: '46px',
+  borderRadius: '16px',
+  justifyContent: 'center',
+  minWidth: '108px',
 };
 
 const reviewShellStyle: CSSProperties = {

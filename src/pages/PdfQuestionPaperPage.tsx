@@ -2,19 +2,13 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { Loader2, UploadCloud, X } from 'lucide-react';
 import { fileToBase64 } from '../lib/attachments';
 import {
-  DEFAULT_QUESTION_PAPER_EDUCATION_LEVEL,
-  DEFAULT_QUESTION_PAPER_EXAM_BOARD,
-  QUESTION_PAPER_EDUCATION_LEVEL_GROUPS,
-  QUESTION_PAPER_EXAM_BOARD_GROUPS,
-  getQuestionPaperEducationLevelPlaceholder,
-  getQuestionPaperExamBoardPlaceholder,
-  questionPaperEducationLevelRequiresCustomInput,
-  questionPaperExamBoardRequiresCustomInput,
-  resolveQuestionPaperSelectValue,
+  DEFAULT_ACADEMIC_SELECTION,
+  getResolvedAcademicSelection,
 } from '../lib/questionPaperFormOptions';
 import { normalizeLearningErrorMessage } from '../lib/learningUi';
 import { generatePaperFromPdfs } from '../lib/plutoApi';
 import { QuestionPaperPage } from './QuestionPaperPage';
+import { CascadingAcademicSelector } from '../components/Learning/CascadingAcademicSelector';
 
 const PDF_GENERATION_PROGRESS_MESSAGES = [
   'Extracting text from PDFs...',
@@ -28,10 +22,7 @@ const PDF_GENERATION_PROGRESS_INTERVAL_MS = 8_000;
 
 export const PdfQuestionPaperPage = () => {
   const [files, setFiles] = useState<File[]>([]);
-  const [educationLevel, setEducationLevel] = useState(DEFAULT_QUESTION_PAPER_EDUCATION_LEVEL);
-  const [educationLevelCustomValue, setEducationLevelCustomValue] = useState('');
-  const [examBoard, setExamBoard] = useState(DEFAULT_QUESTION_PAPER_EXAM_BOARD);
-  const [examBoardCustomValue, setExamBoardCustomValue] = useState('');
+  const [academicSelection, setAcademicSelection] = useState(DEFAULT_ACADEMIC_SELECTION);
   const [subject, setSubject] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -106,23 +97,11 @@ export const PdfQuestionPaperPage = () => {
     () => (files.reduce((sum, file) => sum + file.size, 0) / (1024 * 1024)).toFixed(2),
     [files]
   );
-  const educationLevelNeedsCustomInput = questionPaperEducationLevelRequiresCustomInput(educationLevel);
-  const examBoardNeedsCustomInput = questionPaperExamBoardRequiresCustomInput(examBoard);
-  const resolvedEducationLevel = resolveQuestionPaperSelectValue(
-    educationLevel,
-    educationLevelCustomValue,
-    educationLevelNeedsCustomInput
-  );
-  const resolvedExamBoard = resolveQuestionPaperSelectValue(
-    examBoard,
-    examBoardCustomValue,
-    examBoardNeedsCustomInput
-  );
+  const resolvedAcademicSelection = getResolvedAcademicSelection(academicSelection);
   const isGenerateDisabled =
     isUploading ||
     files.length === 0 ||
-    (educationLevelNeedsCustomInput && !educationLevelCustomValue.trim()) ||
-    (examBoardNeedsCustomInput && !examBoardCustomValue.trim());
+    !resolvedAcademicSelection.isComplete;
 
   const extractUploadErrorMessage = (error: unknown) => {
     return normalizeLearningErrorMessage({
@@ -139,8 +118,8 @@ export const PdfQuestionPaperPage = () => {
   }) => {
     const request = overrideRequest ?? {
       files,
-      educationLevel: resolvedEducationLevel,
-      examBoard: resolvedExamBoard,
+      educationLevel: resolvedAcademicSelection.educationLevel,
+      examBoard: resolvedAcademicSelection.examBoard,
       subject: subject.trim() || undefined,
     };
 
@@ -187,54 +166,6 @@ export const PdfQuestionPaperPage = () => {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     });
   };
-
-  const renderEducationLevelField = () => (
-    <div style={stackedSelectFieldStyle}>
-      <select value={educationLevel} onChange={(event) => setEducationLevel(event.target.value)} style={pdfComposerInputStyle}>
-        {QUESTION_PAPER_EDUCATION_LEVEL_GROUPS.map((group) => (
-          <optgroup key={group.label} label={group.label}>
-            {group.options.map((level) => (
-              <option key={level.value} value={level.value}>
-                {level.label}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-      {educationLevelNeedsCustomInput ? (
-        <input
-          value={educationLevelCustomValue}
-          onChange={(event) => setEducationLevelCustomValue(event.target.value)}
-          placeholder={getQuestionPaperEducationLevelPlaceholder(educationLevel)}
-          style={pdfComposerInputStyle}
-        />
-      ) : null}
-    </div>
-  );
-
-  const renderExamBoardField = () => (
-    <div style={stackedSelectFieldStyle}>
-      <select value={examBoard} onChange={(event) => setExamBoard(event.target.value)} style={pdfComposerInputStyle}>
-        {QUESTION_PAPER_EXAM_BOARD_GROUPS.map((group) => (
-          <optgroup key={group.label} label={group.label}>
-            {group.options.map((board) => (
-              <option key={board.value} value={board.value}>
-                {board.label}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-      {examBoardNeedsCustomInput ? (
-        <input
-          value={examBoardCustomValue}
-          onChange={(event) => setExamBoardCustomValue(event.target.value)}
-          placeholder={getQuestionPaperExamBoardPlaceholder(examBoard)}
-          style={pdfComposerInputStyle}
-        />
-      ) : null}
-    </div>
-  );
 
   return (
     <div
@@ -289,7 +220,7 @@ export const PdfQuestionPaperPage = () => {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: isCompactLayout ? '1fr' : '1.2fr 0.8fr 0.8fr 1fr auto',
+                gridTemplateColumns: isCompactLayout ? '1fr' : 'minmax(180px, 1fr) minmax(440px, 2fr) minmax(160px, 0.85fr) minmax(150px, 0.7fr)',
                 gap: '10px',
                 alignItems: 'center',
               }}
@@ -318,8 +249,12 @@ export const PdfQuestionPaperPage = () => {
                   style={{ display: 'none' }}
                 />
               </label>
-              {renderEducationLevelField()}
-              {renderExamBoardField()}
+              <div style={{ minWidth: 0 }}>
+                <CascadingAcademicSelector
+                  selection={academicSelection}
+                  onChange={setAcademicSelection}
+                />
+              </div>
               <input value={subject} onChange={(event) => setSubject(event.target.value)} placeholder="Subject (optional)" style={pdfComposerInputStyle} />
               <button
                 type="button"
@@ -405,11 +340,6 @@ const pdfComposerInputStyle: CSSProperties = {
   background: 'var(--glass-bg)',
   color: 'var(--text-primary)',
   padding: '0 14px',
-};
-
-const stackedSelectFieldStyle: CSSProperties = {
-  display: 'grid',
-  gap: '10px',
 };
 
 const pdfActionButtonStyle: CSSProperties = {

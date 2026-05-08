@@ -9,6 +9,8 @@ const BOTTOM_MARGIN = 54;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_X * 2;
 const FOOTER_HEIGHT = 24;
 const MARKS_GUTTER = 52;
+const ANSWER_BOX_WIDTH = 108;
+const ANSWER_BOX_HEIGHT = 20;
 
 type FontKey = 'F1' | 'F2';
 
@@ -169,12 +171,29 @@ const buildQuestionBlockLines = (question: QuestionPaperQuestion) => {
   };
 };
 
+const getSectionMarkingScheme = (section: QuestionPaperFormatSection) => {
+  const details = [`Marks per question: ${section.marksPerQuestion}`];
+  if (typeof section.negativeMarking === 'number') {
+    details.push(`Negative marking: ${section.negativeMarking}`);
+  }
+  if (typeof section.attemptRequired === 'number') {
+    details.push(`Attempt any ${section.attemptRequired} of ${section.questions}`);
+  }
+  return details.join(' | ');
+};
+
+const isNumericalQuestion = (question: QuestionPaperQuestion, section?: QuestionPaperFormatSection) =>
+  question.type === 'numerical' ||
+  question.type === 'integer' ||
+  /numerical|integer/i.test(section?.questionType || '') ||
+  /numerical|integer/i.test(section?.questionTypeDisplay || '');
+
 const estimateQuestionBlockHeight = (question: QuestionPaperQuestion) => {
   const { baseLine, optionLines, subPartLines } = buildQuestionBlockLines(question);
   const baseLines = wrapText(baseLine, 11, CONTENT_WIDTH - MARKS_GUTTER);
   const optionHeight = optionLines.reduce((sum, option) => sum + wrapText(option, 10, CONTENT_WIDTH - 24).length * 14, 0);
   const subPartHeight = subPartLines.reduce((sum, part) => sum + wrapText(part, 10, CONTENT_WIDTH - 24).length * 14, 0);
-  return baseLines.length * 15 + optionHeight + subPartHeight + 12;
+  return baseLines.length * 15 + optionHeight + subPartHeight + 12 + (isNumericalQuestion(question) ? ANSWER_BOX_HEIGHT + 10 : 0);
 };
 
 const ensureSpace = (pages: PdfPage[], requiredHeight: number) => {
@@ -245,6 +264,30 @@ const renderSectionHeader = (page: PdfPage, section: QuestionPaperFormatSection)
     fontSize: 11,
   });
   page.cursorY -= 26;
+  if (typeof section.attemptRequired === 'number') {
+    drawWrappedText({
+      page,
+      text: `Attempt any ${section.attemptRequired} of ${section.questions} questions.`,
+      x: MARGIN_X,
+      y: page.cursorY,
+      width: CONTENT_WIDTH,
+      font: 'F2',
+      fontSize: 10,
+      lineHeight: 13,
+    });
+    page.cursorY -= 16;
+  }
+  drawWrappedText({
+    page,
+    text: getSectionMarkingScheme(section),
+    x: MARGIN_X,
+    y: page.cursorY,
+    width: CONTENT_WIDTH,
+    font: 'F1',
+    fontSize: 9,
+    lineHeight: 12,
+  });
+  page.cursorY -= 16;
   const instructionHeight = drawWrappedText({
     page,
     text: sanitizePdfRenderableText(section.instructions),
@@ -258,7 +301,7 @@ const renderSectionHeader = (page: PdfPage, section: QuestionPaperFormatSection)
   page.cursorY -= instructionHeight + 8;
 };
 
-const renderQuestion = (page: PdfPage, question: QuestionPaperQuestion) => {
+const renderQuestion = (page: PdfPage, question: QuestionPaperQuestion, section?: QuestionPaperFormatSection) => {
   const { baseLine, optionLines, subPartLines } = buildQuestionBlockLines(question);
   const baseLines = wrapText(baseLine, 11, CONTENT_WIDTH - MARKS_GUTTER);
   drawText({ page, text: `[${question.marks}]`, x: MARGIN_X + CONTENT_WIDTH - 26, y: page.cursorY, font: 'F2', fontSize: 10 });
@@ -289,6 +332,11 @@ const renderQuestion = (page: PdfPage, question: QuestionPaperQuestion) => {
     page.cursorY -= height;
   }
 
+  if (isNumericalQuestion(question, section)) {
+    drawRect(page, MARGIN_X + 18, page.cursorY - ANSWER_BOX_HEIGHT + 4, ANSWER_BOX_WIDTH, ANSWER_BOX_HEIGHT);
+    page.cursorY -= ANSWER_BOX_HEIGHT + 10;
+  }
+
   for (const partLine of subPartLines) {
     const height = drawWrappedText({
       page,
@@ -308,23 +356,14 @@ const renderQuestion = (page: PdfPage, question: QuestionPaperQuestion) => {
 
 const renderFooter = (page: PdfPage, paper: QuestionPaperDoc, pageNumber: number, totalPages: number) => {
   const footerY = BOTTOM_MARGIN - 8;
-  const left = `${getSubjectCode(paper)} - ${sanitizePdfRenderableText(paper.examBoard)} ${getHeaderSessionLabel(paper)}`;
+  const left = `${sanitizePdfRenderableText(paper.subject)} - ${sanitizePdfRenderableText(paper.examBoard)} ${getHeaderSessionLabel(paper)}`;
   const middle = `Page ${pageNumber} of ${totalPages}`;
-  const right = '[DO NOT WRITE IN THIS SPACE]';
 
   drawText({ page, text: left, x: MARGIN_X, y: footerY, font: 'F1', fontSize: 9 });
   drawText({
     page,
     text: middle,
     x: PAGE_WIDTH / 2 - estimateLineWidth(middle, 9) / 2,
-    y: footerY,
-    font: 'F1',
-    fontSize: 9,
-  });
-  drawText({
-    page,
-    text: right,
-    x: PAGE_WIDTH - MARGIN_X - estimateLineWidth(right, 9),
     y: footerY,
     font: 'F1',
     fontSize: 9,
@@ -338,15 +377,19 @@ const buildPageContentStreams = (paper: QuestionPaperDoc) => {
   renderHeader(page, paper);
   renderGeneralInstructions(page, paper);
 
-  for (const section of paper.format.sections) {
+  for (const [sectionIndex, section] of paper.format.sections.entries()) {
     const sectionQuestions = paper.questions.filter((question) => question.sectionName === section.name);
     const firstQuestionHeight = sectionQuestions[0] ? estimateQuestionBlockHeight(sectionQuestions[0]) : 0;
-    page = ensureSpace(pages, 54 + firstQuestionHeight);
+    if (sectionIndex > 0) {
+      page = createPage();
+      pages.push(page);
+    }
+    page = ensureSpace(pages, 72 + firstQuestionHeight);
     renderSectionHeader(page, section);
 
     for (const question of sectionQuestions) {
       page = ensureSpace(pages, estimateQuestionBlockHeight(question));
-      renderQuestion(page, question);
+      renderQuestion(page, question, section);
     }
   }
 
