@@ -1,234 +1,271 @@
+import { sanitizePdfRenderableText } from './questionPaperSanitizer.js';
 const PAGE_WIDTH = 612;
 const PAGE_HEIGHT = 792;
-const MARGIN_X = 54;
-const TOP_MARGIN = 56;
-const BOTTOM_MARGIN = 56;
+const MARGIN_X = 44;
+const TOP_MARGIN = 44;
+const BOTTOM_MARGIN = 54;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN_X * 2;
+const FOOTER_HEIGHT = 24;
+const MARKS_GUTTER = 52;
 const escapePdfText = (value) => value
     .replace(/\\/g, '\\\\')
     .replace(/\(/g, '\\(')
     .replace(/\)/g, '\\)')
     .replace(/\r?\n/g, ' ');
-const normalizeInlineText = (value) => value.replace(/\s+/g, ' ').trim();
-const estimateLineWidth = (text, fontSize) => text.length * fontSize * 0.48;
-const estimateCharsPerLine = (fontSize, width) => Math.max(16, Math.floor(width / Math.max(fontSize * 0.48, 1)));
+const estimateLineWidth = (text, fontSize) => text.length * fontSize * 0.5;
 const wrapText = (value, fontSize, width) => {
-    const text = normalizeInlineText(value);
+    const text = sanitizePdfRenderableText(value);
     if (!text) {
         return [''];
     }
-    const maxChars = estimateCharsPerLine(fontSize, width);
+    const maxChars = Math.max(14, Math.floor(width / Math.max(fontSize * 0.5, 1)));
     const words = text.split(' ');
     const lines = [];
-    let currentLine = '';
-    const pushCurrentLine = () => {
-        if (currentLine.trim()) {
-            lines.push(currentLine.trim());
-            currentLine = '';
+    let current = '';
+    const push = () => {
+        if (current.trim()) {
+            lines.push(current.trim());
+            current = '';
         }
     };
     for (const word of words) {
-        if (word.length > maxChars) {
-            pushCurrentLine();
-            let remainder = word;
-            while (remainder.length > maxChars) {
-                lines.push(remainder.slice(0, maxChars - 1) + '-');
-                remainder = remainder.slice(maxChars - 1);
-            }
-            currentLine = remainder;
-            continue;
-        }
-        const candidate = currentLine ? `${currentLine} ${word}` : word;
+        const candidate = current ? `${current} ${word}` : word;
         if (candidate.length <= maxChars) {
-            currentLine = candidate;
+            current = candidate;
             continue;
         }
-        pushCurrentLine();
-        currentLine = word;
+        if (!current) {
+            lines.push(word);
+            continue;
+        }
+        push();
+        current = word;
     }
-    pushCurrentLine();
+    push();
     return lines.length ? lines : [''];
 };
-const buildRenderBlocks = (paper) => {
-    const blocks = [
-        {
-            type: 'text',
-            text: `${paper.examBoard} ${paper.educationLevel} Examination`,
-            font: 'F2',
-            fontSize: 12,
-            lineHeight: 16,
-            align: 'center',
-        },
-        {
-            type: 'text',
-            text: paper.title,
-            font: 'F2',
-            fontSize: 24,
-            lineHeight: 30,
-            align: 'center',
-            spacingBefore: 8,
-        },
-        {
-            type: 'text',
-            text: `${paper.subject} • ${paper.examBoard} • ${paper.educationLevel}`,
-            font: 'F1',
-            fontSize: 12,
-            lineHeight: 16,
-            align: 'center',
-            spacingBefore: 6,
-            spacingAfter: 10,
-        },
-        {
-            type: 'rule',
-            spacingAfter: 14,
-        },
-        {
-            type: 'text',
-            text: `Time Allowed: ${paper.format.duration} • Maximum Marks: ${paper.format.totalMarks}`,
-            font: 'F2',
-            fontSize: 14,
-            lineHeight: 18,
-            spacingAfter: 14,
-        },
-    ];
-    for (const section of paper.format.sections) {
-        blocks.push({
-            type: 'text',
-            text: `${section.name} · ${section.questionType}`,
-            font: 'F2',
-            fontSize: 16,
-            lineHeight: 20,
-            spacingBefore: 8,
-            spacingAfter: 4,
+const createPage = () => ({
+    commands: [],
+    cursorY: PAGE_HEIGHT - TOP_MARGIN,
+});
+const drawText = ({ page, text, x, y, font, fontSize, }) => {
+    page.commands.push('BT');
+    page.commands.push(`/${font} ${fontSize} Tf`);
+    page.commands.push(`1 0 0 1 ${x.toFixed(2)} ${y.toFixed(2)} Tm`);
+    page.commands.push(`(${escapePdfText(sanitizePdfRenderableText(text))}) Tj`);
+    page.commands.push('ET');
+};
+const drawLine = (page, x1, y1, x2, y2, lineWidth = 1) => {
+    page.commands.push('0 0 0 RG');
+    page.commands.push(`${lineWidth} w`);
+    page.commands.push(`${x1.toFixed(2)} ${y1.toFixed(2)} m`);
+    page.commands.push(`${x2.toFixed(2)} ${y2.toFixed(2)} l`);
+    page.commands.push('S');
+};
+const drawRect = (page, x, y, width, height, lineWidth = 1) => {
+    page.commands.push('0 0 0 RG');
+    page.commands.push(`${lineWidth} w`);
+    page.commands.push(`${x.toFixed(2)} ${y.toFixed(2)} ${width.toFixed(2)} ${height.toFixed(2)} re`);
+    page.commands.push('S');
+};
+const drawWrappedText = ({ page, text, x, y, width, font, fontSize, lineHeight, }) => {
+    const lines = wrapText(text, fontSize, width);
+    for (const [index, line] of lines.entries()) {
+        drawText({
+            page,
+            text: line,
+            x,
+            y: y - index * lineHeight,
+            font,
+            fontSize,
         });
-        blocks.push({
-            type: 'text',
-            text: section.instructions,
+    }
+    return lines.length * lineHeight;
+};
+const sectionDisplayTitle = (section) => {
+    const sectionMarks = section.totalMarks ?? section.questions * section.marksPerQuestion;
+    return `${section.displayName || section.name} - ${section.questionTypeDisplay || section.questionType} (${section.marksPerQuestion} x ${section.questions} = ${sectionMarks} Marks)`;
+};
+const getHeaderSessionLabel = (paper) => sanitizePdfRenderableText(paper.sessionLabel || String(new Date().getFullYear()));
+const getHeaderBoardName = (paper) => sanitizePdfRenderableText(paper.headerBoardName || paper.examBoard);
+const getHeaderExamTitle = (paper) => sanitizePdfRenderableText(paper.examinationTitle || `${paper.educationLevel} Examination`);
+const getSubjectCode = (paper) => sanitizePdfRenderableText(paper.subjectCode || '__________');
+const getGeneralInstructions = (paper) => paper.generalInstructions?.length
+    ? paper.generalInstructions.map(sanitizePdfRenderableText)
+    : ['All questions are compulsory.', 'Write answers clearly.', 'Marks are indicated against each question.'];
+const buildQuestionBlockLines = (question) => {
+    const baseLine = `${question.questionNumber}. ${sanitizePdfRenderableText(question.text)}`;
+    const optionLines = question.options?.map((option, index) => `(${String.fromCharCode(65 + index)}) ${sanitizePdfRenderableText(option)}`) ?? [];
+    const subPartLines = question.subParts?.map((part, index) => `(${String.fromCharCode(97 + index)}) ${sanitizePdfRenderableText(part)}`) ?? [];
+    return {
+        baseLine,
+        optionLines,
+        subPartLines,
+    };
+};
+const estimateQuestionBlockHeight = (question) => {
+    const { baseLine, optionLines, subPartLines } = buildQuestionBlockLines(question);
+    const baseLines = wrapText(baseLine, 11, CONTENT_WIDTH - MARKS_GUTTER);
+    const optionHeight = optionLines.reduce((sum, option) => sum + wrapText(option, 10, CONTENT_WIDTH - 24).length * 14, 0);
+    const subPartHeight = subPartLines.reduce((sum, part) => sum + wrapText(part, 10, CONTENT_WIDTH - 24).length * 14, 0);
+    return baseLines.length * 15 + optionHeight + subPartHeight + 12;
+};
+const ensureSpace = (pages, requiredHeight) => {
+    let page = pages[pages.length - 1];
+    if (page.cursorY - requiredHeight < BOTTOM_MARGIN + FOOTER_HEIGHT) {
+        page = createPage();
+        pages.push(page);
+    }
+    return page;
+};
+const renderHeader = (page, paper) => {
+    const boxHeight = 150;
+    const topY = page.cursorY;
+    const bottomY = topY - boxHeight;
+    drawRect(page, MARGIN_X, bottomY, CONTENT_WIDTH, boxHeight, 1.2);
+    drawLine(page, MARGIN_X, topY - 48, MARGIN_X + CONTENT_WIDTH, topY - 48, 1);
+    drawLine(page, MARGIN_X, topY - 92, MARGIN_X + CONTENT_WIDTH, topY - 92, 1);
+    drawText({ page, text: getHeaderBoardName(paper), x: MARGIN_X + CONTENT_WIDTH / 2 - estimateLineWidth(getHeaderBoardName(paper), 15) / 2, y: topY - 20, font: 'F2', fontSize: 15 });
+    drawText({ page, text: getHeaderExamTitle(paper), x: MARGIN_X + CONTENT_WIDTH / 2 - estimateLineWidth(getHeaderExamTitle(paper), 12) / 2, y: topY - 36, font: 'F2', fontSize: 12 });
+    drawText({ page, text: getHeaderSessionLabel(paper), x: MARGIN_X + CONTENT_WIDTH / 2 - estimateLineWidth(getHeaderSessionLabel(paper), 11) / 2, y: topY - 52, font: 'F2', fontSize: 11 });
+    drawText({ page, text: `Subject: ${sanitizePdfRenderableText(paper.subject)}`, x: MARGIN_X + 10, y: topY - 68, font: 'F1', fontSize: 11 });
+    drawText({ page, text: `Code: ${getSubjectCode(paper)}`, x: MARGIN_X + CONTENT_WIDTH / 2 + 8, y: topY - 68, font: 'F1', fontSize: 11 });
+    drawText({ page, text: `Time Allowed: ${sanitizePdfRenderableText(paper.format.duration)}`, x: MARGIN_X + 10, y: topY - 84, font: 'F1', fontSize: 11 });
+    drawText({ page, text: `Maximum Marks: ${paper.format.totalMarks}`, x: MARGIN_X + CONTENT_WIDTH / 2 + 8, y: topY - 84, font: 'F1', fontSize: 11 });
+    drawText({ page, text: 'Roll No: ________________', x: MARGIN_X + 10, y: topY - 108, font: 'F1', fontSize: 10 });
+    drawText({ page, text: 'Date: _______________', x: MARGIN_X + CONTENT_WIDTH / 2 + 8, y: topY - 108, font: 'F1', fontSize: 10 });
+    drawText({ page, text: "Candidate's Name: _________________________________", x: MARGIN_X + 10, y: topY - 124, font: 'F1', fontSize: 10 });
+    drawText({ page, text: 'Centre No: _______________', x: MARGIN_X + 10, y: topY - 140, font: 'F1', fontSize: 10 });
+    drawText({ page, text: "Invigilator's Sign: _______", x: MARGIN_X + CONTENT_WIDTH / 2 + 8, y: topY - 140, font: 'F1', fontSize: 10 });
+    page.cursorY = bottomY - 12;
+};
+const renderGeneralInstructions = (page, paper) => {
+    const instructions = getGeneralInstructions(paper);
+    drawText({ page, text: 'General Instructions', x: MARGIN_X, y: page.cursorY, font: 'F2', fontSize: 12 });
+    page.cursorY -= 18;
+    for (const [index, instruction] of instructions.entries()) {
+        const height = drawWrappedText({
+            page,
+            text: `${index + 1}. ${instruction}`,
+            x: MARGIN_X + 8,
+            y: page.cursorY,
+            width: CONTENT_WIDTH - 8,
+            font: 'F1',
+            fontSize: 10,
+            lineHeight: 13,
+        });
+        page.cursorY -= height + 4;
+    }
+    page.cursorY -= 4;
+};
+const renderSectionHeader = (page, section) => {
+    drawLine(page, MARGIN_X, page.cursorY + 4, MARGIN_X + CONTENT_WIDTH, page.cursorY + 4, 1);
+    drawText({
+        page,
+        text: sectionDisplayTitle(section),
+        x: MARGIN_X,
+        y: page.cursorY - 10,
+        font: 'F2',
+        fontSize: 11,
+    });
+    page.cursorY -= 26;
+    const instructionHeight = drawWrappedText({
+        page,
+        text: sanitizePdfRenderableText(section.instructions),
+        x: MARGIN_X,
+        y: page.cursorY,
+        width: CONTENT_WIDTH,
+        font: 'F1',
+        fontSize: 10,
+        lineHeight: 13,
+    });
+    page.cursorY -= instructionHeight + 8;
+};
+const renderQuestion = (page, question) => {
+    const { baseLine, optionLines, subPartLines } = buildQuestionBlockLines(question);
+    const baseLines = wrapText(baseLine, 11, CONTENT_WIDTH - MARKS_GUTTER);
+    drawText({ page, text: `[${question.marks}]`, x: MARGIN_X + CONTENT_WIDTH - 26, y: page.cursorY, font: 'F2', fontSize: 10 });
+    for (const [index, line] of baseLines.entries()) {
+        drawText({
+            page,
+            text: line,
+            x: MARGIN_X,
+            y: page.cursorY - index * 15,
             font: 'F1',
             fontSize: 11,
-            lineHeight: 15,
-            spacingAfter: 8,
         });
-        const questions = paper.questions.filter((question) => question.sectionName === section.name);
-        for (const question of questions) {
-            blocks.push({
-                type: 'text',
-                text: `${question.questionNumber}. ${question.text} [${question.marks}]`,
-                font: 'F1',
-                fontSize: 11,
-                lineHeight: 16,
-                spacingBefore: 4,
-            });
-            for (const option of question.options ?? []) {
-                blocks.push({
-                    type: 'text',
-                    text: `• ${option}`,
-                    font: 'F1',
-                    fontSize: 10,
-                    lineHeight: 14,
-                    indent: 18,
-                });
-            }
-            for (const [index, part] of (question.subParts ?? []).entries()) {
-                blocks.push({
-                    type: 'text',
-                    text: `(${String.fromCharCode(97 + index)}) ${part}`,
-                    font: 'F1',
-                    fontSize: 10,
-                    lineHeight: 14,
-                    indent: 18,
-                });
-            }
-        }
     }
-    if (paper.webSearchSources?.length) {
-        blocks.push({
-            type: 'text',
-            text: 'Reference Sources',
-            font: 'F2',
-            fontSize: 14,
-            lineHeight: 18,
-            spacingBefore: 10,
-            spacingAfter: 4,
+    page.cursorY -= baseLines.length * 15;
+    for (const optionLine of optionLines) {
+        const height = drawWrappedText({
+            page,
+            text: optionLine,
+            x: MARGIN_X + 18,
+            y: page.cursorY,
+            width: CONTENT_WIDTH - 18,
+            font: 'F1',
+            fontSize: 10,
+            lineHeight: 13,
         });
-        for (const source of paper.webSearchSources) {
-            blocks.push({
-                type: 'text',
-                text: `• ${source}`,
-                font: 'F1',
-                fontSize: 9,
-                lineHeight: 12,
-                indent: 12,
-            });
-        }
+        page.cursorY -= height;
     }
-    return blocks;
+    for (const partLine of subPartLines) {
+        const height = drawWrappedText({
+            page,
+            text: partLine,
+            x: MARGIN_X + 18,
+            y: page.cursorY,
+            width: CONTENT_WIDTH - 18,
+            font: 'F1',
+            fontSize: 10,
+            lineHeight: 13,
+        });
+        page.cursorY -= height;
+    }
+    page.cursorY -= 8;
+};
+const renderFooter = (page, paper, pageNumber, totalPages) => {
+    const footerY = BOTTOM_MARGIN - 8;
+    const left = `${getSubjectCode(paper)} - ${sanitizePdfRenderableText(paper.examBoard)} ${getHeaderSessionLabel(paper)}`;
+    const middle = `Page ${pageNumber} of ${totalPages}`;
+    const right = '[DO NOT WRITE IN THIS SPACE]';
+    drawText({ page, text: left, x: MARGIN_X, y: footerY, font: 'F1', fontSize: 9 });
+    drawText({
+        page,
+        text: middle,
+        x: PAGE_WIDTH / 2 - estimateLineWidth(middle, 9) / 2,
+        y: footerY,
+        font: 'F1',
+        fontSize: 9,
+    });
+    drawText({
+        page,
+        text: right,
+        x: PAGE_WIDTH - MARGIN_X - estimateLineWidth(right, 9),
+        y: footerY,
+        font: 'F1',
+        fontSize: 9,
+    });
 };
 const buildPageContentStreams = (paper) => {
-    const pages = [[]];
-    let pageIndex = 0;
-    let cursorY = PAGE_HEIGHT - TOP_MARGIN;
-    const ensureSpace = (requiredHeight) => {
-        if (cursorY - requiredHeight >= BOTTOM_MARGIN) {
-            return;
+    const pages = [createPage()];
+    let page = pages[0];
+    renderHeader(page, paper);
+    renderGeneralInstructions(page, paper);
+    for (const section of paper.format.sections) {
+        const sectionQuestions = paper.questions.filter((question) => question.sectionName === section.name);
+        const firstQuestionHeight = sectionQuestions[0] ? estimateQuestionBlockHeight(sectionQuestions[0]) : 0;
+        page = ensureSpace(pages, 54 + firstQuestionHeight);
+        renderSectionHeader(page, section);
+        for (const question of sectionQuestions) {
+            page = ensureSpace(pages, estimateQuestionBlockHeight(question));
+            renderQuestion(page, question);
         }
-        pageIndex += 1;
-        pages.push([]);
-        cursorY = PAGE_HEIGHT - TOP_MARGIN;
-    };
-    const drawTextLine = ({ text, font, fontSize, lineHeight, align = 'left', indent = 0, }) => {
-        const width = CONTENT_WIDTH - indent;
-        const x = align === 'center'
-            ? Math.max(MARGIN_X, MARGIN_X + (CONTENT_WIDTH - estimateLineWidth(text, fontSize)) / 2)
-            : MARGIN_X + indent;
-        pages[pageIndex].push('BT');
-        pages[pageIndex].push(`/${font} ${fontSize} Tf`);
-        pages[pageIndex].push(`1 0 0 1 ${x.toFixed(2)} ${cursorY.toFixed(2)} Tm`);
-        pages[pageIndex].push(`(${escapePdfText(text.slice(0, Math.max(1, Math.floor(width / 3)) * 3))}) Tj`);
-        pages[pageIndex].push('ET');
-        cursorY -= lineHeight;
-    };
-    const drawRule = () => {
-        pages[pageIndex].push('0.78 0.82 0.9 RG');
-        pages[pageIndex].push('1.2 w');
-        pages[pageIndex].push(`${MARGIN_X} ${cursorY.toFixed(2)} m`);
-        pages[pageIndex].push(`${(PAGE_WIDTH - MARGIN_X).toFixed(2)} ${cursorY.toFixed(2)} l`);
-        pages[pageIndex].push('S');
-        cursorY -= 6;
-    };
-    for (const block of buildRenderBlocks(paper)) {
-        cursorY -= block.spacingBefore ?? 0;
-        if (block.type === 'rule') {
-            ensureSpace(10);
-            drawRule();
-            cursorY -= block.spacingAfter ?? 0;
-            continue;
-        }
-        const indent = block.indent ?? 0;
-        const lines = wrapText(block.text, block.fontSize, CONTENT_WIDTH - indent);
-        const requiredHeight = lines.length * block.lineHeight + (block.spacingAfter ?? 0);
-        ensureSpace(requiredHeight);
-        for (const line of lines) {
-            drawTextLine({
-                text: line,
-                font: block.font,
-                fontSize: block.fontSize,
-                lineHeight: block.lineHeight,
-                align: block.align,
-                indent,
-            });
-        }
-        cursorY -= block.spacingAfter ?? 0;
     }
-    return pages.map((commands, index, allPages) => {
-        const footerY = BOTTOM_MARGIN - 18;
-        commands.push('BT');
-        commands.push('/F1 9 Tf');
-        commands.push(`1 0 0 1 ${(PAGE_WIDTH / 2 - 24).toFixed(2)} ${footerY.toFixed(2)} Tm`);
-        commands.push(`(Page ${index + 1} of ${allPages.length}) Tj`);
-        commands.push('ET');
-        return commands.join('\n');
+    pages.forEach((currentPage, index) => {
+        renderFooter(currentPage, paper, index + 1, pages.length);
     });
+    return pages.map((pageItem) => pageItem.commands.join('\n'));
 };
 export const generateQuestionPaperPdfBase64 = (paper) => {
     const contentStreams = buildPageContentStreams(paper);

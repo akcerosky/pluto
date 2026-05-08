@@ -62,6 +62,17 @@ test('Gemini success returns the primary model only', async () => {
   expect(generateContent.mock.calls[0][0].model).toBe('gemini-2.5-flash');
 });
 
+test('Gemini forwards an explicit request temperature when provided', async () => {
+  generateContent.mockResolvedValueOnce(successResponse());
+
+  await generateGeminiResponse({
+    ...basePayload,
+    temperature: 0.8,
+  });
+
+  expect(generateContent.mock.calls[0][0].config.temperature).toBe(0.8);
+});
+
 test('Gemini 503 falls back to flash-lite', async () => {
   generateContent
     .mockRejectedValueOnce(providerError(503))

@@ -91,7 +91,7 @@ export const getFlashcardCards = lazySecureCallable(
 );
 export const generatePaperFromPdfs = lazySecureCallable(
   async () => (await import('./handlers/learning.js')).generatePaperFromPdfsHandler as CloudCallableHandler,
-  { minInstances: 1, timeoutSeconds: 120 }
+  { minInstances: 1, timeoutSeconds: 300 }
 );
 
 export const billingCheckout = lazySecureCallable(

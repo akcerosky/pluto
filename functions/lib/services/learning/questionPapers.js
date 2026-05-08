@@ -5,26 +5,45 @@ import { PLAN_DEFINITIONS } from '../../config/plans.js';
 import { executeHybridAiRequest } from '../ai/orchestrator.js';
 import { estimateAiInputTokens } from '../tokenUsage.js';
 import { generateQuestionPaperPdfBase64 } from './pdfGenerator.js';
+import { sanitizePdfRenderableText, sanitizeQuestionPaperText, } from './questionPaperSanitizer.js';
 import { searchExamFormatSources } from './searchAdapter.js';
 const userRoot = (uid) => adminDb.collection('users').doc(uid);
 const questionPaperCollection = (uid) => userRoot(uid).collection('questionPapers');
+class QuestionPaperJsonParseError extends Error {
+    parseErrorMessage;
+    rawResponse;
+    rawPreview;
+    constructor({ message, parseErrorMessage, rawResponse, }) {
+        super(message);
+        this.name = 'QuestionPaperJsonParseError';
+        this.parseErrorMessage = parseErrorMessage;
+        this.rawResponse = rawResponse;
+        this.rawPreview = rawResponse.slice(0, 500);
+    }
+}
 const MAX_PDF_SOURCE_TEXT_CHARS = 16000;
 const INFER_SUBJECT_TEXT_CHARS = 6000;
 const FORMAT_RESEARCH_TIMEOUT_MS = 60_000;
 const QUESTION_PAPER_GENERATION_TIMEOUT_MS = 90_000;
+const QUESTION_PAPER_GENERATION_MAX_OUTPUT_TOKENS = 4096;
+const INCOMPLETE_QUESTION_OUTPUT_MIN_LENGTH = 500;
+const INCOMPLETE_QUESTION_OUTPUT_RETRY_NOTE = 'Previous attempt returned incomplete output. Please generate a complete, detailed response.';
 const questionPaperFormatSectionSchema = z.object({
     name: z.string().trim().min(1).max(160),
+    displayName: z.string().trim().min(1).max(200).optional(),
     instructions: z.string().trim().min(1).max(2000),
     questionType: z.string().trim().min(1).max(160),
+    questionTypeDisplay: z.string().trim().min(1).max(200).optional(),
     questions: z.number().int().min(1),
     marksPerQuestion: z.number().int().min(1),
+    totalMarks: z.number().int().min(1).optional(),
 });
 const questionPaperQuestionSchema = z.object({
     id: z.string().trim().min(1).max(200),
     sectionName: z.string().trim().min(1).max(160),
     questionNumber: z.number().int().min(1),
     text: z.string().trim().min(1).max(6000),
-    type: z.enum(['mcq', 'short_answer', 'long_answer', 'fill_blank', 'assertion_reason']),
+    type: z.enum(['mcq', 'short_answer', 'long_answer', 'essay', 'fill_blank', 'assertion_reason']),
     marks: z.number().int().min(1),
     options: z.array(z.string().trim().min(1).max(1000)).max(8).optional(),
     subParts: z.array(z.string().trim().min(1).max(2000)).max(8).optional(),
@@ -39,6 +58,13 @@ const questionPaperDocSchema = z.object({
     sourceType: z.enum(['topic', 'pdf']),
     sourcePdfNames: z.array(z.string().trim().min(1).max(260)).max(8).optional(),
     sourcePdfTextLength: z.number().int().min(0).optional(),
+    headerBoardName: z.string().trim().min(1).max(160).optional(),
+    examinationTitle: z.string().trim().min(1).max(200).optional(),
+    sessionLabel: z.string().trim().min(1).max(120).optional(),
+    subjectCode: z.string().trim().min(1).max(80).optional(),
+    generalInstructions: z.array(z.string().trim().min(1).max(2000)).max(20).optional(),
+    matchedFormatFamily: z.string().trim().min(1).max(120).optional(),
+    formatSource: z.enum(['official', 'family_fallback']).optional(),
     format: z.object({
         totalMarks: z.number().int().min(1),
         duration: z.string().trim().min(1).max(120),
@@ -68,18 +94,72 @@ const humanizeLabel = (value) => value
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/\b\w/g, (character) => character.toUpperCase());
-const extractJsonCandidate = (value) => {
-    const fencedMatch = value.match(/```(?:json)?\s*([\s\S]*?)```/i);
-    if (fencedMatch?.[1]) {
-        return fencedMatch[1].trim();
+const toTitleCase = (value) => sanitizeQuestionPaperText(value)
+    .toLowerCase()
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+const inferFormatFamily = (examBoard) => {
+    const normalized = examBoard.toLowerCase();
+    if (/cbse|icse|igcse|ib|cambridge|state board/.test(normalized)) {
+        return 'school_board';
     }
-    const firstBrace = value.indexOf('{');
-    const lastBrace = value.lastIndexOf('}');
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-        return value.slice(firstBrace, lastBrace + 1).trim();
+    if (/university|semester|college|anna university|mumbai university|aiims internal|autonomous/.test(normalized)) {
+        return 'university_exam';
     }
-    return value.trim();
+    if (/upsc|ssc|ibps|rbi|sebi|isro|drdo|psc|nta|jee|neet|cat|clat|gate|cuet|ielts|gmat|gre|sat/.test(normalized)) {
+        return 'competitive_exam';
+    }
+    if (/icai|icsi|icmai|nmc|bar council|aicte|ca|cs|cma|mbbs|law/.test(normalized)) {
+        return 'professional_exam';
+    }
+    return 'general_exam';
 };
+const buildFallbackGeneralInstructions = (examBoard, formatFamily) => {
+    if (/cbse/i.test(examBoard)) {
+        return [
+            'All questions are compulsory.',
+            'Read the questions carefully before answering.',
+            'Use neat and clear presentation throughout the paper.',
+        ];
+    }
+    if (/neet/i.test(examBoard)) {
+        return [
+            'All questions are compulsory.',
+            'Each correct answer carries 4 marks and each incorrect answer attracts a deduction as per the official scheme.',
+            'Use rough work space only where permitted.',
+        ];
+    }
+    if (/icai|ca/i.test(examBoard)) {
+        return [
+            'The figures in the margin on the right side indicate full marks.',
+            'Answers should be supported by proper working notes wherever necessary.',
+            'Working notes should form part of the answer.',
+        ];
+    }
+    if (formatFamily === 'university_exam') {
+        return [
+            'Answer the questions in the prescribed section order unless stated otherwise.',
+            'Show the necessary steps, formulae, and workings wherever relevant.',
+            'All questions carry the marks indicated against them.',
+        ];
+    }
+    return [
+        'All questions are compulsory unless otherwise stated.',
+        'Figures in the right margin indicate full marks for each question.',
+        'Write clearly and support your answers with steps wherever relevant.',
+    ];
+};
+export const buildFormatResearchQuery = ({ examBoard, educationLevel, subject, }) => `${examBoard} ${educationLevel} ${subject} sample question paper marking scheme official`;
+const extractJsonCandidate = (value) => {
+    let candidate = value.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
+    const firstBrace = candidate.indexOf('{');
+    const lastBrace = candidate.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+        candidate = candidate.slice(firstBrace, lastBrace + 1).trim();
+    }
+    candidate = candidate.replace(/,\s*([}\]])/g, '$1');
+    return candidate;
+};
+const buildIncompleteQuestionRetryPrompt = (prompt) => `${INCOMPLETE_QUESTION_OUTPUT_RETRY_NOTE}\n\n${prompt}`;
 const safeJsonParse = (value) => {
     try {
         return JSON.parse(extractJsonCandidate(value));
@@ -88,26 +168,188 @@ const safeJsonParse = (value) => {
         return null;
     }
 };
-const normalizeFormatFallback = ({ subject, educationLevel, examBoard, }) => ({
-    totalMarks: 80,
-    duration: '3 hours',
-    sections: [
-        {
-            name: 'Section A',
-            instructions: `Answer all questions for ${examBoard} ${educationLevel} ${subject}.`,
-            questionType: 'Short Answer',
-            questions: 10,
-            marksPerQuestion: 2,
-        },
-        {
-            name: 'Section B',
-            instructions: 'Answer any 6 questions.',
-            questionType: 'Long Answer',
-            questions: 6,
-            marksPerQuestion: 10,
-        },
-    ],
-});
+const parseErrorPosition = (message) => {
+    const match = message.match(/position (\d+)/i);
+    return match ? Number(match[1]) : null;
+};
+const tryEndTruncationRepair = (rawResponse, parseErrorMessage) => {
+    if (rawResponse.length <= 500) {
+        return null;
+    }
+    const position = parseErrorPosition(parseErrorMessage);
+    if (position === null || position <= rawResponse.length * 0.8) {
+        return null;
+    }
+    const candidate = extractJsonCandidate(rawResponse);
+    for (const suffix of ['"]}]}', ']}', '}]}', '"}]}', '"}]']) {
+        try {
+            return JSON.parse(`${candidate}${suffix}`);
+        }
+        catch {
+            continue;
+        }
+    }
+    return null;
+};
+const parseJsonWithRepair = ({ rawResponse, requestId, subject, examBoard, educationLevel, isRetry, }) => {
+    if (rawResponse.length < 200) {
+        logger.warn('paper_generation_response_too_short', {
+            eventType: 'paper_generation_response_too_short',
+            requestId,
+            subject,
+            examBoard,
+            educationLevel,
+            isRetry,
+            rawResponseLength: rawResponse.length,
+            rawResponsePreview: rawResponse.slice(0, 500),
+        });
+        throw new QuestionPaperJsonParseError({
+            message: isRetry
+                ? `Question paper generation returned invalid JSON after retry. Raw response length: ${rawResponse.length}`
+                : `Question paper generation response was too short to parse. Raw response length: ${rawResponse.length}`,
+            parseErrorMessage: 'Response too short',
+            rawResponse,
+        });
+    }
+    const candidate = extractJsonCandidate(rawResponse);
+    try {
+        return JSON.parse(candidate);
+    }
+    catch (error) {
+        const parseErrorMessage = error instanceof Error ? error.message : String(error);
+        const repaired = tryEndTruncationRepair(rawResponse, parseErrorMessage);
+        if (repaired !== null) {
+            logger.warn('paper_generation_truncation_repaired', {
+                eventType: 'paper_generation_truncation_repaired',
+                requestId,
+                subject,
+                examBoard,
+                educationLevel,
+                isRetry,
+                parseErrorMessage,
+                rawResponseLength: rawResponse.length,
+            });
+            return repaired;
+        }
+        logger.warn('paper_generation_json_parse_failed', {
+            eventType: 'paper_generation_json_parse_failed',
+            requestId,
+            subject,
+            examBoard,
+            educationLevel,
+            isRetry,
+            parseErrorMessage,
+            rawResponseLength: rawResponse.length,
+            rawResponsePreview: rawResponse.slice(0, 500),
+        });
+        throw new QuestionPaperJsonParseError({
+            message: isRetry
+                ? `Question paper generation returned invalid JSON after retry. Raw response length: ${rawResponse.length}`
+                : `Question paper generation returned invalid JSON. Parse error: ${parseErrorMessage}`,
+            parseErrorMessage,
+            rawResponse,
+        });
+    }
+};
+const normalizeFormatFallback = ({ subject, educationLevel, examBoard, }) => {
+    const matchedFormatFamily = inferFormatFamily(examBoard);
+    if (matchedFormatFamily === 'competitive_exam') {
+        return {
+            totalMarks: 80,
+            duration: '3 hours',
+            headerBoardName: examBoard,
+            examinationTitle: `${educationLevel} Examination`,
+            sessionLabel: String(new Date().getFullYear()),
+            generalInstructions: buildFallbackGeneralInstructions(examBoard, matchedFormatFamily),
+            matchedFormatFamily,
+            formatSource: 'family_fallback',
+            sections: [
+                {
+                    name: 'SECTION A',
+                    displayName: 'SECTION A',
+                    instructions: `Answer all multiple choice questions in ${subject}.`,
+                    questionType: 'Multiple Choice Questions',
+                    questionTypeDisplay: 'Multiple Choice Questions',
+                    questions: 20,
+                    marksPerQuestion: 1,
+                    totalMarks: 20,
+                },
+                {
+                    name: 'SECTION B',
+                    displayName: 'SECTION B',
+                    instructions: 'Answer all short answer questions.',
+                    questionType: 'Short Answer Questions',
+                    questionTypeDisplay: 'Short Answer Questions',
+                    questions: 10,
+                    marksPerQuestion: 2,
+                    totalMarks: 20,
+                },
+                {
+                    name: 'SECTION C',
+                    displayName: 'SECTION C',
+                    instructions: 'Answer all long answer questions.',
+                    questionType: 'Long Answer Questions',
+                    questionTypeDisplay: 'Long Answer Questions',
+                    questions: 6,
+                    marksPerQuestion: 5,
+                    totalMarks: 30,
+                },
+                {
+                    name: 'SECTION D',
+                    displayName: 'SECTION D',
+                    instructions: 'Answer the descriptive question.',
+                    questionType: 'Essay / Descriptive',
+                    questionTypeDisplay: 'Essay / Descriptive',
+                    questions: 1,
+                    marksPerQuestion: 10,
+                    totalMarks: 10,
+                },
+            ],
+        };
+    }
+    return {
+        totalMarks: 80,
+        duration: '3 hours',
+        headerBoardName: examBoard,
+        examinationTitle: `${educationLevel} Examination`,
+        sessionLabel: String(new Date().getFullYear()),
+        generalInstructions: buildFallbackGeneralInstructions(examBoard, matchedFormatFamily),
+        matchedFormatFamily,
+        formatSource: 'family_fallback',
+        sections: [
+            {
+                name: 'SECTION A',
+                displayName: 'SECTION A',
+                instructions: `Answer all short answer questions for ${examBoard} ${educationLevel} ${subject}.`,
+                questionType: 'Short Answer Questions',
+                questionTypeDisplay: 'Short Answer Questions',
+                questions: 10,
+                marksPerQuestion: 2,
+                totalMarks: 20,
+            },
+            {
+                name: 'SECTION B',
+                displayName: 'SECTION B',
+                instructions: 'Answer all long answer questions.',
+                questionType: 'Long Answer Questions',
+                questionTypeDisplay: 'Long Answer Questions',
+                questions: 6,
+                marksPerQuestion: 5,
+                totalMarks: 30,
+            },
+            {
+                name: 'SECTION C',
+                displayName: 'SECTION C',
+                instructions: 'Answer the essay or descriptive questions.',
+                questionType: 'Essay / Descriptive',
+                questionTypeDisplay: 'Essay / Descriptive',
+                questions: 3,
+                marksPerQuestion: 10,
+                totalMarks: 30,
+            },
+        ],
+    };
+};
 const truncateSourceText = (value) => value.slice(0, MAX_PDF_SOURCE_TEXT_CHARS);
 const buildPdfSourceDigestPrompt = ({ extractedText, educationLevel, examBoard, }) => `
 You are preparing a source-grounded exam paper for ${examBoard} ${educationLevel}.
@@ -195,7 +437,8 @@ export const buildQuestionPaperMeteringPlan = ({ plan, }) => ({
         contextSummaryText: undefined,
     },
     reservedTokens: reserveForTextCall({ plan, maxOutputTokens: 1200 }) +
-        reserveForTextCall({ plan, maxOutputTokens: 2500 }),
+        reserveForTextCall({ plan, maxOutputTokens: 1600 }) +
+        reserveForTextCall({ plan, maxOutputTokens: QUESTION_PAPER_GENERATION_MAX_OUTPUT_TOKENS }),
 });
 export const buildPdfQuestionPaperMeteringPlan = ({ plan, educationLevel, examBoard, pdfAttachments, }) => {
     const prompt = `Extract all text content from these ${examBoard} ${educationLevel} documents. Preserve structure and do not summarize.`;
@@ -218,20 +461,30 @@ export const buildPdfQuestionPaperMeteringPlan = ({ plan, educationLevel, examBo
         reservedTokens: extractionInputTokens + 4000 +
             reserveForTextCall({ plan, maxOutputTokens: 1200 }) +
             reserveForTextCall({ plan, maxOutputTokens: 50 }) +
-            reserveForTextCall({ plan, maxOutputTokens: 1200 }) +
-            reserveForTextCall({ plan, maxOutputTokens: 2500 }),
+            reserveForTextCall({ plan, maxOutputTokens: 1600 }) +
+            reserveForTextCall({ plan, maxOutputTokens: QUESTION_PAPER_GENERATION_MAX_OUTPUT_TOKENS }),
     };
 };
-const buildQuestionPaperPrompt = ({ subject, educationLevel, examBoard, topic, format, sourceContext, }) => `
-You are an expert examiner for ${examBoard} ${educationLevel} examinations.
+const buildQuestionPaperStructurePrompt = ({ subject, educationLevel, examBoard, topic, format, sourceContext, }) => `
+You are an official question paper setter for ${examBoard} ${educationLevel} ${subject} examinations.
 
-Based on this official-style format:
+Generate the official paper header, instructions, and section structure only.
+
+Requirements:
+1. EXACTLY matches the official ${examBoard} format including section names, question types, mark distribution, and general instructions
+2. Uses correct mark allocation: MCQ = 1 mark, Short Answer = 2-3 marks, Long Answer = 5-6 marks, Essay = 8-10 marks
+3. Total marks must equal exactly ${format.totalMarks}
+4. Includes board-specific general instructions verbatim where standard
+5. For professional exams (CA, CS, MBBS): follow the exact pattern of that body's official papers
+
+Do not generate any questions in this call.
+
+Official format to follow strictly:
 - Total marks: ${format.totalMarks}
 - Duration: ${format.duration}
 - Sections: ${JSON.stringify(format.sections)}
 
 ${sourceContext ? `IMPORTANT: Generate questions ONLY from the following source coverage.\n${sourceContext}\n` : ''}
-
 ${sourceContext ? `Hard constraints:
 - Every question must be answerable from the source coverage above.
 - Do not ask about any broader chapter content unless it appears in the source coverage.
@@ -240,18 +493,96 @@ ${sourceContext ? `Hard constraints:
 - Do not introduce outside facts, formulas, or chapter names that are not supported by the source coverage.
 ` : ''}
 
-Generate a complete question paper for ${topic || subject}.
+Generate the paper structure for ${topic || subject}.
 Return ONLY valid JSON matching:
 {
   "title": string,
-  "format": { "totalMarks": number, "duration": string, "sections": [...] },
+  "headerBoardName"?: string,
+  "examinationTitle"?: string,
+  "sessionLabel"?: string,
+  "subjectCode"?: string,
+  "generalInstructions"?: string[],
+  "format": { "totalMarks": number, "duration": string, "sections": [...] }
+}`.trim();
+const buildQuestionPaperQuestionsPrompt = ({ subject, educationLevel, examBoard, topic, format, sourceContext, }) => `
+You are an official question paper setter for ${examBoard} ${educationLevel} ${subject} examinations.
+
+Generate only the questions for the already-decided official paper structure below.
+
+Requirements:
+1. EXACTLY match the provided sections, question counts, and marks
+2. MCQ = 1 mark, Short Answer = 2-3 marks, Long Answer = 5-6 marks, Essay = 8-10 marks
+3. The total of all question marks must equal exactly ${format.totalMarks}
+4. Questions must be complete sentences and must not be truncated
+5. Use proper ${examBoard} terminology
+6. Questions must cover recall, understanding, application, and analysis where appropriate
+
+Paper structure:
+${JSON.stringify(format.sections)}
+
+${sourceContext ? `IMPORTANT: Generate questions ONLY from the following source coverage.\n${sourceContext}\n` : ''}
+${sourceContext ? `Hard constraints:
+- Every question must be answerable from the source coverage above.
+- Do not ask about any broader chapter content unless it appears in the source coverage.
+- If the source is focused on one subtopic, keep the whole paper focused on that subtopic.
+- Do not introduce outside facts, formulas, or chapter names that are not supported by the source coverage.
+` : ''}
+
+Generate questions for ${topic || subject}.
+Return ONLY valid JSON matching:
+{
   "questions": [
     {
       "id": string,
       "sectionName": string,
       "questionNumber": number,
       "text": string,
-      "type": "mcq" | "short_answer" | "long_answer" | "fill_blank" | "assertion_reason",
+      "type": "mcq" | "short_answer" | "long_answer" | "essay" | "fill_blank" | "assertion_reason",
+      "marks": number,
+      "options"?: string[],
+      "subParts"?: string[]
+    }
+  ]
+}`.trim();
+const buildSectionQuestionPrompt = ({ subject, educationLevel, examBoard, topic, format, section, questionNumberStart, sourceContext, }) => `
+You are an official question paper setter for ${examBoard} ${educationLevel} ${subject} examinations.
+
+Generate only the questions for the single section described below.
+
+Requirements:
+1. Generate EXACTLY ${section.questions} question objects for this section
+2. Every question must use the section name "${section.name}"
+3. Every question must carry exactly ${section.marksPerQuestion} marks
+4. The total marks for this section must equal exactly ${section.totalMarks ?? section.questions * section.marksPerQuestion}
+5. Question numbers must start at ${questionNumberStart} and continue sequentially
+6. Questions must be complete sentences and must not be truncated
+7. If the source material is narrow, create varied questions from the same covered concepts instead of reducing question count or marks
+
+Overall paper structure for context:
+${JSON.stringify(format.sections)}
+
+Target section to generate strictly:
+${JSON.stringify(section)}
+
+${sourceContext ? `IMPORTANT: Generate questions ONLY from the following source coverage.\n${sourceContext}\n` : ''}
+${sourceContext ? `Hard constraints:
+- Every question must be answerable from the source coverage above.
+- Do not ask about any broader chapter content unless it appears in the source coverage.
+- If the source is focused on one subtopic, keep every question inside that subtopic.
+- Reuse the supported concepts in varied ways if needed to reach the full required marks.
+- Do not introduce outside facts, formulas, or chapter names that are not supported by the source coverage.
+` : ''}
+
+Generate questions for ${topic || subject}.
+Return ONLY valid JSON matching:
+{
+  "questions": [
+    {
+      "id": string,
+      "sectionName": string,
+      "questionNumber": number,
+      "text": string,
+      "type": "mcq" | "short_answer" | "long_answer" | "essay" | "fill_blank" | "assertion_reason",
       "marks": number,
       "options"?: string[],
       "subParts"?: string[]
@@ -267,13 +598,21 @@ Infer the most likely exam paper structure and return ONLY valid JSON:
 {
   "totalMarks": number,
   "duration": string,
+  "headerBoardName"?: string,
+  "examinationTitle"?: string,
+  "sessionLabel"?: string,
+  "subjectCode"?: string,
+  "generalInstructions": string[],
   "sections": [
     {
       "name": string,
+      "displayName"?: string,
       "instructions": string,
       "questionType": string,
+      "questionTypeDisplay"?: string,
       "questions": number,
-      "marksPerQuestion": number
+      "marksPerQuestion": number,
+      "totalMarks"?: number
     }
   ]
 }`.trim();
@@ -288,23 +627,82 @@ const inferQuestionType = (value) => {
         return 'fill_blank';
     if (normalized.includes('assertion'))
         return 'assertion_reason';
+    if (normalized.includes('essay') || normalized.includes('descriptive'))
+        return 'essay';
     if (normalized.includes('long'))
         return 'long_answer';
     return 'short_answer';
 };
 const toQuestionText = (value) => {
     if (typeof value === 'string')
-        return value.trim();
+        return sanitizeQuestionPaperText(value);
     if (value && typeof value === 'object') {
         const record = value;
-        const fromText = typeof record.text === 'string' ? record.text.trim() : '';
+        const fromText = typeof record.text === 'string' ? sanitizeQuestionPaperText(record.text) : '';
         if (fromText)
             return fromText;
-        const fromQuestion = typeof record.question === 'string' ? record.question.trim() : '';
+        const fromQuestion = typeof record.question === 'string' ? sanitizeQuestionPaperText(record.question) : '';
         if (fromQuestion)
             return fromQuestion;
     }
     return '';
+};
+const getQuestionMarksRange = (type) => {
+    switch (type) {
+        case 'mcq':
+            return { min: 1, max: 1 };
+        case 'short_answer':
+            return { min: 2, max: 3 };
+        case 'long_answer':
+            return { min: 5, max: 8 };
+        case 'essay':
+            return { min: 10, max: 15 };
+        case 'assertion_reason':
+        case 'fill_blank':
+            return { min: 1, max: 2 };
+        default:
+            return { min: 1, max: 15 };
+    }
+};
+export const validateQuestionPaperStructure = ({ totalMarks, sections, questions, }) => {
+    const exactTotal = questions.reduce((sum, question) => sum + question.marks, 0);
+    if (exactTotal !== totalMarks) {
+        throw new Error(`Question marks total ${exactTotal} does not match required total ${totalMarks}.`);
+    }
+    for (const question of questions) {
+        const range = getQuestionMarksRange(question.type);
+        if (question.marks < range.min || question.marks > range.max) {
+            throw new Error(`Invalid marks for ${question.type}: ${question.marks}.`);
+        }
+    }
+    for (const section of sections) {
+        const sectionQuestions = questions.filter((question) => question.sectionName === section.name);
+        if (sectionQuestions.length === 0) {
+            throw new Error(`Section ${section.name} has no questions.`);
+        }
+    }
+};
+const renumberQuestionsSequentially = (questions) => questions.map((question, index) => ({
+    ...question,
+    questionNumber: index + 1,
+}));
+const validateSectionBatch = ({ section, questions, }) => {
+    if (questions.length !== section.questions) {
+        throw new Error(`Section ${section.name} returned ${questions.length} questions but requires ${section.questions}.`);
+    }
+    const marksTotal = questions.reduce((sum, question) => sum + question.marks, 0);
+    const requiredMarks = section.totalMarks ?? section.questions * section.marksPerQuestion;
+    if (marksTotal !== requiredMarks) {
+        throw new Error(`Section ${section.name} marks total ${marksTotal} does not match required section total ${requiredMarks}.`);
+    }
+    for (const question of questions) {
+        if (question.sectionName !== section.name) {
+            throw new Error(`Section ${section.name} returned a question for ${question.sectionName}.`);
+        }
+        if (question.marks !== section.marksPerQuestion) {
+            throw new Error(`Section ${section.name} returned ${question.marks} marks for a question that requires ${section.marksPerQuestion}.`);
+        }
+    }
 };
 const toQuestionList = (rawQuestions, fallbackSectionName, fallbackQuestionType) => {
     if (!Array.isArray(rawQuestions)) {
@@ -320,12 +718,12 @@ const toQuestionList = (rawQuestions, fallbackSectionName, fallbackQuestionType)
             return null;
         }
         const options = Array.isArray(record?.options)
-            ? record?.options.map((option) => String(option).trim()).filter(Boolean)
+            ? record?.options.map((option) => sanitizeQuestionPaperText(String(option))).filter(Boolean)
             : undefined;
         const subParts = Array.isArray(record?.subParts)
-            ? record?.subParts.map((part) => String(part).trim()).filter(Boolean)
+            ? record?.subParts.map((part) => sanitizeQuestionPaperText(String(part))).filter(Boolean)
             : Array.isArray(record?.parts)
-                ? record?.parts.map((part) => String(part).trim()).filter(Boolean)
+                ? record?.parts.map((part) => sanitizeQuestionPaperText(String(part))).filter(Boolean)
                 : undefined;
         return {
             id: typeof record?.id === 'string' ? record.id : `q-${index + 1}`,
@@ -377,32 +775,238 @@ const normalizeGeneratedPaperResponse = (parsed) => {
         title: typeof record.title === 'string' && record.title.trim()
             ? record.title
             : '',
+        headerBoardName: typeof record.headerBoardName === 'string' && record.headerBoardName.trim()
+            ? sanitizeQuestionPaperText(record.headerBoardName)
+            : undefined,
+        examinationTitle: typeof record.examinationTitle === 'string' && record.examinationTitle.trim()
+            ? sanitizeQuestionPaperText(record.examinationTitle)
+            : undefined,
+        sessionLabel: typeof record.sessionLabel === 'string' && record.sessionLabel.trim()
+            ? sanitizeQuestionPaperText(record.sessionLabel)
+            : undefined,
+        subjectCode: typeof record.subjectCode === 'string' && record.subjectCode.trim()
+            ? sanitizeQuestionPaperText(record.subjectCode)
+            : undefined,
+        generalInstructions: toStringList(record.generalInstructions, 20).map(sanitizeQuestionPaperText),
         format,
         questions,
     };
 };
-const normalizeQuestionPaperPayload = ({ fallbackTitle, format, questions, }) => ({
-    title: humanizeLabel(fallbackTitle),
+const normalizeGeneratedStructureResponse = (parsed) => {
+    if (!parsed || typeof parsed !== 'object') {
+        return null;
+    }
+    const record = parsed;
+    const format = record.format && typeof record.format === 'object'
+        ? record.format
+        : null;
+    if (!format || !Array.isArray(format.sections) || format.sections.length === 0) {
+        return null;
+    }
+    return {
+        title: typeof record.title === 'string' && record.title.trim()
+            ? record.title
+            : '',
+        headerBoardName: typeof record.headerBoardName === 'string' && record.headerBoardName.trim()
+            ? sanitizeQuestionPaperText(record.headerBoardName)
+            : undefined,
+        examinationTitle: typeof record.examinationTitle === 'string' && record.examinationTitle.trim()
+            ? sanitizeQuestionPaperText(record.examinationTitle)
+            : undefined,
+        sessionLabel: typeof record.sessionLabel === 'string' && record.sessionLabel.trim()
+            ? sanitizeQuestionPaperText(record.sessionLabel)
+            : undefined,
+        subjectCode: typeof record.subjectCode === 'string' && record.subjectCode.trim()
+            ? sanitizeQuestionPaperText(record.subjectCode)
+            : undefined,
+        generalInstructions: toStringList(record.generalInstructions, 20).map(sanitizeQuestionPaperText),
+        format,
+    };
+};
+const normalizeGeneratedQuestionsResponse = (parsed, format) => {
+    if (!parsed || typeof parsed !== 'object') {
+        return null;
+    }
+    const record = parsed;
+    const fallbackSectionName = format.sections[0]?.name || 'Section A';
+    const fallbackQuestionType = format.sections[0]?.questionType;
+    const questions = toQuestionList(record.questions, fallbackSectionName, fallbackQuestionType);
+    if (!validateQuestions(questions)) {
+        return null;
+    }
+    return { questions };
+};
+const executeQuestionGenerationRequest = async ({ prompt, educationLevel, objective, plan, uid, requestId, subject, examBoard, sourceType, }) => {
+    const response = await executeHybridAiRequest({
+        prompt,
+        educationLevel,
+        mode: 'ExamPrep',
+        objective,
+        plan,
+        uid,
+        requestId,
+        history: [],
+        summaryCandidates: [],
+        attachments: [],
+        maxOutputTokens: QUESTION_PAPER_GENERATION_MAX_OUTPUT_TOKENS,
+        totalTimeoutMs: QUESTION_PAPER_GENERATION_TIMEOUT_MS,
+    });
+    if (response.text.length >= INCOMPLETE_QUESTION_OUTPUT_MIN_LENGTH) {
+        return {
+            response,
+            retryUsage: null,
+            usedIncompleteRetry: false,
+        };
+    }
+    logger.warn('paper_generation_incomplete_question_output', {
+        eventType: 'paper_generation_incomplete_question_output',
+        requestId,
+        uid,
+        subject,
+        examBoard,
+        sourceType,
+        objective,
+        rawResponseLength: response.text.length,
+        rawResponsePreview: response.text.slice(0, 500),
+        isRetry: false,
+    });
+    const retryResponse = await executeHybridAiRequest({
+        prompt: buildIncompleteQuestionRetryPrompt(prompt),
+        educationLevel,
+        mode: 'ExamPrep',
+        objective,
+        plan,
+        uid,
+        requestId,
+        history: [],
+        summaryCandidates: [],
+        attachments: [],
+        maxOutputTokens: QUESTION_PAPER_GENERATION_MAX_OUTPUT_TOKENS,
+        temperature: 0.8,
+        totalTimeoutMs: QUESTION_PAPER_GENERATION_TIMEOUT_MS,
+    });
+    return {
+        response: retryResponse,
+        retryUsage: retryResponse.usage,
+        usedIncompleteRetry: true,
+    };
+};
+const generateQuestionsBySection = async ({ uid, plan, requestId, subject, educationLevel, examBoard, topic, format, sourceContext, }) => {
+    const parseQuestionsResponse = (rawResponse, isRetry, sectionFormat) => normalizeGeneratedQuestionsResponse(parseJsonWithRepair({
+        rawResponse,
+        requestId,
+        subject,
+        examBoard,
+        educationLevel,
+        isRetry,
+    }), sectionFormat);
+    const allQuestions = [];
+    let combinedUsage = null;
+    let questionNumberStart = 1;
+    for (const section of format.sections) {
+        const sectionOnlyFormat = {
+            ...format,
+            sections: [section],
+        };
+        const prompt = buildSectionQuestionPrompt({
+            subject,
+            educationLevel,
+            examBoard,
+            topic,
+            format,
+            section,
+            questionNumberStart,
+            sourceContext,
+        });
+        const objective = `Generate ${examBoard} ${section.name} questions`;
+        const responseResult = await executeQuestionGenerationRequest({
+            prompt,
+            educationLevel,
+            objective,
+            plan,
+            uid,
+            requestId,
+            subject,
+            examBoard,
+            sourceType: sourceContext ? 'pdf' : 'topic',
+        });
+        const response = responseResult.response;
+        let parsedSectionError = null;
+        let parsedSection = (() => {
+            try {
+                return parseQuestionsResponse(response.text, responseResult.usedIncompleteRetry, sectionOnlyFormat);
+            }
+            catch (error) {
+                if (!(error instanceof QuestionPaperJsonParseError)) {
+                    throw error;
+                }
+                parsedSectionError = error;
+                return null;
+            }
+        })();
+        let retryUsage = responseResult.retryUsage;
+        if (parsedSection === null && responseResult.usedIncompleteRetry) {
+            throw parsedSectionError ?? new Error(`Question paper generation returned invalid JSON for ${section.name}.`);
+        }
+        if (parsedSection === null) {
+            const retryResponse = await executeHybridAiRequest({
+                prompt,
+                educationLevel,
+                mode: 'ExamPrep',
+                objective,
+                plan,
+                uid,
+                requestId,
+                history: [],
+                summaryCandidates: [],
+                attachments: [],
+                maxOutputTokens: QUESTION_PAPER_GENERATION_MAX_OUTPUT_TOKENS,
+                totalTimeoutMs: QUESTION_PAPER_GENERATION_TIMEOUT_MS,
+            });
+            retryUsage = retryResponse.usage;
+            parsedSection = parseQuestionsResponse(retryResponse.text, true, sectionOnlyFormat);
+        }
+        if (!parsedSection?.questions || !validateQuestions(parsedSection.questions)) {
+            throw new Error(`Question paper generation returned invalid JSON for ${section.name}.`);
+        }
+        validateSectionBatch({
+            section,
+            questions: parsedSection.questions,
+        });
+        allQuestions.push(...parsedSection.questions);
+        combinedUsage = addUsages(combinedUsage, response.usage, retryUsage);
+        questionNumberStart += section.questions;
+    }
+    return {
+        questions: renumberQuestionsSequentially(allQuestions),
+        usage: combinedUsage ?? zeroUsage(),
+    };
+};
+export const normalizeQuestionPaperPayload = ({ fallbackTitle, format, questions, }) => ({
+    title: toTitleCase(fallbackTitle),
     format: {
-        ...format,
-        duration: String(format.duration || '').trim() || '3 hours',
+        totalMarks: format.totalMarks,
+        duration: sanitizeQuestionPaperText(String(format.duration || '')) || '3 hours',
         sections: format.sections.map((section) => ({
             ...section,
             name: humanizeLabel(section.name),
+            displayName: sanitizeQuestionPaperText(section.displayName || humanizeLabel(section.name)),
             questionType: humanizeLabel(section.questionType),
-            instructions: String(section.instructions || '').trim(),
+            questionTypeDisplay: sanitizeQuestionPaperText(section.questionTypeDisplay || humanizeLabel(section.questionType)),
+            instructions: sanitizeQuestionPaperText(String(section.instructions || '')),
+            totalMarks: section.totalMarks ?? section.questions * section.marksPerQuestion,
         })),
     },
     questions: questions.map((question, index) => ({
         ...(() => {
-            const options = question.options?.map((option) => String(option).trim()).filter(Boolean);
-            const subParts = question.subParts?.map((part) => String(part).trim()).filter(Boolean);
+            const options = question.options?.map((option) => sanitizePdfRenderableText(String(option))).filter(Boolean);
+            const subParts = question.subParts?.map((part) => sanitizePdfRenderableText(String(part))).filter(Boolean);
             return {
                 ...question,
                 id: question.id || `q-${index + 1}`,
                 questionNumber: Number(question.questionNumber) || index + 1,
                 sectionName: humanizeLabel(question.sectionName),
-                text: String(question.text || '').trim(),
+                text: sanitizePdfRenderableText(String(question.text || '')),
                 type: question.type || 'short_answer',
                 marks: Number(question.marks) || 1,
                 ...(options?.length ? { options } : {}),
@@ -412,7 +1016,7 @@ const normalizeQuestionPaperPayload = ({ fallbackTitle, format, questions, }) =>
     })),
 });
 export const researchQuestionPaperFormat = async ({ subject, educationLevel, examBoard, plan, uid, requestId, }) => {
-    const query = `${examBoard} ${educationLevel} ${subject} question paper format marking scheme`;
+    const query = buildFormatResearchQuery({ examBoard, educationLevel, subject });
     let results = [];
     try {
         results = await searchExamFormatSources(query);
@@ -442,9 +1046,17 @@ export const researchQuestionPaperFormat = async ({ subject, educationLevel, exa
         totalTimeoutMs: FORMAT_RESEARCH_TIMEOUT_MS,
     });
     const parsed = safeJsonParse(response.text);
+    const matchedFormatFamily = inferFormatFamily(examBoard);
     return {
         format: parsed?.totalMarks && Array.isArray(parsed.sections) && parsed.sections.length > 0
-            ? parsed
+            ? {
+                ...parsed,
+                matchedFormatFamily,
+                formatSource: 'official',
+                generalInstructions: toStringList(parsed.generalInstructions, 20).map(sanitizeQuestionPaperText).length > 0
+                    ? toStringList(parsed.generalInstructions, 20).map(sanitizeQuestionPaperText)
+                    : buildFallbackGeneralInstructions(examBoard, matchedFormatFamily),
+            }
             : normalizeFormatFallback({ subject, educationLevel, examBoard }),
         sources: results.map((result) => result.url),
         usage: response.usage,
@@ -455,6 +1067,7 @@ export const generateQuestionPaperForUser = async ({ uid, subject, educationLeve
     const generatedAt = new Date().toISOString();
     const startedAt = Date.now();
     let failedStep = 'format_research';
+    let rawGenerationResponsePreview;
     logger.info('paper_generation_started', {
         eventType: 'paper_generation_started',
         requestId,
@@ -490,15 +1103,16 @@ export const generateQuestionPaperForUser = async ({ uid, subject, educationLeve
             requestId,
         });
         failedStep = 'generation';
-        const response = await executeHybridAiRequest({
-            prompt: buildQuestionPaperPrompt({
-                subject,
-                educationLevel,
-                examBoard,
-                topic,
-                format: research.format,
-                sourceContext,
-            }),
+        const structurePrompt = buildQuestionPaperStructurePrompt({
+            subject,
+            educationLevel,
+            examBoard,
+            topic,
+            format: research.format,
+            sourceContext,
+        });
+        const structureResponse = await executeHybridAiRequest({
+            prompt: structurePrompt,
             educationLevel,
             mode: 'ExamPrep',
             objective: `Generate ${examBoard} question paper`,
@@ -508,18 +1122,171 @@ export const generateQuestionPaperForUser = async ({ uid, subject, educationLeve
             history: [],
             summaryCandidates: [],
             attachments: [],
-            maxOutputTokens: 2500,
+            maxOutputTokens: 1600,
             totalTimeoutMs: QUESTION_PAPER_GENERATION_TIMEOUT_MS,
         });
-        const parsed = normalizeGeneratedPaperResponse(safeJsonParse(response.text));
-        if (!parsed?.format || !validateQuestions(parsed.questions)) {
+        rawGenerationResponsePreview = structureResponse.text.slice(0, 500);
+        const parseStructureResponse = (rawResponse, isRetry) => normalizeGeneratedStructureResponse(parseJsonWithRepair({
+            rawResponse,
+            requestId,
+            subject,
+            examBoard,
+            educationLevel,
+            isRetry,
+        }));
+        const parseQuestionsResponse = (rawResponse, isRetry, format) => normalizeGeneratedQuestionsResponse(parseJsonWithRepair({
+            rawResponse,
+            requestId,
+            subject,
+            examBoard,
+            educationLevel,
+            isRetry,
+        }), format);
+        let parsedStructure = (() => {
+            try {
+                return parseStructureResponse(structureResponse.text, false);
+            }
+            catch (error) {
+                if (!(error instanceof QuestionPaperJsonParseError)) {
+                    throw error;
+                }
+                return null;
+            }
+        })();
+        let structureUsage = null;
+        if (parsedStructure === null) {
+            const retryStructureResponse = await executeHybridAiRequest({
+                prompt: structurePrompt,
+                educationLevel,
+                mode: 'ExamPrep',
+                objective: `Generate ${examBoard} question paper`,
+                plan,
+                uid,
+                requestId,
+                history: [],
+                summaryCandidates: [],
+                attachments: [],
+                maxOutputTokens: 1600,
+                totalTimeoutMs: QUESTION_PAPER_GENERATION_TIMEOUT_MS,
+            });
+            rawGenerationResponsePreview = retryStructureResponse.text.slice(0, 500);
+            structureUsage = retryStructureResponse.usage;
+            parsedStructure = parseStructureResponse(retryStructureResponse.text, true);
+        }
+        if (!parsedStructure?.format) {
             throw new Error('Question paper generation returned invalid JSON.');
         }
-        const normalized = normalizeQuestionPaperPayload({
-            fallbackTitle: parsed.title || `${educationLevel} ${examBoard} ${subject} Exam`,
-            format: parsed.format,
-            questions: parsed.questions,
+        const mergedFormat = {
+            ...research.format,
+            ...parsedStructure.format,
+            sections: parsedStructure.format.sections,
+        };
+        const questionsPrompt = buildQuestionPaperQuestionsPrompt({
+            subject,
+            educationLevel,
+            examBoard,
+            topic,
+            format: mergedFormat,
+            sourceContext,
         });
+        const questionsResponseResult = await executeQuestionGenerationRequest({
+            prompt: questionsPrompt,
+            educationLevel,
+            objective: `Generate ${examBoard} question paper`,
+            plan,
+            uid,
+            requestId,
+            subject,
+            examBoard,
+            sourceType,
+        });
+        const questionsResponse = questionsResponseResult.response;
+        rawGenerationResponsePreview = questionsResponse.text.slice(0, 500);
+        let parsedQuestionsError = null;
+        let parsedQuestions = (() => {
+            try {
+                return parseQuestionsResponse(questionsResponse.text, questionsResponseResult.usedIncompleteRetry, mergedFormat);
+            }
+            catch (error) {
+                if (!(error instanceof QuestionPaperJsonParseError)) {
+                    throw error;
+                }
+                parsedQuestionsError = error;
+                return null;
+            }
+        })();
+        let questionsUsage = questionsResponseResult.retryUsage;
+        if (parsedQuestions === null && questionsResponseResult.usedIncompleteRetry) {
+            throw parsedQuestionsError ?? new Error('Question paper generation returned invalid JSON after retry.');
+        }
+        if (parsedQuestions === null) {
+            const retryQuestionsResponse = await executeHybridAiRequest({
+                prompt: questionsPrompt,
+                educationLevel,
+                mode: 'ExamPrep',
+                objective: `Generate ${examBoard} question paper`,
+                plan,
+                uid,
+                requestId,
+                history: [],
+                summaryCandidates: [],
+                attachments: [],
+                maxOutputTokens: QUESTION_PAPER_GENERATION_MAX_OUTPUT_TOKENS,
+                totalTimeoutMs: QUESTION_PAPER_GENERATION_TIMEOUT_MS,
+            });
+            rawGenerationResponsePreview = retryQuestionsResponse.text.slice(0, 500);
+            questionsUsage = retryQuestionsResponse.usage;
+            parsedQuestions = parseQuestionsResponse(retryQuestionsResponse.text, true, mergedFormat);
+        }
+        if (!parsedStructure?.format || !parsedQuestions?.questions || !validateQuestions(parsedQuestions.questions)) {
+            throw new Error('Question paper generation returned invalid JSON.');
+        }
+        let candidateQuestions = parsedQuestions.questions;
+        let sectionRecoveryUsage = null;
+        const buildNormalizedPaper = (questions) => normalizeQuestionPaperPayload({
+            fallbackTitle: parsedStructure.title || `${educationLevel} ${examBoard} ${subject} Exam`,
+            format: mergedFormat,
+            questions,
+        });
+        let normalized = buildNormalizedPaper(candidateQuestions);
+        try {
+            validateQuestionPaperStructure({
+                totalMarks: normalized.format.totalMarks,
+                sections: normalized.format.sections,
+                questions: normalized.questions,
+            });
+        }
+        catch (error) {
+            logger.warn('paper_generation_section_recovery_started', {
+                eventType: 'paper_generation_section_recovery_started',
+                requestId,
+                uid,
+                subject,
+                examBoard,
+                educationLevel,
+                sourceType,
+                errorMessage: error instanceof Error ? error.message : String(error),
+            });
+            const recovered = await generateQuestionsBySection({
+                uid,
+                plan,
+                requestId,
+                subject,
+                educationLevel,
+                examBoard,
+                topic,
+                format: mergedFormat,
+                sourceContext,
+            });
+            candidateQuestions = recovered.questions;
+            sectionRecoveryUsage = recovered.usage;
+            normalized = buildNormalizedPaper(candidateQuestions);
+            validateQuestionPaperStructure({
+                totalMarks: normalized.format.totalMarks,
+                sections: normalized.format.sections,
+                questions: normalized.questions,
+            });
+        }
         const paper = questionPaperDocSchema.parse({
             id: paperRef.id,
             title: normalized.title,
@@ -527,6 +1294,19 @@ export const generateQuestionPaperForUser = async ({ uid, subject, educationLeve
             educationLevel,
             examBoard,
             sourceType,
+            headerBoardName: parsedStructure.headerBoardName || research.format.headerBoardName || sanitizeQuestionPaperText(examBoard),
+            examinationTitle: parsedStructure.examinationTitle ||
+                research.format.examinationTitle ||
+                sanitizeQuestionPaperText(`${educationLevel} Examination`),
+            sessionLabel: parsedStructure.sessionLabel ||
+                research.format.sessionLabel ||
+                String(new Date(generatedAt).getFullYear()),
+            subjectCode: parsedStructure.subjectCode || research.format.subjectCode,
+            generalInstructions: parsedStructure.generalInstructions?.length
+                ? parsedStructure.generalInstructions
+                : research.format.generalInstructions,
+            matchedFormatFamily: research.format.matchedFormatFamily,
+            formatSource: research.format.formatSource,
             format: normalized.format,
             questions: normalized.questions,
             generatedAt,
@@ -549,7 +1329,10 @@ export const generateQuestionPaperForUser = async ({ uid, subject, educationLeve
             sectionCount: paper.format.sections.length,
             latencyMs: Date.now() - startedAt,
         });
-        return { paper, usage: addUsages(research.usage, response.usage) };
+        return {
+            paper,
+            usage: addUsages(research.usage, structureResponse.usage, structureUsage, questionsResponse.usage, questionsUsage, sectionRecoveryUsage),
+        };
     }
     catch (error) {
         logger.warn('paper_generation_failed', {
@@ -562,6 +1345,9 @@ export const generateQuestionPaperForUser = async ({ uid, subject, educationLeve
             sourceType,
             step: failedStep,
             errorMessage: error instanceof Error ? error.message : String(error),
+            rawResponsePreview: error instanceof QuestionPaperJsonParseError
+                ? error.rawPreview
+                : rawGenerationResponsePreview,
             latencyMs: Date.now() - startedAt,
         });
         await paperRef.set(questionPaperFailureUpdateSchema.parse({

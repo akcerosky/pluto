@@ -35,7 +35,7 @@ export const getDueCards = lazySecureCallable(async () => (await import('./handl
 export const submitCardReview = lazySecureCallable(async () => (await import('./handlers/learning.js')).submitCardReviewHandler);
 export const deleteFlashcardSet = lazySecureCallable(async () => (await import('./handlers/learning.js')).deleteFlashcardSetHandler);
 export const getFlashcardCards = lazySecureCallable(async () => (await import('./handlers/learning.js')).getFlashcardCardsHandler);
-export const generatePaperFromPdfs = lazySecureCallable(async () => (await import('./handlers/learning.js')).generatePaperFromPdfsHandler, { minInstances: 1, timeoutSeconds: 120 });
+export const generatePaperFromPdfs = lazySecureCallable(async () => (await import('./handlers/learning.js')).generatePaperFromPdfsHandler, { minInstances: 1, timeoutSeconds: 300 });
 export const billingCheckout = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingCheckoutHandler, { minInstances: 1 });
 export const billingVerifyPayment = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingVerifyPaymentHandler, { minInstances: 1 });
 export const billingHistory = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingHistoryHandler);

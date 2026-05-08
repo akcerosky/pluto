@@ -1,4 +1,11 @@
 import { HttpsError } from 'firebase-functions/v2/https';
+const loggerError = jest.fn();
+
+jest.mock('firebase-functions', () => ({
+  logger: {
+    error: loggerError,
+  },
+}));
 
 const getMeSnapshot = jest.fn(async () => ({
   subscription: { plan: 'Plus' },
@@ -77,6 +84,7 @@ jest.mock('../services/learning/questionPapers.js', () => ({
 import {
   generateFlashcardSetHandler,
   generatePaperFromPdfsHandler,
+  generateQuestionPaperHandler,
 } from './learning.js';
 
 beforeEach(() => {
@@ -305,5 +313,93 @@ test('generateFlashcardSet throws quota error when reservation exceeds quota', a
       'resource-exhausted',
       'You reached the Plus daily token limit for today. Upgrade to continue or wait for the 00:00 IST reset.'
     )
+  );
+});
+
+test('generateQuestionPaperHandler logs raw preview and rethrows a structured internal error', async () => {
+  generateQuestionPaperForUser.mockRejectedValue(
+    Object.assign(new Error('Question paper generation returned invalid JSON after retry. Raw response length: 16'), {
+      rawPreview: 'bad response preview',
+    })
+  );
+
+  await expect(
+    generateQuestionPaperHandler({
+      auth: { uid: 'user-1' },
+      data: {
+        subject: 'BEE',
+        educationLevel: 'B.Tech / B.E.',
+        examBoard: 'University End Semester',
+        requestId: 'req-handler-json-fail',
+      },
+    } as never)
+  ).rejects.toEqual(
+    new HttpsError('internal', 'Question paper generation returned invalid JSON after retry. Raw response length: 16')
+  );
+
+  expect(loggerError).toHaveBeenCalledWith(
+    'generate_question_paper_handler_failed',
+    expect.objectContaining({
+      requestId: 'req-handler-json-fail',
+      subject: 'BEE',
+      examBoard: 'University End Semester',
+      educationLevel: 'B.Tech / B.E.',
+      errorMessage: 'Question paper generation returned invalid JSON after retry. Raw response length: 16',
+      rawResponsePreview: 'bad response preview',
+    })
+  );
+});
+
+test('generatePaperFromPdfsHandler logs the real failure and rethrows a structured internal error', async () => {
+  extractPdfTextWithNovaLite.mockResolvedValue({
+    text: 'extracted text',
+    usage: { inputTokens: 1000, outputTokens: 600, totalTokens: 1600, usageSource: 'provider' },
+  });
+  summarizePdfSourceMaterial.mockResolvedValue({
+    digest: null,
+    usage: { inputTokens: 200, outputTokens: 100, totalTokens: 300, usageSource: 'provider' },
+  });
+  inferSubjectFromText.mockResolvedValue({
+    subject: 'Physics',
+    usage: { inputTokens: 40, outputTokens: 20, totalTokens: 60, usageSource: 'provider' },
+  });
+  generateQuestionPaperForUser.mockRejectedValue(
+    Object.assign(new Error('Question marks total 30 does not match required total 80.'), {
+      rawPreview: 'partial question preview',
+    })
+  );
+
+  await expect(
+    generatePaperFromPdfsHandler({
+      auth: { uid: 'user-1' },
+      data: {
+        pdfAttachments: [
+          {
+            name: 'lesson.pdf',
+            mimeType: 'application/pdf',
+            sizeBytes: 1024,
+            base64Data: 'ZmFrZQ==',
+          },
+        ],
+        educationLevel: 'Class 10',
+        examBoard: 'CBSE',
+        subject: null,
+        requestId: 'req-pdf-paper-fail',
+      },
+    } as never)
+  ).rejects.toEqual(
+    new HttpsError('internal', 'Question marks total 30 does not match required total 80.')
+  );
+
+  expect(loggerError).toHaveBeenCalledWith(
+    'generate_pdf_question_paper_handler_failed',
+    expect.objectContaining({
+      requestId: 'req-pdf-paper-fail',
+      examBoard: 'CBSE',
+      educationLevel: 'Class 10',
+      errorMessage: 'Question marks total 30 does not match required total 80.',
+      rawResponsePreview: 'partial question preview',
+      attachmentNames: ['lesson.pdf'],
+    })
   );
 });

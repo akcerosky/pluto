@@ -87,10 +87,13 @@ export interface UserSession {
 
 export interface QuestionPaperFormatSection {
   name: string;
+  displayName?: string;
   instructions: string;
   questionType: string;
+  questionTypeDisplay?: string;
   questions: number;
   marksPerQuestion: number;
+  totalMarks?: number;
 }
 
 export interface QuestionPaperQuestion {
@@ -98,7 +101,7 @@ export interface QuestionPaperQuestion {
   sectionName: string;
   questionNumber: number;
   text: string;
-  type: 'mcq' | 'short_answer' | 'long_answer' | 'fill_blank' | 'assertion_reason';
+  type: 'mcq' | 'short_answer' | 'long_answer' | 'essay' | 'fill_blank' | 'assertion_reason';
   marks: number;
   options?: string[];
   subParts?: string[];
@@ -114,6 +117,13 @@ export interface QuestionPaperDoc {
   sourceType: 'topic' | 'pdf';
   sourcePdfNames?: string[];
   sourcePdfTextLength?: number;
+  headerBoardName?: string;
+  examinationTitle?: string;
+  sessionLabel?: string;
+  subjectCode?: string;
+  generalInstructions?: string[];
+  matchedFormatFamily?: string;
+  formatSource?: 'official' | 'family_fallback';
   format: {
     totalMarks: number;
     duration: string;

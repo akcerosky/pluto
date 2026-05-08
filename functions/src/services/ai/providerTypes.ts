@@ -16,6 +16,7 @@ export interface ProviderRequest {
   summaryCandidates: AiHistoryMessage[];
   attachments: AiInlineAttachment[];
   maxOutputTokens: number;
+  temperature?: number;
   totalTimeoutMs?: number;
 }
 

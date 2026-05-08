@@ -1,3 +1,4 @@
+import { logger } from 'firebase-functions';
 import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import { z } from 'zod';
 import { INLINE_ATTACHMENT_PAYLOAD_LIMIT_BYTES, type SubscriptionPlan } from '../config/plans.js';
@@ -181,20 +182,49 @@ export const generateQuestionPaperHandler = async (request: CallableRequest<unkn
     plan,
     reservedTokens: metering.reservedTokens,
     run: async () => {
-      const generated = await generateQuestionPaperForUser({
-        uid,
-        subject: payload.subject,
-        educationLevel: payload.educationLevel,
-        examBoard: payload.examBoard,
-        topic: payload.topic,
-        plan,
-        sourceType: 'topic',
-        requestId,
-      });
-      return {
-        result: { paperId: generated.paper.id },
-        usage: generated.usage,
-      };
+      try {
+        const generated = await generateQuestionPaperForUser({
+          uid,
+          subject: payload.subject,
+          educationLevel: payload.educationLevel,
+          examBoard: payload.examBoard,
+          topic: payload.topic,
+          plan,
+          sourceType: 'topic',
+          requestId,
+        });
+        return {
+          result: { paperId: generated.paper.id },
+          usage: generated.usage,
+        };
+      } catch (error) {
+        logger.error('generate_question_paper_handler_failed', {
+          eventType: 'generate_question_paper_handler_failed',
+          requestId,
+          uid,
+          subject: payload.subject,
+          examBoard: payload.examBoard,
+          educationLevel: payload.educationLevel,
+          topic: payload.topic ?? null,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          rawResponsePreview:
+            typeof error === 'object' &&
+            error !== null &&
+            'rawPreview' in error &&
+            typeof (error as { rawPreview?: unknown }).rawPreview === 'string'
+              ? (error as { rawPreview: string }).rawPreview.slice(0, 500)
+              : undefined,
+        });
+
+        if (error instanceof HttpsError) {
+          throw error;
+        }
+
+        throw new HttpsError(
+          'internal',
+          error instanceof Error ? error.message : 'Question paper generation failed.'
+        );
+      }
     },
   });
 };
@@ -313,62 +343,91 @@ export const generatePaperFromPdfsHandler = async (request: CallableRequest<unkn
     plan,
     reservedTokens: metering.reservedTokens,
     run: async () => {
-      const extracted = await extractPdfTextWithNovaLite({
-        uid,
-        plan,
-        educationLevel: payload.educationLevel,
-        examBoard: payload.examBoard,
-        pdfAttachments: payload.pdfAttachments,
-        requestId,
-      });
-      const sourceDigestResult = await summarizePdfSourceMaterial({
-        uid,
-        plan,
-        educationLevel: payload.educationLevel,
-        examBoard: payload.examBoard,
-        extractedText: extracted.text,
-        requestId,
-      });
-      const inferredSubjectResult =
-        payload.subject || buildSubjectFromDigest(sourceDigestResult.digest)
-          ? null
-          : await inferSubjectFromText({
-              uid,
-              plan,
-              educationLevel: payload.educationLevel,
-              extractedText: extracted.text,
-              requestId,
-            });
+      try {
+        const extracted = await extractPdfTextWithNovaLite({
+          uid,
+          plan,
+          educationLevel: payload.educationLevel,
+          examBoard: payload.examBoard,
+          pdfAttachments: payload.pdfAttachments,
+          requestId,
+        });
+        const sourceDigestResult = await summarizePdfSourceMaterial({
+          uid,
+          plan,
+          educationLevel: payload.educationLevel,
+          examBoard: payload.examBoard,
+          extractedText: extracted.text,
+          requestId,
+        });
+        const inferredSubjectResult =
+          payload.subject || buildSubjectFromDigest(sourceDigestResult.digest)
+            ? null
+            : await inferSubjectFromText({
+                uid,
+                plan,
+                educationLevel: payload.educationLevel,
+                extractedText: extracted.text,
+                requestId,
+              });
 
-      const subject =
-        payload.subject ||
-        buildSubjectFromDigest(sourceDigestResult.digest) ||
-        inferredSubjectResult?.subject ||
-        'General Studies';
+        const subject =
+          payload.subject ||
+          buildSubjectFromDigest(sourceDigestResult.digest) ||
+          inferredSubjectResult?.subject ||
+          'General Studies';
 
-      const generated = await generateQuestionPaperForUser({
-        uid,
-        subject,
-        educationLevel: payload.educationLevel,
-        examBoard: payload.examBoard,
-        plan,
-        sourceType: 'pdf',
-        sourcePdfNames: payload.pdfAttachments.map((attachment) => attachment.name),
-        sourcePdfTextLength: extracted.text.length,
-        topic: buildPdfTopicFromDigest(sourceDigestResult.digest),
-        sourceContext: buildSourceContextFromDigest(sourceDigestResult.digest, extracted.text),
-        requestId,
-      });
+        const generated = await generateQuestionPaperForUser({
+          uid,
+          subject,
+          educationLevel: payload.educationLevel,
+          examBoard: payload.examBoard,
+          plan,
+          sourceType: 'pdf',
+          sourcePdfNames: payload.pdfAttachments.map((attachment) => attachment.name),
+          sourcePdfTextLength: extracted.text.length,
+          topic: buildPdfTopicFromDigest(sourceDigestResult.digest),
+          sourceContext: buildSourceContextFromDigest(sourceDigestResult.digest, extracted.text),
+          requestId,
+        });
 
-      return {
-        result: { paperId: generated.paper.id },
-        usage: sumUsages(
-          extracted.usage,
-          sourceDigestResult.usage,
-          inferredSubjectResult?.usage,
-          generated.usage
-        ),
-      };
+        return {
+          result: { paperId: generated.paper.id },
+          usage: sumUsages(
+            extracted.usage,
+            sourceDigestResult.usage,
+            inferredSubjectResult?.usage,
+            generated.usage
+          ),
+        };
+      } catch (error) {
+        logger.error('generate_pdf_question_paper_handler_failed', {
+          eventType: 'generate_pdf_question_paper_handler_failed',
+          requestId,
+          uid,
+          subject: payload.subject ?? null,
+          examBoard: payload.examBoard,
+          educationLevel: payload.educationLevel,
+          attachmentNames: payload.pdfAttachments.map((attachment) => attachment.name),
+          errorMessage: error instanceof Error ? error.message : String(error),
+          rawResponsePreview:
+            typeof error === 'object' &&
+            error !== null &&
+            'rawPreview' in error &&
+            typeof (error as { rawPreview?: unknown }).rawPreview === 'string'
+              ? (error as { rawPreview: string }).rawPreview.slice(0, 500)
+              : undefined,
+        });
+
+        if (error instanceof HttpsError) {
+          throw error;
+        }
+
+        throw new HttpsError(
+          'internal',
+          error instanceof Error ? error.message : 'PDF question paper generation failed.'
+        );
+      }
     },
   });
 };

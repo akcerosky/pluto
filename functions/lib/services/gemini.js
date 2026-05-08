@@ -272,6 +272,7 @@ const executeGeminiModel = async ({ genAI, payload, modelId, contextSummary, his
                 .filter(Boolean)
                 .join('\n\n'),
             maxOutputTokens: payload.maxOutputTokens,
+            temperature: payload.temperature,
         },
     });
     const text = sanitizeResponse(response.text ?? '');

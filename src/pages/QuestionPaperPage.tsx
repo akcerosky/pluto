@@ -6,6 +6,17 @@ import {
   generateQuestionPaperPdf,
   getQuestionPapers,
 } from '../lib/plutoApi';
+import {
+  DEFAULT_QUESTION_PAPER_EDUCATION_LEVEL,
+  DEFAULT_QUESTION_PAPER_EXAM_BOARD,
+  QUESTION_PAPER_EDUCATION_LEVEL_GROUPS,
+  QUESTION_PAPER_EXAM_BOARD_GROUPS,
+  getQuestionPaperEducationLevelPlaceholder,
+  getQuestionPaperExamBoardPlaceholder,
+  questionPaperEducationLevelRequiresCustomInput,
+  questionPaperExamBoardRequiresCustomInput,
+  resolveQuestionPaperSelectValue,
+} from '../lib/questionPaperFormOptions';
 import { normalizeLearningErrorMessage } from '../lib/learningUi';
 import type { QuestionPaperDoc } from '../types';
 
@@ -103,8 +114,10 @@ export const QuestionPaperPage = ({
 }) => {
   const isMountedRef = useRef(true);
   const [subject, setSubject] = useState('');
-  const [educationLevel, setEducationLevel] = useState('Class 10');
-  const [examBoard, setExamBoard] = useState('CBSE');
+  const [educationLevel, setEducationLevel] = useState(DEFAULT_QUESTION_PAPER_EDUCATION_LEVEL);
+  const [educationLevelCustomValue, setEducationLevelCustomValue] = useState('');
+  const [examBoard, setExamBoard] = useState(DEFAULT_QUESTION_PAPER_EXAM_BOARD);
+  const [examBoardCustomValue, setExamBoardCustomValue] = useState('');
   const [topic, setTopic] = useState('');
   const [papers, setPapers] = useState<QuestionPaperDoc[]>([]);
   const [activePaperId, setActivePaperId] = useState<string | null>(null);
@@ -190,6 +203,23 @@ export const QuestionPaperPage = ({
     isCompactLayout && effectiveMobileView === 'previous' && activePaperId !== null;
   const shouldShowEmbeddedMobileSwitcher = false;
   const shouldShowInlineComposer = false;
+  const educationLevelNeedsCustomInput = questionPaperEducationLevelRequiresCustomInput(educationLevel);
+  const examBoardNeedsCustomInput = questionPaperExamBoardRequiresCustomInput(examBoard);
+  const resolvedEducationLevel = resolveQuestionPaperSelectValue(
+    educationLevel,
+    educationLevelCustomValue,
+    educationLevelNeedsCustomInput
+  );
+  const resolvedExamBoard = resolveQuestionPaperSelectValue(
+    examBoard,
+    examBoardCustomValue,
+    examBoardNeedsCustomInput
+  );
+  const isGenerateDisabled =
+    isLoading ||
+    !subject.trim() ||
+    (educationLevelNeedsCustomInput && !educationLevelCustomValue.trim()) ||
+    (examBoardNeedsCustomInput && !examBoardCustomValue.trim());
 
   useEffect(() => {
     if (!isCompactLayout) return;
@@ -276,8 +306,8 @@ export const QuestionPaperPage = ({
   }) => {
     const payload = overridePayload ?? {
       subject: normalizeWhitespace(subject),
-      educationLevel,
-      examBoard,
+      educationLevel: resolvedEducationLevel,
+      examBoard: resolvedExamBoard,
       topic: normalizeWhitespace(topic) || undefined,
     };
 
@@ -322,6 +352,62 @@ export const QuestionPaperPage = ({
     downloadBase64File(result.base64Pdf, result.filename, 'application/pdf');
   };
 
+  const renderEducationLevelSelect = () => (
+    <>
+      <select
+        value={educationLevel}
+        onChange={(event) => setEducationLevel(event.target.value)}
+        style={composerInputStyle}
+      >
+        {QUESTION_PAPER_EDUCATION_LEVEL_GROUPS.map((group) => (
+          <optgroup key={group.label} label={group.label}>
+            {group.options.map((level) => (
+              <option key={level.value} value={level.value}>
+                {level.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+      {educationLevelNeedsCustomInput ? (
+        <input
+          value={educationLevelCustomValue}
+          onChange={(event) => setEducationLevelCustomValue(event.target.value)}
+          placeholder={getQuestionPaperEducationLevelPlaceholder(educationLevel)}
+          style={composerInputStyle}
+        />
+      ) : null}
+    </>
+  );
+
+  const renderExamBoardSelect = () => (
+    <>
+      <select
+        value={examBoard}
+        onChange={(event) => setExamBoard(event.target.value)}
+        style={composerInputStyle}
+      >
+        {QUESTION_PAPER_EXAM_BOARD_GROUPS.map((group) => (
+          <optgroup key={group.label} label={group.label}>
+            {group.options.map((board) => (
+              <option key={board.value} value={board.value}>
+                {board.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+      {examBoardNeedsCustomInput ? (
+        <input
+          value={examBoardCustomValue}
+          onChange={(event) => setExamBoardCustomValue(event.target.value)}
+          placeholder={getQuestionPaperExamBoardPlaceholder(examBoard)}
+          style={composerInputStyle}
+        />
+      ) : null}
+    </>
+  );
+
   const renderTopicComposer = () => (
     <div style={promptBarShellStyle}>
       {isCompactLayout ? (
@@ -338,38 +424,8 @@ export const QuestionPaperPage = ({
               gridTemplateColumns: '1fr',
             }}
           >
-            <select
-              value={educationLevel}
-              onChange={(event) => setEducationLevel(event.target.value)}
-              style={composerInputStyle}
-            >
-              {[
-                'Class 6',
-                'Class 7',
-                'Class 8',
-                'Class 9',
-                'Class 10',
-                'Class 11',
-                'Class 12',
-                'Undergraduate',
-                'Postgraduate',
-              ].map((level) => (
-                <option key={level} value={level}>
-                  {level}
-                </option>
-              ))}
-            </select>
-            <select
-              value={examBoard}
-              onChange={(event) => setExamBoard(event.target.value)}
-              style={composerInputStyle}
-            >
-              {['CBSE', 'ICSE', 'IGCSE', 'IB', 'JEE Mains', 'JEE Advanced', 'NEET', 'UPSC'].map((board) => (
-                <option key={board} value={board}>
-                  {board}
-                </option>
-              ))}
-            </select>
+            {renderEducationLevelSelect()}
+            {renderExamBoardSelect()}
           </div>
           <div
             style={{
@@ -387,7 +443,7 @@ export const QuestionPaperPage = ({
             <button
               type="button"
               onClick={() => void handleGenerate()}
-              disabled={isLoading || !subject.trim()}
+              disabled={isGenerateDisabled}
               className="app-button"
               style={{
                 ...composerActionButtonStyle,
@@ -407,38 +463,8 @@ export const QuestionPaperPage = ({
             placeholder="Subject"
             style={composerInputStyle}
           />
-          <select
-            value={educationLevel}
-            onChange={(event) => setEducationLevel(event.target.value)}
-            style={composerInputStyle}
-          >
-            {[
-              'Class 6',
-              'Class 7',
-              'Class 8',
-              'Class 9',
-              'Class 10',
-              'Class 11',
-              'Class 12',
-              'Undergraduate',
-              'Postgraduate',
-            ].map((level) => (
-              <option key={level} value={level}>
-                {level}
-              </option>
-            ))}
-          </select>
-          <select
-            value={examBoard}
-            onChange={(event) => setExamBoard(event.target.value)}
-            style={composerInputStyle}
-          >
-            {['CBSE', 'ICSE', 'IGCSE', 'IB', 'JEE Mains', 'JEE Advanced', 'NEET', 'UPSC'].map((board) => (
-              <option key={board} value={board}>
-                {board}
-              </option>
-            ))}
-          </select>
+          <div style={stackedInlineFieldStyle}>{renderEducationLevelSelect()}</div>
+          <div style={stackedInlineFieldStyle}>{renderExamBoardSelect()}</div>
           <input
             value={topic}
             onChange={(event) => setTopic(event.target.value)}
@@ -448,7 +474,7 @@ export const QuestionPaperPage = ({
           <button
             type="button"
             onClick={() => void handleGenerate()}
-            disabled={isLoading || !subject.trim()}
+            disabled={isGenerateDisabled}
             className="app-button"
             style={composerActionButtonStyle}
           >
@@ -916,47 +942,8 @@ export const QuestionPaperPage = ({
                   gridTemplateColumns: isCompactLayout ? '1fr' : '1fr 1fr',
                 }}
               >
-                <select
-                  value={educationLevel}
-                  onChange={(event) => setEducationLevel(event.target.value)}
-                  style={composerInputStyle}
-                >
-                  {[
-                    'Class 6',
-                    'Class 7',
-                    'Class 8',
-                    'Class 9',
-                    'Class 10',
-                    'Class 11',
-                    'Class 12',
-                    'Undergraduate',
-                    'Postgraduate',
-                  ].map((level) => (
-                    <option key={level} value={level}>
-                      {level}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={examBoard}
-                  onChange={(event) => setExamBoard(event.target.value)}
-                  style={composerInputStyle}
-                >
-                  {[
-                    'CBSE',
-                    'ICSE',
-                    'IGCSE',
-                    'IB',
-                    'JEE Mains',
-                    'JEE Advanced',
-                    'NEET',
-                    'UPSC',
-                  ].map((board) => (
-                    <option key={board} value={board}>
-                      {board}
-                    </option>
-                  ))}
-                </select>
+                {renderEducationLevelSelect()}
+                {renderExamBoardSelect()}
               </div>
               <div
                 style={{
@@ -974,7 +961,7 @@ export const QuestionPaperPage = ({
                 <button
                   type="button"
                   onClick={() => void handleGenerate()}
-                  disabled={isLoading || !subject.trim()}
+                  disabled={isGenerateDisabled}
                   className="app-button"
                   style={{
                     ...composerActionButtonStyle,
@@ -1319,6 +1306,11 @@ const desktopComposerRowStyle: CSSProperties = {
   gridTemplateColumns: 'minmax(180px, 1.1fr) minmax(150px, 0.9fr) minmax(140px, 0.85fr) minmax(220px, 1.3fr) auto',
   gap: '10px',
   alignItems: 'center',
+};
+
+const stackedInlineFieldStyle: CSSProperties = {
+  display: 'grid',
+  gap: '10px',
 };
 
 const composerInputStyle: CSSProperties = {
