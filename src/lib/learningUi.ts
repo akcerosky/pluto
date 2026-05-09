@@ -26,7 +26,11 @@ export const normalizeLearningErrorMessage = ({
     return 'Pluto is taking longer than expected right now. Please try again in a moment.';
   }
 
-  if (/invalid JSON|structure/i.test(normalized)) {
+  if (/deadline-exceeded/i.test(normalized)) {
+    return 'Generation took too long. A partial paper may have been saved — check Recent Papers.';
+  }
+
+  if (/invalid JSON|structure|empty output/i.test(normalized)) {
     return "Pluto couldn't format the paper correctly. This sometimes happens with niche exam types. Please try again or rephrase the subject.";
   }
 

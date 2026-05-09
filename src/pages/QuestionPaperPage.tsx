@@ -95,6 +95,17 @@ const getDisplayFailureMessage = (paper: QuestionPaperDoc) => {
   });
 };
 
+const hasRawMarkdown = (paper: QuestionPaperDoc | null | undefined) =>
+  Boolean(paper?.rawMarkdownOutput && paper.rawMarkdownOutput.trim().length >= 1);
+
+const hasRenderablePaperContent = (paper: QuestionPaperDoc | null | undefined) =>
+  Boolean(
+    paper &&
+      Array.isArray(paper.format?.sections) &&
+      Array.isArray(paper.questions) &&
+      (paper.questions.length > 0 || hasRawMarkdown(paper))
+  );
+
 export const QuestionPaperPage = ({
   sourceType = 'topic',
   refreshToken = 0,
@@ -116,6 +127,8 @@ export const QuestionPaperPage = ({
   const [isListLoading, setIsListLoading] = useState(true);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [generationErrorMessage, setGenerationErrorMessage] = useState<string | null>(null);
+  const [isRawOutputOpen, setIsRawOutputOpen] = useState(false);
+  const [isWarningsExpanded, setIsWarningsExpanded] = useState(false);
   const [lastGenerationPayload, setLastGenerationPayload] = useState<{
     subject: string;
     educationLevel: string;
@@ -187,7 +200,9 @@ export const QuestionPaperPage = ({
   const isActivePaperReady =
     activePaper?.status === 'ready' &&
     Boolean(activePaper.format) &&
-    Array.isArray(activePaper.questions);
+    Array.isArray(activePaper.questions) &&
+    activePaper.questions.length > 0;
+  const canRenderActivePaper = hasRenderablePaperContent(activePaper);
   const showCompactPreviousList =
     isCompactLayout && effectiveMobileView === 'previous' && activePaperId === null;
   const showCompactPreviousPaper =
@@ -215,6 +230,11 @@ export const QuestionPaperPage = ({
       target.scrollIntoView({ block: 'start', behavior: 'smooth' });
     });
   }, [effectiveMobileView, isCompactLayout, showCompactPreviousList, showCompactPreviousPaper]);
+
+  useEffect(() => {
+    setIsRawOutputOpen(false);
+    setIsWarningsExpanded(false);
+  }, [activePaperId]);
 
   const extractGenerationErrorMessage = (error: unknown) => {
     return normalizeLearningErrorMessage({
@@ -256,7 +276,7 @@ export const QuestionPaperPage = ({
 
     const exactMatch = availablePapers.find(
       (paper) =>
-        paper.status === 'failed' &&
+        (paper.status === 'failed' || paper.status === 'partial') &&
         paper.educationLevel === payload.educationLevel &&
         paper.examBoard === payload.examBoard &&
         normalizeWhitespace(paper.subject || '').toLowerCase() === normalizedSubject &&
@@ -269,12 +289,12 @@ export const QuestionPaperPage = ({
 
     const boardMatch = availablePapers.find(
       (paper) =>
-        paper.status === 'failed' &&
+        (paper.status === 'failed' || paper.status === 'partial') &&
         paper.educationLevel === payload.educationLevel &&
         paper.examBoard === payload.examBoard
     );
 
-    return boardMatch ?? availablePapers.find((paper) => paper.status === 'failed') ?? null;
+    return boardMatch ?? availablePapers.find((paper) => paper.status === 'failed' || paper.status === 'partial') ?? null;
   };
 
   const handleGenerate = async (overridePayload?: {
@@ -330,6 +350,122 @@ export const QuestionPaperPage = ({
     const result = await generateQuestionPaperPdf({ paperId });
     downloadBase64File(result.base64Pdf, result.filename, 'application/pdf');
   };
+
+  const renderPaperAlerts = (paper: QuestionPaperDoc) => (
+    <>
+      {paper.status === 'partial' ? (
+        <div style={partialBannerStyle}>
+          <div style={{ fontWeight: 800 }}>Incomplete paper</div>
+          <div style={{ color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+            Generation timed out before Pluto could finish. Review the content carefully before use.
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleRetryActivePaper()}
+            disabled={isLoading}
+            className="outline-button"
+            style={inlineRetryButtonStyle}
+          >
+            Regenerate
+          </button>
+        </div>
+      ) : null}
+      {paper.parseWarnings?.length ? (
+        <div style={warningPanelStyle}>
+          <button
+            type="button"
+            onClick={() => setIsWarningsExpanded((current) => !current)}
+            style={warningPanelToggleStyle}
+          >
+            <span>{paper.parseWarnings.length} formatting issues detected — paper may need review</span>
+            <span>{isWarningsExpanded ? 'Hide' : 'Show'}</span>
+          </button>
+          {isWarningsExpanded ? (
+            <div style={warningPanelBodyStyle}>
+              {paper.parseWarnings.map((warning) => (
+                <div key={warning}>• {warning}</div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {hasRawMarkdown(paper) ? (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '14px' }}>
+          <button
+            type="button"
+            className="outline-button"
+            style={rawOutputButtonStyle}
+            onClick={() => setIsRawOutputOpen(true)}
+          >
+            View raw output
+          </button>
+        </div>
+      ) : null}
+    </>
+  );
+
+  const renderPaperBody = (paper: QuestionPaperDoc) => (
+    <div
+      style={{
+        color: 'var(--text-primary)',
+        lineHeight: 1.65,
+        height: isCompactLayout ? 'auto' : '100%',
+        overflow: isCompactLayout ? 'visible' : 'hidden',
+        overflowY: isCompactLayout ? 'visible' : 'auto',
+        minWidth: 0,
+      }}
+    >
+      {renderPaperAlerts(paper)}
+      <div style={{ marginBottom: '18px', fontWeight: 700 }}>
+        Time Allowed: {paper.format.duration} · Maximum Marks: {paper.format.totalMarks}
+      </div>
+      {paper.format.sections.map((section) => (
+        <div key={section.name} style={{ marginBottom: '20px' }}>
+          <div style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '6px' }}>
+            {section.name} - {section.questionType}
+          </div>
+          <div style={{ color: 'var(--text-secondary)', marginBottom: '10px' }}>
+            {section.instructions}
+          </div>
+          {paper.questions
+            .filter((question) => question.sectionName === section.name)
+            .map((question) => (
+              <div key={question.id} style={{ marginBottom: '12px' }}>
+                <div>
+                  {question.questionNumber}. {question.text}{' '}
+                  <span style={{ color: 'var(--text-secondary)' }}>[{question.marks}]</span>
+                </div>
+                {question.options?.length ? (
+                  <div
+                    style={{
+                      marginTop: '6px',
+                      paddingLeft: '18px',
+                      color: 'var(--text-secondary)',
+                    }}
+                  >
+                    {question.options.map((option) => (
+                      <div key={option}>{option}</div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ))}
+        </div>
+      ))}
+      {paper.webSearchSources?.length ? (
+        <div
+          style={{
+            marginTop: '18px',
+            color: 'var(--text-secondary)',
+            fontSize: '0.85rem',
+            wordBreak: 'break-word',
+          }}
+        >
+          Sources: {paper.webSearchSources.join(', ')}
+        </div>
+      ) : null}
+    </div>
+  );
 
   const renderTopicComposer = () => (
     <div style={promptBarShellStyle}>
@@ -510,6 +646,8 @@ export const QuestionPaperPage = ({
                     style={
                       paper.status === 'failed'
                         ? failedStatusPillStyle
+                        : paper.status === 'partial'
+                          ? partialStatusPillStyle
                         : paper.status === 'generating'
                           ? generatingStatusPillStyle
                           : readyStatusPillStyle
@@ -620,7 +758,7 @@ export const QuestionPaperPage = ({
                 {sourceType === 'pdf' ? 'Upload PDFs again' : 'Try again'}
               </button>
             </div>
-          ) : activePaper.status === 'failed' ? (
+          ) : activePaper.status === 'failed' && !canRenderActivePaper ? (
             <div style={paperStateStyle}>
               <div style={{ fontWeight: 800 }}>Generation failed</div>
               <div style={paperStateTextStyle}>{getDisplayFailureMessage(activePaper)}</div>
@@ -641,66 +779,8 @@ export const QuestionPaperPage = ({
                 </div>
               </div>
             </div>
-          ) : isActivePaperReady ? (
-            <div
-              style={{
-                color: 'var(--text-primary)',
-                lineHeight: 1.65,
-                height: isCompactLayout ? 'auto' : '100%',
-                overflow: isCompactLayout ? 'visible' : 'hidden',
-                overflowY: isCompactLayout ? 'visible' : 'auto',
-                minWidth: 0,
-              }}
-            >
-              <div style={{ marginBottom: '18px', fontWeight: 700 }}>
-                Time Allowed: {activePaper.format.duration} · Maximum Marks: {activePaper.format.totalMarks}
-              </div>
-              {activePaper.format.sections.map((section) => (
-                <div key={section.name} style={{ marginBottom: '20px' }}>
-                  <div style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '6px' }}>
-                    {section.name} - {section.questionType}
-                  </div>
-                  <div style={{ color: 'var(--text-secondary)', marginBottom: '10px' }}>
-                    {section.instructions}
-                  </div>
-                  {activePaper.questions
-                    .filter((question) => question.sectionName === section.name)
-                    .map((question) => (
-                      <div key={question.id} style={{ marginBottom: '12px' }}>
-                        <div>
-                          {question.questionNumber}. {question.text}{' '}
-                          <span style={{ color: 'var(--text-secondary)' }}>[{question.marks}]</span>
-                        </div>
-                        {question.options?.length ? (
-                          <div
-                            style={{
-                              marginTop: '6px',
-                              paddingLeft: '18px',
-                              color: 'var(--text-secondary)',
-                            }}
-                          >
-                            {question.options.map((option) => (
-                              <div key={option}>{option}</div>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    ))}
-                </div>
-              ))}
-              {activePaper.webSearchSources?.length ? (
-                <div
-                  style={{
-                    marginTop: '18px',
-                    color: 'var(--text-secondary)',
-                    fontSize: '0.85rem',
-                    wordBreak: 'break-word',
-                  }}
-                >
-                  Sources: {activePaper.webSearchSources.join(', ')}
-                </div>
-              ) : null}
-            </div>
+          ) : canRenderActivePaper ? (
+            renderPaperBody(activePaper)
           ) : (
             <div style={paperStateStyle}>
               <div style={{ fontWeight: 800 }}>Paper is not ready yet</div>
@@ -726,79 +806,132 @@ export const QuestionPaperPage = ({
     </div>
   );
 
-  if (sourceType === 'topic') {
-    return (
+  const rawOutputModal = isRawOutputOpen && activePaper && hasRawMarkdown(activePaper) ? (
+    <div
+      className="project-modal-overlay"
+      onClick={() => setIsRawOutputOpen(false)}
+      style={{ padding: '24px' }}
+    >
       <div
+        className="glass-shell project-modal-card"
+        onClick={(event) => event.stopPropagation()}
         style={{
-          display: isCompactLayout ? 'flex' : 'grid',
-          flexDirection: isCompactLayout ? 'column' : undefined,
-          gridTemplateRows: isCompactLayout ? undefined : 'auto minmax(0, 1fr)',
-          height: isCompactLayout ? 'auto' : '100%',
-          minHeight: 0,
-          overflowY: isCompactLayout ? 'visible' : 'hidden',
+          width: 'min(880px, 100%)',
+          maxHeight: 'min(80vh, 720px)',
+          display: 'grid',
+          gap: '16px',
+          padding: '22px',
         }}
       >
-        {isCompactLayout ? (
-          <div style={{ padding: '20px 22px 0', flexShrink: 0 }}>
-            <div style={mobilePaperSwitcherStyle}>
-              <button
-                type="button"
-                onClick={() => setMobileView('new')}
-                style={{
-                  ...mobilePaperSwitcherButtonStyle,
-                  ...(mobileView === 'new' ? mobilePaperSwitcherButtonActiveStyle : null),
-                }}
-              >
-                New Papers
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (mobileView === 'previous' && activePaperId !== null) {
-                    setActivePaperId(null);
-                  } else {
-                    setMobileView('previous');
-                  }
-                }}
-                style={{
-                  ...mobilePaperSwitcherButtonStyle,
-                  ...(mobileView === 'previous' ? mobilePaperSwitcherButtonActiveStyle : null),
-                }}
-              >
-                Previous Papers
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        {!isCompactLayout || effectiveMobileView === 'new' ? (
-          <div style={{ padding: '20px 22px 0', flexShrink: 0 }}>{renderTopicComposer()}</div>
-        ) : null}
-
-        {!isCompactLayout || effectiveMobileView === 'previous' ? (
-          <div
-            style={{
-              padding: '20px 22px 22px',
-              display: isCompactLayout ? 'flex' : 'grid',
-              flexDirection: isCompactLayout ? 'column' : undefined,
-              gridTemplateColumns: isCompactLayout ? undefined : '340px minmax(0, 1fr)',
-              gridTemplateRows: isCompactLayout ? undefined : 'minmax(0, 1fr)',
-              gap: '18px',
-              height: isCompactLayout ? 'auto' : '100%',
-              minHeight: 0,
-              alignItems: isCompactLayout ? 'start' : 'stretch',
-              overflowY: isCompactLayout ? 'visible' : 'hidden',
-            }}
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' }}>
+          <div style={{ fontSize: '1.05rem', fontWeight: 800 }}>Raw Markdown Output</div>
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={() => setIsRawOutputOpen(false)}
+            style={{ minHeight: '38px', borderRadius: '12px' }}
           >
-            {!isCompactLayout || showCompactPreviousList ? renderPaperListPanel({ withHeading: false }) : null}
-            {!isCompactLayout || showCompactPreviousPaper ? renderPaperPreviewPanel() : null}
-          </div>
-        ) : null}
+            Close
+          </button>
+        </div>
+        <pre
+          style={{
+            margin: 0,
+            whiteSpace: 'pre-wrap',
+            overflow: 'auto',
+            maxHeight: '60vh',
+            padding: '16px',
+            borderRadius: '18px',
+            border: '1px solid var(--glass-border)',
+            background: 'var(--glass-bg-subtle)',
+            color: 'var(--text-primary)',
+            fontSize: '0.9rem',
+            lineHeight: 1.55,
+          }}
+        >
+          {activePaper.rawMarkdownOutput}
+        </pre>
       </div>
+    </div>
+  ) : null;
+
+  if (sourceType === 'topic') {
+    return (
+      <>
+        <div
+          style={{
+            display: isCompactLayout ? 'flex' : 'grid',
+            flexDirection: isCompactLayout ? 'column' : undefined,
+            gridTemplateRows: isCompactLayout ? undefined : 'auto minmax(0, 1fr)',
+            height: isCompactLayout ? 'auto' : '100%',
+            minHeight: 0,
+            overflowY: isCompactLayout ? 'visible' : 'hidden',
+          }}
+        >
+          {isCompactLayout ? (
+            <div style={{ padding: '20px 22px 0', flexShrink: 0 }}>
+              <div style={mobilePaperSwitcherStyle}>
+                <button
+                  type="button"
+                  onClick={() => setMobileView('new')}
+                  style={{
+                    ...mobilePaperSwitcherButtonStyle,
+                    ...(mobileView === 'new' ? mobilePaperSwitcherButtonActiveStyle : null),
+                  }}
+                >
+                  New Papers
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (mobileView === 'previous' && activePaperId !== null) {
+                      setActivePaperId(null);
+                    } else {
+                      setMobileView('previous');
+                    }
+                  }}
+                  style={{
+                    ...mobilePaperSwitcherButtonStyle,
+                    ...(mobileView === 'previous' ? mobilePaperSwitcherButtonActiveStyle : null),
+                  }}
+                >
+                  Previous Papers
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {!isCompactLayout || effectiveMobileView === 'new' ? (
+            <div style={{ padding: '20px 22px 0', flexShrink: 0 }}>{renderTopicComposer()}</div>
+          ) : null}
+
+          {!isCompactLayout || effectiveMobileView === 'previous' ? (
+            <div
+              style={{
+                padding: '20px 22px 22px',
+                display: isCompactLayout ? 'flex' : 'grid',
+                flexDirection: isCompactLayout ? 'column' : undefined,
+                gridTemplateColumns: isCompactLayout ? undefined : '340px minmax(0, 1fr)',
+                gridTemplateRows: isCompactLayout ? undefined : 'minmax(0, 1fr)',
+                gap: '18px',
+                height: isCompactLayout ? 'auto' : '100%',
+                minHeight: 0,
+                alignItems: isCompactLayout ? 'start' : 'stretch',
+                overflowY: isCompactLayout ? 'visible' : 'hidden',
+              }}
+            >
+              {!isCompactLayout || showCompactPreviousList ? renderPaperListPanel({ withHeading: false }) : null}
+              {!isCompactLayout || showCompactPreviousPaper ? renderPaperPreviewPanel() : null}
+            </div>
+          ) : null}
+        </div>
+        {rawOutputModal}
+      </>
     );
   }
 
   return (
+    <>
     <div
       style={{
         padding: isCompactLayout ? '16px' : '22px',
@@ -978,6 +1111,8 @@ export const QuestionPaperPage = ({
                       style={
                         paper.status === 'failed'
                           ? failedStatusPillStyle
+                          : paper.status === 'partial'
+                            ? partialStatusPillStyle
                           : paper.status === 'generating'
                             ? generatingStatusPillStyle
                             : readyStatusPillStyle
@@ -1068,7 +1203,7 @@ export const QuestionPaperPage = ({
                   {sourceType === 'pdf' ? 'Upload PDFs again' : 'Try again'}
                 </button>
               </div>
-            ) : activePaper.status === 'failed' ? (
+            ) : activePaper.status === 'failed' && !canRenderActivePaper ? (
               <div style={paperStateStyle}>
                 <div style={{ fontWeight: 800 }}>Generation failed</div>
                 <div style={paperStateTextStyle}>{getDisplayFailureMessage(activePaper)}</div>
@@ -1089,69 +1224,8 @@ export const QuestionPaperPage = ({
                   </div>
                 </div>
               </div>
-            ) : isActivePaperReady ? (
-              <div
-                style={{
-                  color: 'var(--text-primary)',
-                  lineHeight: 1.65,
-                  height: isCompactLayout ? 'auto' : '100%',
-                  overflow: isCompactLayout ? 'visible' : 'hidden',
-                  overflowY: isCompactLayout ? 'visible' : 'auto',
-                  minWidth: 0,
-                }}
-              >
-                <div style={{ marginBottom: '18px', fontWeight: 700 }}>
-                  Time Allowed: {activePaper.format.duration} · Maximum Marks:{' '}
-                  {activePaper.format.totalMarks}
-                </div>
-                {activePaper.format.sections.map((section) => (
-                  <div key={section.name} style={{ marginBottom: '20px' }}>
-                    <div style={{ fontSize: '1rem', fontWeight: 800, marginBottom: '6px' }}>
-                      {section.name} - {section.questionType}
-                    </div>
-                    <div style={{ color: 'var(--text-secondary)', marginBottom: '10px' }}>
-                      {section.instructions}
-                    </div>
-                    {activePaper.questions
-                      .filter((question) => question.sectionName === section.name)
-                      .map((question) => (
-                        <div key={question.id} style={{ marginBottom: '12px' }}>
-                          <div>
-                            {question.questionNumber}. {question.text}{' '}
-                            <span style={{ color: 'var(--text-secondary)' }}>
-                              [{question.marks}]
-                            </span>
-                          </div>
-                          {question.options?.length ? (
-                            <div
-                              style={{
-                                marginTop: '6px',
-                                paddingLeft: '18px',
-                                color: 'var(--text-secondary)',
-                              }}
-                            >
-                              {question.options.map((option) => (
-                                <div key={option}>{option}</div>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      ))}
-                  </div>
-                ))}
-                {activePaper.webSearchSources?.length ? (
-                  <div
-                    style={{
-                      marginTop: '18px',
-                      color: 'var(--text-secondary)',
-                      fontSize: '0.85rem',
-                      wordBreak: 'break-word',
-                    }}
-                  >
-                    Sources: {activePaper.webSearchSources.join(', ')}
-                  </div>
-                ) : null}
-              </div>
+            ) : canRenderActivePaper ? (
+              renderPaperBody(activePaper)
             ) : (
               <div style={paperStateStyle}>
                 <div style={{ fontWeight: 800 }}>Paper is not ready yet</div>
@@ -1184,6 +1258,8 @@ export const QuestionPaperPage = ({
         </div>
       ) : null}
     </div>
+    {rawOutputModal}
+    </>
   );
 };
 
@@ -1396,6 +1472,12 @@ const generatingStatusPillStyle: CSSProperties = {
   color: 'color-mix(in srgb, #5b67ff 86%, var(--text-primary))',
 };
 
+const partialStatusPillStyle: CSSProperties = {
+  ...failedStatusPillStyle,
+  background: 'color-mix(in srgb, rgba(214, 96, 20, 0.14) 76%, var(--glass-bg))',
+  color: 'color-mix(in srgb, #d77a1f 86%, var(--text-primary))',
+};
+
 const readyStatusPillStyle: CSSProperties = {
   ...failedStatusPillStyle,
   background: 'color-mix(in srgb, rgba(58, 180, 123, 0.14) 76%, var(--glass-bg))',
@@ -1425,4 +1507,48 @@ const mobilePaperSwitcherButtonActiveStyle: CSSProperties = {
   borderColor: 'color-mix(in srgb, var(--primary) 38%, var(--glass-border))',
   background: 'color-mix(in srgb, var(--primary) 14%, var(--glass-bg))',
   color: 'var(--text-primary)',
+};
+
+const warningPanelStyle: CSSProperties = {
+  marginBottom: '14px',
+  borderRadius: '18px',
+  border: '1px solid color-mix(in srgb, rgba(214, 167, 30, 0.38) 82%, var(--glass-border))',
+  background: 'color-mix(in srgb, rgba(214, 167, 30, 0.12) 76%, var(--glass-bg-subtle))',
+};
+
+const warningPanelToggleStyle: CSSProperties = {
+  width: '100%',
+  border: 'none',
+  background: 'transparent',
+  color: 'var(--text-primary)',
+  fontWeight: 700,
+  display: 'flex',
+  justifyContent: 'space-between',
+  gap: '12px',
+  padding: '12px 14px',
+  cursor: 'pointer',
+};
+
+const warningPanelBodyStyle: CSSProperties = {
+  display: 'grid',
+  gap: '6px',
+  padding: '0 14px 14px',
+  color: 'var(--text-secondary)',
+  lineHeight: 1.55,
+  fontSize: '0.9rem',
+};
+
+const partialBannerStyle: CSSProperties = {
+  display: 'grid',
+  gap: '10px',
+  marginBottom: '14px',
+  borderRadius: '18px',
+  border: '1px solid color-mix(in srgb, rgba(198, 69, 83, 0.34) 82%, var(--glass-border))',
+  background: 'color-mix(in srgb, rgba(198, 69, 83, 0.12) 76%, var(--glass-bg-subtle))',
+  padding: '14px',
+};
+
+const rawOutputButtonStyle: CSSProperties = {
+  minHeight: '38px',
+  borderRadius: '12px',
 };

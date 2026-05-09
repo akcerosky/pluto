@@ -117,6 +117,36 @@ export interface QuestionPaperQuestion {
   subParts?: string[];
 }
 
+export interface ParsedPaperQuestion {
+  number: number;
+  text: string;
+  marks: number | null;
+  options?: string[];
+  subParts?: string[];
+}
+
+export interface ParsedPaperSection {
+  name: string;
+  type: string;
+  questionCount: number | null;
+  marksPerQuestion: number | null;
+  totalMarks: number | null;
+  instructions?: string;
+  questions: ParsedPaperQuestion[];
+}
+
+export interface ParsedPaper {
+  title: string | null;
+  board: string | null;
+  level: string | null;
+  subject: string | null;
+  duration: string | null;
+  totalMarks: number | null;
+  generalInstructions: string[];
+  sections: ParsedPaperSection[];
+  parseWarnings: string[];
+}
+
 export interface QuestionPaperDoc {
   id: string;
   title: string;
@@ -141,10 +171,12 @@ export interface QuestionPaperDoc {
   };
   questions: QuestionPaperQuestion[];
   generatedAt: number;
-  status: 'generating' | 'ready' | 'failed';
+  status: 'generating' | 'ready' | 'partial' | 'failed';
   pdfUrl?: string;
   webSearchSources?: string[];
   failureMessage?: string;
+  parseWarnings?: string[];
+  rawMarkdownOutput?: string;
 }
 
 export interface FlashcardSetStats {
