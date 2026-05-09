@@ -35,6 +35,22 @@ const stripMarkdownNoise = (value: string) =>
       .replace(/\s+([.,:;!?])/g, '$1')
   );
 
+const getOptionLabelAndText = (option: string, index: number) => {
+  const normalized = stripMarkdownNoise(option);
+  const labeled = normalized.match(/^\(([A-D]|\d+)\)\s*(.+)$/i);
+  if (labeled) {
+    return { label: labeled[1].toUpperCase(), text: labeled[2] };
+  }
+
+  const dotted = normalized.match(/^([A-D]|\d+)[.)]\s*(.+)$/i);
+  if (dotted) {
+    return { label: dotted[1].toUpperCase(), text: dotted[2] };
+  }
+
+  const fallbackLabel = String.fromCharCode(65 + (index % 26));
+  return { label: fallbackLabel, text: normalized };
+};
+
 const SUBJECT_LABELS = [
   'Physics',
   'Chemistry',
@@ -443,8 +459,30 @@ export const QuestionPaperPage = ({
                       color: 'var(--text-secondary)',
                     }}
                   >
-                    {question.options.map((option) => (
-                      <div key={option}>{option}</div>
+                    {question.options.map((option, optionIndex) => {
+                      const parsedOption = getOptionLabelAndText(option, optionIndex);
+                      return (
+                        <div key={`${question.id}-option-${optionIndex}`}>
+                          ({parsedOption.label}) {parsedOption.text}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {question.subParts?.length ? (
+                  <div
+                    style={{
+                      marginTop: '6px',
+                      paddingLeft: '18px',
+                      color: 'var(--text-secondary)',
+                      display: 'grid',
+                      gap: '4px',
+                    }}
+                  >
+                    {question.subParts.map((part, index) => (
+                      <div key={`${question.id}-subpart-${index}`}>
+                        ({String.fromCharCode(97 + index)}) {part}
+                      </div>
                     ))}
                   </div>
                 ) : null}

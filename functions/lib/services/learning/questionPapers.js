@@ -14,9 +14,11 @@ const MAX_PDF_SOURCE_TEXT_CHARS = 16000;
 const INFER_SUBJECT_TEXT_CHARS = 6000;
 const FORMAT_RESEARCH_TIMEOUT_MS = 60_000;
 const QUESTION_PAPER_GENERATION_TIMEOUT_MS = 90_000;
-const QUESTION_PAPER_GENERATION_MAX_OUTPUT_TOKENS = 4096;
+const QUESTION_PAPER_GENERATION_MAX_OUTPUT_TOKENS = 6144;
 const MIN_USABLE_MARKDOWN_LENGTH = 100;
 const FORMAT_CACHE_TTL_MS = 60 * 60 * 1000;
+const MAX_QUESTION_OPTIONS = 8;
+const MAX_QUESTION_SUBPARTS = 8;
 const formatResearchCache = new Map();
 const questionPaperFormatSectionSchema = z.object({
     name: z.string().trim().min(1).max(160),
@@ -46,8 +48,8 @@ const questionPaperQuestionSchema = z.object({
         'integer',
     ]),
     marks: z.number().int().min(1),
-    options: z.array(z.string().trim().min(1).max(1000)).max(8).optional(),
-    subParts: z.array(z.string().trim().min(1).max(2000)).max(8).optional(),
+    options: z.array(z.string().trim().min(1).max(1000)).max(MAX_QUESTION_OPTIONS).optional(),
+    subParts: z.array(z.string().trim().min(1).max(2000)).max(MAX_QUESTION_SUBPARTS).optional(),
 });
 const questionPaperDocSchema = z.object({
     id: z.string().trim().min(1).max(200),
@@ -187,91 +189,19 @@ const buildFallbackGeneralInstructions = (examBoard, formatFamily) => {
         'Write clearly and support your answers with steps wherever relevant.',
     ];
 };
-const normalizeFormatFallback = ({ subject, educationLevel, examBoard, }) => {
+const buildMinimalContextHint = ({ subject, educationLevel, examBoard, }) => {
     const matchedFormatFamily = inferFormatFamily(examBoard);
-    const common = {
+    return {
+        totalMarks: 0,
+        duration: '',
         headerBoardName: examBoard,
         examinationTitle: `${educationLevel} Examination`,
         sessionLabel: String(new Date().getFullYear()),
-        generalInstructions: buildFallbackGeneralInstructions(examBoard, matchedFormatFamily),
+        subjectCode: sanitizeQuestionPaperText(subject) || undefined,
+        generalInstructions: [],
         matchedFormatFamily,
         formatSource: 'family_fallback',
-    };
-    if (matchedFormatFamily === 'competitive_exam') {
-        return {
-            totalMarks: 100,
-            duration: '3 hours',
-            ...common,
-            sections: [
-                {
-                    name: 'Section A',
-                    displayName: 'Section A',
-                    instructions: `Answer all multiple choice questions in ${subject}.`,
-                    questionType: 'MCQ',
-                    questionTypeDisplay: 'MCQ',
-                    questions: 20,
-                    marksPerQuestion: 2,
-                    totalMarks: 40,
-                },
-                {
-                    name: 'Section B',
-                    displayName: 'Section B',
-                    instructions: 'Answer all short answer questions.',
-                    questionType: 'Short Answer Questions',
-                    questionTypeDisplay: 'Short Answer Questions',
-                    questions: 10,
-                    marksPerQuestion: 3,
-                    totalMarks: 30,
-                },
-                {
-                    name: 'Section C',
-                    displayName: 'Section C',
-                    instructions: 'Answer all descriptive questions.',
-                    questionType: 'Long Answer Questions',
-                    questionTypeDisplay: 'Long Answer Questions',
-                    questions: 6,
-                    marksPerQuestion: 5,
-                    totalMarks: 30,
-                },
-            ],
-        };
-    }
-    return {
-        totalMarks: 80,
-        duration: '3 hours',
-        ...common,
-        sections: [
-            {
-                name: 'Section A',
-                displayName: 'Section A',
-                instructions: `Answer all short answer questions for ${examBoard} ${educationLevel} ${subject}.`,
-                questionType: 'Short Answer Questions',
-                questionTypeDisplay: 'Short Answer Questions',
-                questions: 10,
-                marksPerQuestion: 2,
-                totalMarks: 20,
-            },
-            {
-                name: 'Section B',
-                displayName: 'Section B',
-                instructions: 'Answer all long answer questions.',
-                questionType: 'Long Answer Questions',
-                questionTypeDisplay: 'Long Answer Questions',
-                questions: 6,
-                marksPerQuestion: 5,
-                totalMarks: 30,
-            },
-            {
-                name: 'Section C',
-                displayName: 'Section C',
-                instructions: 'Answer the descriptive questions.',
-                questionType: 'Essay / Descriptive',
-                questionTypeDisplay: 'Essay / Descriptive',
-                questions: 3,
-                marksPerQuestion: 10,
-                totalMarks: 30,
-            },
-        ],
+        sections: [],
     };
 };
 const buildPdfSourceDigestPrompt = ({ extractedText, educationLevel, examBoard, }) => `
@@ -477,45 +407,80 @@ const createFallbackSection = (subject, format) => sanitizeSection({
         ((format.sections[0]?.attemptRequired ?? format.sections[0]?.questions ?? 1) *
             (format.sections[0]?.marksPerQuestion ?? 2)),
 }, 0);
+const getExamSpecificRequirements = (examBoard, educationLevel) => {
+    const board = examBoard.toLowerCase();
+    if (/jee\s*main/i.test(examBoard)) {
+        return 'JEE Mains has Section A (20 MCQ, +4/-1 each) and Section B (10 Numerical, attempt any 5, +4/0 each). Total 100 marks, 3 hours. Do NOT deviate from this official structure.';
+    }
+    if (/jee\s*adv/i.test(examBoard)) {
+        return 'JEE Advanced has multiple question types: single correct MCQ, multiple correct MCQ, integer type, and paragraph-based. Use the most recent official pattern. Papers are 3 hours each.';
+    }
+    if (/neet/i.test(examBoard)) {
+        return 'NEET has Section A (35 MCQ) and Section B (15 MCQ, attempt any 10) per subject. Each question is +4/-1. Total 180 marks per subject, 3 hours 20 minutes.';
+    }
+    if (/gate/i.test(examBoard)) {
+        return 'GATE has General Aptitude (15 marks) and Subject Questions (85 marks). Mix of MCQ (negative marking) and NAT numerical (no negative marking). 3 hours total.';
+    }
+    if (/upsc\s*cse/i.test(examBoard)) {
+        return 'UPSC Mains has essay-type answers in 3-hour sessions. GS papers are 250 marks with 20 questions of 10-15 marks each. Writing quality and coverage matter.';
+    }
+    if (/ca\s*(foundation|inter|final)|icai/i.test(examBoard)) {
+        return 'CA exams follow ICAI pattern: mix of compulsory and optional questions. Practical/numerical questions dominate for accounting papers. Theory papers have structured essay answers.';
+    }
+    if (/mbbs|nmc|medical/i.test(examBoard)) {
+        return "MBBS university exams typically have short answer questions (SAQ), long answer questions (LAQ), and sometimes MCQs. Follow the university pattern for the specific subject (e.g. Anatomy, Physiology, Pharmacology).";
+    }
+    if (/law|llb|bar\s*council|clat/i.test(examBoard)) {
+        return 'Law exams have problem-based questions, statutory interpretation, case analysis, and essay questions. CLAT is MCQ-based. LLB university exams are descriptive.';
+    }
+    if (/cbse/i.test(examBoard)) {
+        return 'CBSE papers follow the latest official pattern with Section A (MCQ/AR/1-mark), Section B (VSA 2-mark), Section C (SA 3-mark), Section D (LA 5-mark), Section E (case-based 4-mark). Total 80 marks, 3 hours.';
+    }
+    if (/icse/i.test(examBoard)) {
+        return 'ICSE papers are 80 marks, 2 hours. Two sections: Section A (compulsory, short questions covering syllabus) and Section B (attempt 4 of 7 detailed questions).';
+    }
+    if (/semester|university|internal|college/i.test(board)) {
+        return "University semester exams typically have unit-based sections with internal choice. Include short answer (2-5 marks) and long answer (10 marks) questions. Match the university's typical pattern for the subject.";
+    }
+    if (/b\\.tech|btech|engineering/i.test(educationLevel)) {
+        return 'B.Tech exams follow university pattern: Part A short answers (2 marks each, compulsory) and Part B long answers with internal choice (10-16 marks each).';
+    }
+    return `Use authentic official format for ${examBoard} ${educationLevel}. Determine appropriate sections, question types, and marks from your knowledge of this exam.`;
+};
 export const buildQuestionPaperMarkdownPrompt = ({ subject, educationLevel, examBoard, topic, formatHint, sourceDigest, }) => `
 You are an expert exam paper setter for ${examBoard} ${educationLevel} ${subject}.
 
-Write the full paper in Markdown only. Do not return JSON. Do not use code fences. Do not add commentary before or after the paper.
+Write a complete, authentic exam paper in Markdown only. Do not return JSON. Do not use code fences. Do not add commentary.
 
-Follow this schema exactly:
-# [PAPER TITLE]
-**Board:** ${sanitizeQuestionPaperText(examBoard)} | **Level:** ${sanitizeQuestionPaperText(educationLevel)} | **Subject:** ${sanitizeQuestionPaperText(subject)}
-**Time:** ${sanitizeQuestionPaperText(formatHint.duration)} | **Total Marks:** ${formatHint.totalMarks}
+${formatHint.sections.length > 0 && formatHint.formatSource !== 'family_fallback'
+    ? `Follow this official format exactly:\n${JSON.stringify({ totalMarks: formatHint.totalMarks, duration: formatHint.duration, sections: formatHint.sections }, null, 2)}`
+    : `Determine the authentic official format for ${examBoard} ${educationLevel} ${subject} from your training knowledge. Use the real section structure, question types, marks distribution, and duration that are officially used for this exam. Do not default to a generic 3-section format.`}
 
-## General Instructions
-1. [instruction]
-2. [instruction]
+MANDATORY FORMATTING RULES:
+- Start the paper with: # [EXAM TITLE]
+- Second line: **Board:** ${sanitizeQuestionPaperText(examBoard)} | **Level:** ${sanitizeQuestionPaperText(educationLevel)} | **Subject:** ${sanitizeQuestionPaperText(subject)}
+- Third line: **Time:** [DURATION] | **Total Marks:** [TOTAL]
+- Then: ## General Instructions (numbered list)
+- Then sections: ## Section [NAME] — [TYPE] ([N] × [M] = [TOTAL] Marks)
+- MCQ questions MUST have 4 options on separate lines: (A) text (B) text (C) text (D) text
+- Numerical/Integer questions have NO options
+- Every question ends with **[N marks]**
+- Question numbers continue sequentially across ALL sections
+- Each question is on its own line
+- Finish ALL required sections for this exam format in a single response
+- Keep each question concise enough so the full paper fits in one completion
 
-${formatHint.sections
-    .map((section) => `## ${section.displayName || section.name} — ${section.questionTypeDisplay || section.questionType} (${section.questions} × ${section.marksPerQuestion} = ${section.totalMarks ?? ((section.attemptRequired ?? section.questions) * section.marksPerQuestion)} Marks)
-${section.instructions}
+EXAM-SPECIFIC REQUIREMENTS:
+${getExamSpecificRequirements(examBoard, educationLevel)}
 
-**Q1.** [Question text] **[${section.marksPerQuestion} marks]**
-${/mcq|multiple/i.test(section.questionType) ? '(A) option text\n(B) option text\n(C) option text\n(D) option text' : /numerical|integer/i.test(section.questionType) ? '' : '(a) sub-part text\n(b) sub-part text'}`)
-    .join('\n\n')}
+${sourceDigest ? `CONTENT SCOPE (use ONLY these topics):\n${sourceDigest}\n` : `Generate questions covering the core ${subject} syllabus for ${sanitizeQuestionPaperText(topic || `${examBoard} ${educationLevel}`)}.`}
 
-Requirements:
-1. Keep section names, question counts, and marks aligned with the format hint.
-2. MCQ sections must include four options on separate lines.
-3. Numerical and integer sections must not include options.
-4. End every question line with **[N marks]**.
-5. If you are unsure, still produce the closest complete Markdown paper instead of apologizing.
-
-Format hint:
-${JSON.stringify(formatHint)}
-
-${sourceDigest ? `Use only this source coverage when generating content:\n${sourceDigest}\n` : ''}
-Generate the paper for ${sanitizeQuestionPaperText(topic || subject)}.
+Write the complete paper now:
 `.trim();
 export const validateQuestionPaperStructure = ({ totalMarks, sections, questions, }) => {
     const warnings = [];
     const total = questions.reduce((sum, question) => sum + question.marks, 0);
-    if (total !== totalMarks) {
+    if (totalMarks > 0 && total !== totalMarks) {
         warnings.push(`Total marks ${total} may differ from official format ${totalMarks}.`);
     }
     for (const section of sections) {
@@ -533,13 +498,15 @@ export const validateQuestionPaperStructure = ({ totalMarks, sections, questions
 };
 const normalizeParsedPaper = ({ parsed, formatHint, subject, educationLevel, examBoard, }) => {
     const parseWarnings = [...parsed.parseWarnings];
-    const fallbackSections = formatHint.sections.length
-        ? formatHint.sections
-        : [createFallbackSection(subject, formatHint)];
+    const hasHintSections = formatHint.sections.length > 0;
+    const useParsedSectionsDirectly = parsed.sections.length > 0 && !hasHintSections;
+    const fallbackSections = hasHintSections ? formatHint.sections : [createFallbackSection(subject, formatHint)];
     const sections = (parsed.sections.length > 0 ? parsed.sections : fallbackSections).map((entry, index) => {
         if ('questionCount' in entry) {
             const section = entry;
-            const hint = fallbackSections[index] ?? fallbackSections[fallbackSections.length - 1];
+            const hint = useParsedSectionsDirectly
+                ? undefined
+                : (fallbackSections[index] ?? fallbackSections[fallbackSections.length - 1]);
             return sanitizeSection({
                 name: sanitizeQuestionPaperText(section.name || hint?.name || `Section ${String.fromCharCode(65 + index)}`),
                 displayName: sanitizeQuestionPaperText(section.name || hint?.displayName || hint?.name || `Section ${String.fromCharCode(65 + index)}`),
@@ -559,25 +526,40 @@ const normalizeParsedPaper = ({ parsed, formatHint, subject, educationLevel, exa
     });
     const questions = parsed.sections.flatMap((section, sectionIndex) => {
         const linkedSection = sections[sectionIndex] ?? sections[0] ?? createFallbackSection(subject, formatHint);
-        return section.questions.map((question, questionIndex) => ({
-            id: `q-${sectionIndex + 1}-${questionIndex + 1}`,
-            sectionName: linkedSection.name,
-            questionNumber: question.number || questionIndex + 1,
-            text: sanitizePdfRenderableText(question.text || ''),
-            type: question.options?.length ? 'mcq' : inferQuestionType(section.type || linkedSection.questionType),
-            marks: Math.max(1, question.marks ?? linkedSection.marksPerQuestion ?? 1),
-            ...(question.options?.length
-                ? {
-                    options: question.options.map((option) => sanitizePdfRenderableText(option)).filter(Boolean),
-                }
-                : {}),
-            ...(question.subParts?.length
-                ? {
-                    subParts: question.subParts.map((part) => sanitizePdfRenderableText(part)).filter(Boolean),
-                }
-                : {}),
-        }));
+        return section.questions.map((question, questionIndex) => {
+            const sanitizedOptions = question.options?.map((option) => sanitizePdfRenderableText(option)).filter(Boolean) ?? [];
+            const sanitizedSubParts = question.subParts?.map((part) => sanitizePdfRenderableText(part)).filter(Boolean) ?? [];
+            const cappedOptions = sanitizedOptions.slice(0, MAX_QUESTION_OPTIONS);
+            const cappedSubParts = sanitizedSubParts.slice(0, MAX_QUESTION_SUBPARTS);
+            if (sanitizedOptions.length > MAX_QUESTION_OPTIONS) {
+                parseWarnings.push(`Question ${question.number || questionIndex + 1} had extra options. Only the first ${MAX_QUESTION_OPTIONS} were kept.`);
+            }
+            if (sanitizedSubParts.length > MAX_QUESTION_SUBPARTS) {
+                parseWarnings.push(`Question ${question.number || questionIndex + 1} had extra sub-parts. Only the first ${MAX_QUESTION_SUBPARTS} were kept.`);
+            }
+            return {
+                id: `q-${sectionIndex + 1}-${questionIndex + 1}`,
+                sectionName: linkedSection.name,
+                questionNumber: question.number || questionIndex + 1,
+                text: sanitizePdfRenderableText(question.text || ''),
+                type: cappedOptions.length ? 'mcq' : inferQuestionType(section.type || linkedSection.questionType),
+                marks: Math.max(1, question.marks ?? linkedSection.marksPerQuestion ?? 1),
+                ...(cappedOptions.length
+                    ? {
+                        options: cappedOptions,
+                    }
+                    : {}),
+                ...(cappedSubParts.length
+                    ? {
+                        subParts: cappedSubParts,
+                    }
+                    : {}),
+            };
+        });
     }) ?? [];
+    if (hasHintSections && parsed.sections.length > 0 && parsed.sections.length < formatHint.sections.length) {
+        parseWarnings.push(`Expected ${formatHint.sections.length} sections from format research, but only ${parsed.sections.length} were generated. Paper may be incomplete.`);
+    }
     parseWarnings.push(...validateQuestionPaperStructure({
         totalMarks: parsed.totalMarks ?? formatHint.totalMarks,
         sections,
@@ -615,10 +597,20 @@ export const normalizeQuestionPaperPayload = ({ fallbackTitle, format, questions
         text: sanitizePdfRenderableText(String(question.text || '')),
         marks: Math.max(1, Number(question.marks) || 1),
         ...(question.options?.length
-            ? { options: question.options.map((option) => sanitizePdfRenderableText(String(option))).filter(Boolean) }
+            ? {
+                options: question.options
+                    .map((option) => sanitizePdfRenderableText(String(option)))
+                    .filter(Boolean)
+                    .slice(0, MAX_QUESTION_OPTIONS),
+            }
             : {}),
         ...(question.subParts?.length
-            ? { subParts: question.subParts.map((part) => sanitizePdfRenderableText(String(part))).filter(Boolean) }
+            ? {
+                subParts: question.subParts
+                    .map((part) => sanitizePdfRenderableText(String(part)))
+                    .filter(Boolean)
+                    .slice(0, MAX_QUESTION_SUBPARTS),
+            }
             : {}),
     })),
 });
@@ -642,7 +634,7 @@ export const researchQuestionPaperFormat = async ({ subject, educationLevel, exa
         }
         sources = results.map((result) => result.url);
         if (results.length === 0) {
-            return normalizeFormatFallback({ subject, educationLevel, examBoard });
+            return buildMinimalContextHint({ subject, educationLevel, examBoard });
         }
         const response = await executeHybridAiRequest({
             prompt: buildFormatResearchPrompt({ query, results }),
@@ -671,7 +663,7 @@ export const researchQuestionPaperFormat = async ({ subject, educationLevel, exa
                     : buildFallbackGeneralInstructions(examBoard, matchedFormatFamily),
             });
         }
-        return normalizeFormatFallback({ subject, educationLevel, examBoard });
+        return buildMinimalContextHint({ subject, educationLevel, examBoard });
     });
     return { format, sources, usage };
 };
@@ -730,12 +722,15 @@ export const generateQuestionPaperForUser = async ({ uid, subject, educationLeve
             requestId,
         });
         failedStep = 'generation';
+        const generationFormatHint = research.format.sections.length > 0 && research.format.formatSource !== 'family_fallback'
+            ? research.format
+            : buildMinimalContextHint({ subject, educationLevel, examBoard });
         const prompt = buildQuestionPaperMarkdownPrompt({
             subject,
             educationLevel,
             examBoard,
             topic,
-            formatHint: research.format,
+            formatHint: generationFormatHint,
             sourceDigest: sourceContext,
         });
         const response = await executeHybridAiRequest({
@@ -762,7 +757,7 @@ export const generateQuestionPaperForUser = async ({ uid, subject, educationLeve
         const parsed = parseMarkdownPaper(rawMarkdownOutput);
         const normalized = normalizeParsedPaper({
             parsed,
-            formatHint: research.format,
+            formatHint: generationFormatHint,
             subject,
             educationLevel,
             examBoard,
@@ -815,7 +810,7 @@ export const generateQuestionPaperForUser = async ({ uid, subject, educationLeve
             const parsed = parseMarkdownPaper(rawMarkdownOutput);
             const normalized = normalizeParsedPaper({
                 parsed,
-                formatHint: normalizeFormatFallback({ subject, educationLevel, examBoard }),
+                formatHint: buildMinimalContextHint({ subject, educationLevel, examBoard }),
                 subject,
                 educationLevel,
                 examBoard,

@@ -45,8 +45,14 @@ import { useThreads } from '../hooks/useThreads';
 
 const STORAGE_KEY = 'pluto_v3';
 const START_NEW_CHAT_KEY = `${STORAGE_KEY}_start_new_chat`;
+const CHAT_COMPOSER_DRAFT_KEY = `${STORAGE_KEY}_chat_composer_draft`;
 const estimatePromptTokens = (value: string) => Math.max(1, Math.ceil(value.trim().length / 4));
 const APP_STATE_SIZE_GUARD_BYTES = 900 * 1024;
+
+interface PendingChatComposerDraft {
+  prompt: string;
+  threadId?: string;
+}
 
 const getDailyQuotaExceededMessage = (plan: SubscriptionPlan) => {
   if (plan === 'Pro') {
@@ -199,6 +205,37 @@ const consumeFreshChatViewRequest = () => {
     sessionStorage.removeItem(START_NEW_CHAT_KEY);
   }
   return shouldStartNew;
+};
+
+const readPendingChatComposerDraft = (): PendingChatComposerDraft | null => {
+  const raw = sessionStorage.getItem(CHAT_COMPOSER_DRAFT_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as PendingChatComposerDraft;
+    if (typeof parsed?.prompt !== 'string' || parsed.prompt.trim().length === 0) {
+      sessionStorage.removeItem(CHAT_COMPOSER_DRAFT_KEY);
+      return null;
+    }
+
+    return {
+      prompt: parsed.prompt,
+      threadId: typeof parsed.threadId === 'string' && parsed.threadId.trim() ? parsed.threadId : undefined,
+    };
+  } catch {
+    sessionStorage.removeItem(CHAT_COMPOSER_DRAFT_KEY);
+    return null;
+  }
+};
+
+const writePendingChatComposerDraft = (draft: PendingChatComposerDraft) => {
+  sessionStorage.setItem(CHAT_COMPOSER_DRAFT_KEY, JSON.stringify(draft));
+};
+
+const clearPendingChatComposerDraft = () => {
+  sessionStorage.removeItem(CHAT_COMPOSER_DRAFT_KEY);
 };
 
 const safeNumber = (value: unknown) => {
@@ -722,13 +759,24 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         })
       );
 
-      const previousOnly = previousThreads.filter(
-        (thread) =>
-          !visibleCloudThreadMetadata.some((metadata) => metadata.id === thread.id) &&
-          !isThreadPersistable(thread) &&
-          thread.id === activeThreadId
+      const previousOnly = previousThreads.filter((thread) => {
+        if (visibleCloudThreadMetadata.some((metadata) => metadata.id === thread.id)) {
+          return false;
+        }
+
+        const hasPendingWrites = (pendingMessageIdsRef.current.get(thread.id)?.size ?? 0) > 0;
+        if (hasPendingWrites) {
+          return true;
+        }
+
+        return !isThreadPersistable(thread) && thread.id === activeThreadId;
+      });
+
+      const nextThreads = [...mergedThreads, ...previousOnly].sort(
+        (left, right) => right.updatedAt - left.updatedAt
       );
-      return [...mergedThreads, ...previousOnly].sort((left, right) => right.updatedAt - left.updatedAt);
+      threadsRef.current = nextThreads;
+      return nextThreads;
     });
     setActiveThreadId((current) => getSafeActiveThreadId(current, threadsRef.current));
   }, [
@@ -997,7 +1045,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       if (projectId) {
         newThread.projectId = projectId;
       }
-      setThreads((prev) => [newThread, ...prev]);
+      const nextThreads = [newThread, ...threadsRef.current];
+      threadsRef.current = nextThreads;
+      setThreads(nextThreads);
       setActiveThreadId(newThread.id);
       return newThread.id;
     },
@@ -1197,6 +1247,49 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     [activeProjectId, addMessageToThread, createThread]
   );
 
+  const startChatWithDraftPrompt = useCallback(
+    (prompt: string) => {
+      const trimmedPrompt = prompt.trim();
+      if (!trimmedPrompt) {
+        return null;
+      }
+
+      setSelectedMode('chat');
+      setShowModeSelector(false);
+
+      if (!isCloudHydrated) {
+        writePendingChatComposerDraft({ prompt: trimmedPrompt });
+        requestFreshChatView();
+        setShouldAutoCreateFreshThread(true);
+        setActiveThreadId(null);
+        return null;
+      }
+
+      const threadId = createThread('Conversational', activeProjectId || undefined);
+      writePendingChatComposerDraft({ prompt: trimmedPrompt, threadId });
+      return threadId;
+    },
+    [activeProjectId, createThread, isCloudHydrated]
+  );
+
+  const consumePendingChatDraft = useCallback((threadId: string | null) => {
+    if (!threadId) {
+      return null;
+    }
+
+    const draft = readPendingChatComposerDraft();
+    if (!draft) {
+      return null;
+    }
+
+    if (draft.threadId && draft.threadId !== threadId) {
+      return null;
+    }
+
+    clearPendingChatComposerDraft();
+    return draft.prompt;
+  }, []);
+
   const createProject = useCallback(
     (name: string, color: string) => {
       if (planConfig.maxProjects !== null && projects.length >= planConfig.maxProjects) {
@@ -1234,6 +1327,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       setActiveThreadId,
       startNewChat,
       startChatWithPrompt,
+      startChatWithDraftPrompt,
+      consumePendingChatDraft,
       createThread,
       assignThreadToProject,
       updateThread,
@@ -1306,7 +1401,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       showModeSelector,
       setUser,
       startNewChat,
+      startChatWithDraftPrompt,
       startChatWithPrompt,
+      consumePendingChatDraft,
       threads,
       updateThread,
       usageTodayTokens,

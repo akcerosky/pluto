@@ -209,6 +209,7 @@ export const ChatInterface = () => {
     canUseMode,
     applyServerSnapshot,
     updateThread,
+    consumePendingChatDraft,
   } = useApp();
 
   const activeThread = threads.find((t) => t.id === activeThreadId);
@@ -342,6 +343,25 @@ export const ChatInterface = () => {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
+
+  useEffect(() => {
+    if (!activeThread || activeThread.messages.length > 0) {
+      return;
+    }
+
+    const pendingDraft = consumePendingChatDraft(activeThread.id);
+    if (!pendingDraft) {
+      return;
+    }
+
+    setInput(pendingDraft);
+    setIsComposerActive(true);
+    window.requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      const nextLength = pendingDraft.length;
+      textareaRef.current?.setSelectionRange(nextLength, nextLength);
+    });
+  }, [activeThread, consumePendingChatDraft]);
 
   useEffect(() => {
     const currentLastMessageId = activeThread?.messages.at(-1)?.id ?? null;

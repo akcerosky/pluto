@@ -552,3 +552,17 @@
 - Added incomplete-question-output detection in `functions/src/services/learning/questionPapers.ts` so suspiciously short question-generation responses trigger an immediate retry with a stricter follow-up prompt and optional `temperature` override.
 - Increased `generatePaperFromPdfs` runtime budget to support larger PDF jobs and threaded the new retry controls through the AI provider configuration path.
 - Verified the backend changes with frontend build, Functions build, and Functions test coverage, then deployed the updated functions to Firebase project `pluto-ef61b`.
+
+## 2026-05-09
+
+### Question Paper + PDF Reliability and Rendering Fixes
+
+
+- `323cc16` — Refined learning workflows and sidebar UX.
+- `cf2a8f8` — Added question-paper reliability work with markdown-first fallback and graceful recovery behavior.
+- Fixed parser/UI option rendering so MCQ choices now consistently display with explicit labels, including normalized handling for numbered option formats.
+- Hardened markdown parsing for loose section headers and mixed-format question blocks so late-paper sections (including Section E-style tails) are less likely to be dropped or merged incorrectly.
+- Added parser guards for “for questions X and Y…” boundary lines to reduce question-text spillover between adjacent questions.
+- Increased question-paper generation output budget from `4096` to `6144` tokens and added stricter prompt instructions to finish all required sections in one response.
+- Added completeness warnings when researched format expects more sections than were actually generated, instead of silently treating partial structure as complete.
+

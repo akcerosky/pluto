@@ -12,7 +12,18 @@ const ENCODING_REPLACEMENTS: Array<[RegExp, string]> = [
   [/Â·/g, '·'],
 ];
 
-const normalizeText = (value: string) => sanitizeQuestionPaperText(value).replace(/\s+/g, ' ').trim();
+const normalizeText = (value: string) =>
+  sanitizeQuestionPaperText(
+    value
+      .replace(/\*\*/g, ' ')
+      .replace(/[`#>~]/g, ' ')
+      .replace(/\s+([.,:;!?])/g, '$1')
+  )
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const stripTrailingMarksToken = (value: string) =>
+  normalizeText(value).replace(/\s*\[\d+\s*marks?\]\s*$/i, '').trim();
 
 const preprocessMarkdown = (rawMarkdown: string) => {
   let normalized = rawMarkdown.replace(/\r\n?/g, '\n');
@@ -28,6 +39,8 @@ const preprocessMarkdown = (rawMarkdown: string) => {
     .replace(/([^\n])\s+(Q\d+\.)\s+/g, '$1\n$2 ')
     .replace(/([^\n])\s+(\d{1,2}\.)\s+(?=[A-Z(])/g, '$1\n$2 ')
     .replace(/\s+(\([A-D]\)\s+)/g, '\n$1')
+    .replace(/\s+([A-D][.)]\s+)/g, '\n$1')
+    .replace(/\s+(\d+[.)]\s+)/g, '\n$1')
     .replace(/\s+(\([a-z]\)\s+)/g, '\n$1');
 
   return normalized.trim();
@@ -40,7 +53,7 @@ const parseInteger = (value: string | undefined) => {
 };
 
 const looksLikeOptionLine = (line: string) =>
-  /^([A-Da-d][.)]|Option\s*[A-D]|[A-D]\s*[:-])\s+/.test(line) ||
+  /^([A-Da-d][.)]|Option\s*[A-D]|[A-D]\s*[:-]|\d+[.)])\s+/.test(line) ||
   /^(True|False|Both|Neither)\b/i.test(line);
 
 const addMissingOptionLetters = (lines: string[]) => {
@@ -53,7 +66,7 @@ const addMissingOptionLetters = (lines: string[]) => {
       optionCounter = 0;
       continue;
     }
-    if (/^\([A-D]\)\s+/.test(line)) {
+    if (/^\([A-D]\)\s+/.test(line) || /^[A-D][.)]\s+/.test(line)) {
       optionCounter += 1;
       continue;
     }
@@ -63,24 +76,9 @@ const addMissingOptionLetters = (lines: string[]) => {
     }
     if (optionCounter < 4 && looksLikeOptionLine(line)) {
       const letter = String.fromCharCode(65 + optionCounter);
-      nextLines[index] = `(${letter}) ${line.replace(/^([A-Da-d][.)]|Option\s*[A-D]|[A-D]\s*[:-])\s*/i, '').trim()}`;
+      nextLines[index] = `(${letter}) ${line.replace(/^([A-Da-d][.)]|Option\s*[A-D]|[A-D]\s*[:-]|\d+[.)])\s*/i, '').trim()}`;
       optionCounter += 1;
     }
-  }
-
-  return nextLines;
-};
-
-const renumberQuestionsSequentially = (lines: string[]) => {
-  const nextLines = [...lines];
-  let expected = 1;
-
-  for (let index = 0; index < nextLines.length; index += 1) {
-    const match = nextLines[index].match(/^(?:\*\*)?Q?(\d+)\.(?:\*\*)?(.*)$/i);
-    if (!match) continue;
-    const remainder = match[2] || '';
-    nextLines[index] = `**Q${expected}.**${remainder}`;
-    expected += 1;
   }
 
   return nextLines;
@@ -93,7 +91,7 @@ const parseHeaderMeta = (line: string, label: string) => {
 
 const parseSectionHeading = (line: string) => {
   const match = line.match(
-    /^##\s+(Section[^—–-:]+?)\s*[—–-:]\s*(.+?)\s+\((\d+)\s*[×x]\s*(\d+)\s*=\s*(\d+)\s+Marks?\)\s*$/i
+    /^##\s+(Section[^—–:-]+?)\s*[—–:-]\s*(.+?)\s+\((\d+)\s*[×x]\s*(\d+)\s*=\s*(\d+)\s+Marks?\)\s*$/i
   );
   if (!match) {
     const looseMatch = line.match(/^##\s+(Section.+)$/i);
@@ -116,6 +114,11 @@ const parseSectionHeading = (line: string) => {
   };
 };
 
+const parseLooseSectionHeading = (line: string) => {
+  if (!/^Section\s+[A-Z]/i.test(line)) return null;
+  return parseSectionHeading(`## ${line}`);
+};
+
 const buildQuestion = ({
   number,
   text,
@@ -136,6 +139,27 @@ const buildQuestion = ({
   ...(subParts.length ? { subParts: subParts.map(normalizeText) } : {}),
 });
 
+const splitInlineSubParts = (value: string) => {
+  const matches = Array.from(value.matchAll(/\(([a-z])\)\s+/g));
+  if (matches.length === 0) {
+    return {
+      leadText: normalizeText(value),
+      subParts: [] as string[],
+    };
+  }
+
+  const leadText = normalizeText(value.slice(0, matches[0]?.index ?? 0));
+  const subParts = matches
+    .map((match, index) => {
+      const start = match.index ?? 0;
+      const end = matches[index + 1]?.index ?? value.length;
+      return normalizeText(value.slice(start).slice(0, end - start).replace(/^\([a-z]\)\s+/, ''));
+    })
+    .filter(Boolean);
+
+  return { leadText, subParts };
+};
+
 const finalizeQuestion = (
   current: {
     number: number;
@@ -149,7 +173,11 @@ const finalizeQuestion = (
 ) => {
   if (!current || !section) return;
 
-  if (!current.text.trim() && current.subParts.length === 0) {
+  const inlineParts = splitInlineSubParts(current.text);
+  const questionText = stripTrailingMarksToken(inlineParts.leadText);
+  const questionSubParts = [...inlineParts.subParts, ...current.subParts.map(normalizeText)].filter(Boolean);
+
+  if (!questionText.trim() && questionSubParts.length === 0) {
     warnings.push(`Question ${current.number} could not be parsed cleanly.`);
     return;
   }
@@ -166,17 +194,17 @@ const finalizeQuestion = (
   section.questions.push(
     buildQuestion({
       number: current.number,
-      text: current.text || current.subParts[0] || '',
+      text: questionText || stripTrailingMarksToken(questionSubParts[0] || '') || '',
       marks: inferredMarks,
       options: current.options,
-      subParts: current.subParts,
+      subParts: questionSubParts,
     })
   );
 };
 
 const parseQuestionLine = (line: string) => {
   const match = line.match(
-    /^(?:\*\*)?Q?(\d+)\.(?:\*\*)?\s*(.+?)(?:\s+\*?\*?\[(\d+)\s*(?:marks?)?\]\*?\*?)?$/i
+    /^(?:\*\*)?Q?(\d+)\.(?:\*\*)?\s*(.*?)(?:\s+\*?\*?\[(\d+)\s*(?:marks?)?\]\*?\*?)?$/i
   );
   if (!match) return null;
 
@@ -187,10 +215,50 @@ const parseQuestionLine = (line: string) => {
   };
 };
 
+const parseOptionLine = (line: string) => {
+  const parenthesized = line.match(/^\(([A-D])\)\s+(.+)$/);
+  if (parenthesized) {
+    return { label: parenthesized[1], text: parenthesized[2] };
+  }
+  const dotted = line.match(/^([A-D])[.)]\s+(.+)$/);
+  if (dotted) {
+    return { label: dotted[1], text: dotted[2] };
+  }
+  const numbered = line.match(/^(\d+)[.)]\s+(.+)$/);
+  if (numbered) {
+    return { label: numbered[1], text: numbered[2] };
+  }
+  return null;
+};
+
+const renumberDuplicateQuestions = (paper: ParsedPaper) => {
+  const seen = new Set<number>();
+  let fallbackNumber = 1;
+
+  for (const section of paper.sections) {
+    for (const question of section.questions) {
+      if (!seen.has(question.number)) {
+        seen.add(question.number);
+        if (question.number >= fallbackNumber) {
+          fallbackNumber = question.number + 1;
+        }
+        continue;
+      }
+
+      while (seen.has(fallbackNumber)) {
+        fallbackNumber += 1;
+      }
+      question.number = fallbackNumber;
+      seen.add(fallbackNumber);
+      fallbackNumber += 1;
+    }
+  }
+};
+
 export const parseMarkdownPaper = (rawMarkdown: string): ParsedPaper => {
   const normalized = preprocessMarkdown(rawMarkdown);
   const baseLines = normalized.split('\n').map((line) => line.trimEnd()).filter((line) => line.trim().length > 0);
-  const lines = renumberQuestionsSequentially(addMissingOptionLetters(baseLines));
+  const lines = addMissingOptionLetters(baseLines);
   const parseWarnings: string[] = [];
 
   const titleLine = lines.find((line) => /^#\s+/.test(line));
@@ -244,6 +312,20 @@ export const parseMarkdownPaper = (rawMarkdown: string): ParsedPaper => {
       continue;
     }
 
+    const looseSectionHeading = parseLooseSectionHeading(line);
+    if (looseSectionHeading) {
+      finalizeQuestion(currentQuestion, currentSection, parseWarnings);
+      currentQuestion = null;
+      inInstructions = false;
+      currentSection = {
+        ...looseSectionHeading,
+        instructions: '',
+        questions: [],
+      };
+      paper.sections.push(currentSection);
+      continue;
+    }
+
     if (inInstructions) {
       const instructionMatch = line.match(/^\d+\.\s+(.+)$/);
       if (instructionMatch) {
@@ -272,9 +354,16 @@ export const parseMarkdownPaper = (rawMarkdown: string): ParsedPaper => {
       continue;
     }
 
-    const optionMatch = line.match(/^\(([A-D])\)\s+(.+)$/);
+    if (/^for questions?\s+numbers?/i.test(line)) {
+      finalizeQuestion(currentQuestion, currentSection, parseWarnings);
+      currentQuestion = null;
+      currentSection.instructions = normalizeText([currentSection.instructions || '', line].filter(Boolean).join(' '));
+      continue;
+    }
+
+    const optionMatch = parseOptionLine(line);
     if (optionMatch) {
-      currentQuestion.options.push(optionMatch[2]);
+      currentQuestion.options.push(`(${optionMatch.label}) ${optionMatch.text}`);
       continue;
     }
 
@@ -296,6 +385,8 @@ export const parseMarkdownPaper = (rawMarkdown: string): ParsedPaper => {
   if (paper.sections.length === 0) {
     parseWarnings.push('No sections could be parsed from the generated paper.');
   }
+
+  renumberDuplicateQuestions(paper);
 
   return paper;
 };

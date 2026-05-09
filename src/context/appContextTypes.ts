@@ -36,6 +36,8 @@ export interface AppContextType {
   setActiveThreadId: (id: string | null) => void;
   startNewChat: () => void;
   startChatWithPrompt: (prompt: string) => string | null;
+  startChatWithDraftPrompt: (prompt: string) => string | null;
+  consumePendingChatDraft: (threadId: string | null) => string | null;
   createThread: (mode: ChatMode, projectId?: string) => string;
   assignThreadToProject: (threadId: string, projectId: string | null) => void;
   updateThread: (id: string, data: Partial<Thread>) => void;

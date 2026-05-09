@@ -44,7 +44,7 @@ export const SearchOverlay = ({
   const shellRef = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
-  const { setSelectedMode, startChatWithPrompt } = useApp();
+  const { setSelectedMode, startChatWithDraftPrompt } = useApp();
 
   useEffect(() => {
     if (!isOpen) {
@@ -89,6 +89,12 @@ export const SearchOverlay = ({
     onClose();
   };
 
+  const openChatFromQuery = (value: string) => {
+    startChatWithDraftPrompt(value);
+    navigate('/chat', { state: { skipModeSelector: true } });
+    onClose();
+  };
+
   const handleSubmit = () => {
     const trimmed = query.trim();
     if (!trimmed) {
@@ -100,9 +106,7 @@ export const SearchOverlay = ({
       return;
     }
 
-    startChatWithPrompt(trimmed);
-    navigate('/chat', { state: { skipModeSelector: true } });
-    onClose();
+    openChatFromQuery(trimmed);
   };
 
   if (!isOpen) {

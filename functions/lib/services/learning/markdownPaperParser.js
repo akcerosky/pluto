@@ -3,19 +3,35 @@ const ENCODING_REPLACEMENTS = [
     [/â€™/g, "'"],
     [/â€˜/g, "'"],
     [/â€œ/g, '"'],
-    [/â€\u009d/g, '"'],
+    [/â€/g, '"'],
     [/â€"/g, '—'],
     [/â€“/g, '–'],
     [/Ã—/g, '×'],
     [/Â·/g, '·'],
 ];
-const normalizeText = (value) => sanitizeQuestionPaperText(value).replace(/\s+/g, ' ').trim();
-const normalizeLines = (rawMarkdown) => {
+const normalizeText = (value) => sanitizeQuestionPaperText(value
+    .replace(/\*\*/g, ' ')
+    .replace(/[`#>~]/g, ' ')
+    .replace(/\s+([.,:;!?])/g, '$1'))
+    .replace(/\s+/g, ' ')
+    .trim();
+const stripTrailingMarksToken = (value) => normalizeText(value).replace(/\s*\[\d+\s*marks?\]\s*$/i, '').trim();
+const preprocessMarkdown = (rawMarkdown) => {
     let normalized = rawMarkdown.replace(/\r\n?/g, '\n');
     for (const [pattern, replacement] of ENCODING_REPLACEMENTS) {
         normalized = normalized.replace(pattern, replacement);
     }
-    normalized = normalized.replace(/\n{3,}/g, '\n\n');
+    normalized = normalized
+        .replace(/[ \t]+\n/g, '\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/([^\n])\s+(##\s+(?:General Instructions|Section))/gi, '$1\n$2')
+        .replace(/([^\n])\s+(\*\*Q\d+\.\*\*)/g, '$1\n$2')
+        .replace(/([^\n])\s+(Q\d+\.)\s+/g, '$1\n$2 ')
+        .replace(/([^\n])\s+(\d{1,2}\.)\s+(?=[A-Z(])/g, '$1\n$2 ')
+        .replace(/\s+(\([A-D]\)\s+)/g, '\n$1')
+        .replace(/\s+([A-D][.)]\s+)/g, '\n$1')
+        .replace(/\s+(\d+[.)]\s+)/g, '\n$1')
+        .replace(/\s+(\([a-z]\)\s+)/g, '\n$1');
     return normalized.trim();
 };
 const parseInteger = (value) => {
@@ -24,18 +40,18 @@ const parseInteger = (value) => {
     const parsed = Number.parseInt(value.replace(/[^\d-]/g, ''), 10);
     return Number.isFinite(parsed) ? parsed : null;
 };
-const looksLikeOptionLine = (line) => /^([A-Da-d][.)]|Option\s*[A-D]|[A-D]\s*[:-])\s+/.test(line) ||
+const looksLikeOptionLine = (line) => /^([A-Da-d][.)]|Option\s*[A-D]|[A-D]\s*[:-]|\d+[.)])\s+/.test(line) ||
     /^(True|False|Both|Neither)\b/i.test(line);
 const addMissingOptionLetters = (lines) => {
     const nextLines = [...lines];
     let optionCounter = 0;
     for (let index = 0; index < nextLines.length; index += 1) {
         const line = nextLines[index].trim();
-        if (/^\*\*Q\d+\.\*\*/.test(line)) {
+        if (/^(?:\*\*)?Q?\d+\.(?:\*\*)?/i.test(line)) {
             optionCounter = 0;
             continue;
         }
-        if (/^\([A-D]\)\s+/.test(line)) {
+        if (/^\([A-D]\)\s+/.test(line) || /^[A-D][.)]\s+/.test(line)) {
             optionCounter += 1;
             continue;
         }
@@ -45,21 +61,9 @@ const addMissingOptionLetters = (lines) => {
         }
         if (optionCounter < 4 && looksLikeOptionLine(line)) {
             const letter = String.fromCharCode(65 + optionCounter);
-            nextLines[index] = `(${letter}) ${line.replace(/^([A-Da-d][.)]|Option\s*[A-D]|[A-D]\s*[:-])\s*/i, '').trim()}`;
+            nextLines[index] = `(${letter}) ${line.replace(/^([A-Da-d][.)]|Option\s*[A-D]|[A-D]\s*[:-]|\d+[.)])\s*/i, '').trim()}`;
             optionCounter += 1;
         }
-    }
-    return nextLines;
-};
-const renumberDuplicateQuestions = (lines) => {
-    const nextLines = [...lines];
-    let expected = 1;
-    for (let index = 0; index < nextLines.length; index += 1) {
-        const match = nextLines[index].match(/^\*\*Q(\d+)\.\*\*(.*)$/);
-        if (!match)
-            continue;
-        nextLines[index] = `**Q${expected}.**${match[2]}`;
-        expected += 1;
     }
     return nextLines;
 };
@@ -68,7 +72,7 @@ const parseHeaderMeta = (line, label) => {
     return match ? normalizeText(match[1]) : null;
 };
 const parseSectionHeading = (line) => {
-    const match = line.match(/^##\s+(Section[^—-]+)\s+[—-]\s+(.+?)\s+\((\d+)\s*[×x]\s*(\d+)\s*=\s*(\d+)\s+Marks\)\s*$/i);
+    const match = line.match(/^##\s+(Section[^—–:-]+?)\s*[—–:-]\s*(.+?)\s+\((\d+)\s*[×x]\s*(\d+)\s*=\s*(\d+)\s+Marks?\)\s*$/i);
     if (!match) {
         const looseMatch = line.match(/^##\s+(Section.+)$/i);
         if (!looseMatch)
@@ -89,6 +93,11 @@ const parseSectionHeading = (line) => {
         totalMarks: parseInteger(match[5]),
     };
 };
+const parseLooseSectionHeading = (line) => {
+    if (!/^Section\s+[A-Z]/i.test(line))
+        return null;
+    return parseSectionHeading(`## ${line}`);
+};
 const buildQuestion = ({ number, text, marks, options, subParts, }) => ({
     number,
     text: normalizeText(text),
@@ -96,11 +105,31 @@ const buildQuestion = ({ number, text, marks, options, subParts, }) => ({
     ...(options.length ? { options: options.map(normalizeText) } : {}),
     ...(subParts.length ? { subParts: subParts.map(normalizeText) } : {}),
 });
-const finalizeQuestion = (current, section, warnings) => {
-    if (!current || !section) {
-        return;
+const splitInlineSubParts = (value) => {
+    const matches = Array.from(value.matchAll(/\(([a-z])\)\s+/g));
+    if (matches.length === 0) {
+        return {
+            leadText: normalizeText(value),
+            subParts: [],
+        };
     }
-    if (!current.text.trim()) {
+    const leadText = normalizeText(value.slice(0, matches[0]?.index ?? 0));
+    const subParts = matches
+        .map((match, index) => {
+        const start = match.index ?? 0;
+        const end = matches[index + 1]?.index ?? value.length;
+        return normalizeText(value.slice(start).slice(0, end - start).replace(/^\([a-z]\)\s+/, ''));
+    })
+        .filter(Boolean);
+    return { leadText, subParts };
+};
+const finalizeQuestion = (current, section, warnings) => {
+    if (!current || !section)
+        return;
+    const inlineParts = splitInlineSubParts(current.text);
+    const questionText = stripTrailingMarksToken(inlineParts.leadText);
+    const questionSubParts = [...inlineParts.subParts, ...current.subParts.map(normalizeText)].filter(Boolean);
+    if (!questionText.trim() && questionSubParts.length === 0) {
         warnings.push(`Question ${current.number} could not be parsed cleanly.`);
         return;
     }
@@ -113,16 +142,62 @@ const finalizeQuestion = (current, section, warnings) => {
     }
     section.questions.push(buildQuestion({
         number: current.number,
-        text: current.text,
+        text: questionText || stripTrailingMarksToken(questionSubParts[0] || '') || '',
         marks: inferredMarks,
         options: current.options,
-        subParts: current.subParts,
+        subParts: questionSubParts,
     }));
 };
+const parseQuestionLine = (line) => {
+    const match = line.match(/^(?:\*\*)?Q?(\d+)\.(?:\*\*)?\s*(.*?)(?:\s+\*?\*?\[(\d+)\s*(?:marks?)?\]\*?\*?)?$/i);
+    if (!match)
+        return null;
+    return {
+        number: parseInteger(match[1]) ?? 1,
+        text: normalizeText(match[2]),
+        marks: parseInteger(match[3]),
+    };
+};
+const parseOptionLine = (line) => {
+    const parenthesized = line.match(/^\(([A-D])\)\s+(.+)$/);
+    if (parenthesized) {
+        return { label: parenthesized[1], text: parenthesized[2] };
+    }
+    const dotted = line.match(/^([A-D])[.)]\s+(.+)$/);
+    if (dotted) {
+        return { label: dotted[1], text: dotted[2] };
+    }
+    const numbered = line.match(/^(\d+)[.)]\s+(.+)$/);
+    if (numbered) {
+        return { label: numbered[1], text: numbered[2] };
+    }
+    return null;
+};
+const renumberDuplicateQuestions = (paper) => {
+    const seen = new Set();
+    let fallbackNumber = 1;
+    for (const section of paper.sections) {
+        for (const question of section.questions) {
+            if (!seen.has(question.number)) {
+                seen.add(question.number);
+                if (question.number >= fallbackNumber) {
+                    fallbackNumber = question.number + 1;
+                }
+                continue;
+            }
+            while (seen.has(fallbackNumber)) {
+                fallbackNumber += 1;
+            }
+            question.number = fallbackNumber;
+            seen.add(fallbackNumber);
+            fallbackNumber += 1;
+        }
+    }
+};
 export const parseMarkdownPaper = (rawMarkdown) => {
-    const normalized = normalizeLines(rawMarkdown);
-    const baseLines = normalized.split('\n').map((line) => line.trimEnd());
-    const lines = renumberDuplicateQuestions(addMissingOptionLetters(baseLines));
+    const normalized = preprocessMarkdown(rawMarkdown);
+    const baseLines = normalized.split('\n').map((line) => line.trimEnd()).filter((line) => line.trim().length > 0);
+    const lines = addMissingOptionLetters(baseLines);
     const parseWarnings = [];
     const titleLine = lines.find((line) => /^#\s+/.test(line));
     const metadataLine = lines.find((line) => /\*\*Board:\*\*/i.test(line));
@@ -141,8 +216,9 @@ export const parseMarkdownPaper = (rawMarkdown) => {
     let currentSection = null;
     let currentQuestion = null;
     let inInstructions = false;
-    for (const line of lines) {
-        if (!line.trim())
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line)
             continue;
         if (/^##\s+General Instructions/i.test(line)) {
             finalizeQuestion(currentQuestion, currentSection, parseWarnings);
@@ -163,6 +239,19 @@ export const parseMarkdownPaper = (rawMarkdown) => {
             paper.sections.push(currentSection);
             continue;
         }
+        const looseSectionHeading = parseLooseSectionHeading(line);
+        if (looseSectionHeading) {
+            finalizeQuestion(currentQuestion, currentSection, parseWarnings);
+            currentQuestion = null;
+            inInstructions = false;
+            currentSection = {
+                ...looseSectionHeading,
+                instructions: '',
+                questions: [],
+            };
+            paper.sections.push(currentSection);
+            continue;
+        }
         if (inInstructions) {
             const instructionMatch = line.match(/^\d+\.\s+(.+)$/);
             if (instructionMatch) {
@@ -170,13 +259,11 @@ export const parseMarkdownPaper = (rawMarkdown) => {
             }
             continue;
         }
-        const questionMatch = line.match(/^\*\*Q(\d+)\.\*\*\s*(.+?)(?:\s+\*\*\[(\d+)\s+marks?\]\*\*)?$/i);
-        if (questionMatch) {
+        const parsedQuestion = parseQuestionLine(line);
+        if (parsedQuestion) {
             finalizeQuestion(currentQuestion, currentSection, parseWarnings);
             currentQuestion = {
-                number: parseInteger(questionMatch[1]) ?? 1,
-                text: questionMatch[2],
-                marks: parseInteger(questionMatch[3]),
+                ...parsedQuestion,
                 options: [],
                 subParts: [],
             };
@@ -189,9 +276,15 @@ export const parseMarkdownPaper = (rawMarkdown) => {
             currentSection.instructions = normalizeText([currentSection.instructions || '', line].filter(Boolean).join(' '));
             continue;
         }
-        const optionMatch = line.match(/^\(([A-D])\)\s+(.+)$/);
+        if (/^for questions?\s+numbers?/i.test(line)) {
+            finalizeQuestion(currentQuestion, currentSection, parseWarnings);
+            currentQuestion = null;
+            currentSection.instructions = normalizeText([currentSection.instructions || '', line].filter(Boolean).join(' '));
+            continue;
+        }
+        const optionMatch = parseOptionLine(line);
         if (optionMatch) {
-            currentQuestion.options.push(optionMatch[2]);
+            currentQuestion.options.push(`(${optionMatch.label}) ${optionMatch.text}`);
             continue;
         }
         const subPartMatch = line.match(/^\(([a-z])\)\s+(.+)$/);
@@ -199,7 +292,7 @@ export const parseMarkdownPaper = (rawMarkdown) => {
             currentQuestion.subParts.push(subPartMatch[2]);
             continue;
         }
-        currentQuestion.text = `${currentQuestion.text} ${line}`.trim();
+        currentQuestion.text = normalizeText(`${currentQuestion.text} ${line}`);
     }
     finalizeQuestion(currentQuestion, currentSection, parseWarnings);
     if (!paper.title)
@@ -210,5 +303,6 @@ export const parseMarkdownPaper = (rawMarkdown) => {
     if (paper.sections.length === 0) {
         parseWarnings.push('No sections could be parsed from the generated paper.');
     }
+    renumberDuplicateQuestions(paper);
     return paper;
 };

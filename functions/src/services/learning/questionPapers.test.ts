@@ -74,6 +74,30 @@ Answer briefly.
 **Q3.** Explain ionic bonding with one example. **[4 marks]**
 `.trim();
 
+const markdownPaperWithTooManyOptions = `
+# Class 10 CBSE Physics
+**Board:** CBSE | **Level:** Class 10 | **Subject:** Physics
+**Time:** 3 hours | **Total Marks:** 10
+
+## General Instructions
+1. Answer all questions.
+
+## Section A — MCQ (1 × 2 = 2 Marks)
+Choose the correct option.
+
+**Q1.** Sample MCQ with many options **[2 marks]**
+(A) Option 1
+(B) Option 2
+(C) Option 3
+(D) Option 4
+(E) Option 5
+(F) Option 6
+(G) Option 7
+(H) Option 8
+(I) Option 9
+(J) Option 10
+`.trim();
+
 describe('questionPapers markdown reliability flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -160,7 +184,104 @@ describe('questionPapers markdown reliability flow', () => {
     expect(loggerInfo).toHaveBeenCalledWith('format_research_cache_hit', { key: 'CBSE:Class 10:Physics' });
   });
 
-  test('buildQuestionPaperMarkdownPrompt requests markdown instead of JSON', () => {
+  test('family fallback results are cached when search research is unavailable', async () => {
+    searchExamFormatSources.mockResolvedValue([]);
+
+    const first = await researchQuestionPaperFormat({
+      uid: 'user-1',
+      subject: 'Physics',
+      educationLevel: 'Competitive Exam',
+      examBoard: 'Unknown Board',
+      plan: 'Plus',
+      requestId: 'req-fallback-1',
+    });
+    const second = await researchQuestionPaperFormat({
+      uid: 'user-1',
+      subject: 'Physics',
+      educationLevel: 'Competitive Exam',
+      examBoard: 'Unknown Board',
+      plan: 'Plus',
+      requestId: 'req-fallback-2',
+    });
+
+    expect(first.format.formatSource).toBe('family_fallback');
+    expect(second.format.formatSource).toBe('family_fallback');
+    expect(searchExamFormatSources).toHaveBeenCalledTimes(1);
+    expect(loggerInfo).toHaveBeenCalledWith('format_research_cache_miss', {
+      key: 'Unknown Board:Competitive Exam:Physics',
+    });
+    expect(loggerInfo).toHaveBeenCalledWith('format_research_cache_hit', {
+      key: 'Unknown Board:Competitive Exam:Physics',
+    });
+  });
+
+  test('search results always flow through model-based format parsing', async () => {
+    searchExamFormatSources.mockResolvedValue([
+      {
+        title: 'JEE Main exam pattern',
+        url: 'https://example.com/jee-main',
+        snippet:
+          'Section A has 20 multiple choice questions. Section B has 10 numerical value questions. Attempt any 5 in Section B.',
+      },
+    ]);
+
+    executeHybridAiRequest.mockResolvedValue({
+      text: JSON.stringify({
+        totalMarks: 100,
+        duration: '3 hours',
+        generalInstructions: ['Answer all questions.'],
+        sections: [
+          {
+            name: 'Section A',
+            instructions: 'Answer all single-correct MCQs.',
+            questionType: 'MCQ (Single Correct)',
+            questions: 20,
+            marksPerQuestion: 4,
+          },
+          {
+            name: 'Section B',
+            instructions: 'Answer numerical value questions.',
+            questionType: 'Numerical Value',
+            questions: 10,
+            marksPerQuestion: 4,
+            attemptRequired: 5,
+          },
+        ],
+      }),
+      usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30, usageSource: 'provider' },
+    });
+
+    const result = await researchQuestionPaperFormat({
+      uid: 'user-1',
+      subject: 'Physics',
+      educationLevel: 'Competitive Exam',
+      examBoard: 'JEE Mains',
+      plan: 'Plus',
+      requestId: 'req-heuristic-jee',
+    });
+
+    expect(result.format.formatSource).toBe('official');
+    expect(result.format.sections).toHaveLength(2);
+    expect(result.format.sections[0]).toEqual(
+      expect.objectContaining({
+        name: 'Section A',
+        questionType: 'MCQ (Single Correct)',
+        questions: 20,
+        marksPerQuestion: 4,
+      })
+    );
+    expect(result.format.sections[1]).toEqual(
+      expect.objectContaining({
+        name: 'Section B',
+        questionType: 'Numerical Value',
+        questions: 10,
+        attemptRequired: 5,
+      })
+    );
+    expect(executeHybridAiRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test('buildQuestionPaperMarkdownPrompt requests adaptive markdown generation rules', () => {
     const prompt = buildQuestionPaperMarkdownPrompt({
       subject: 'Physics',
       educationLevel: 'Class 10',
@@ -181,10 +302,28 @@ describe('questionPapers markdown reliability flow', () => {
       },
     });
 
-    expect(prompt).toContain('Write the full paper in Markdown only.');
-    expect(prompt).toContain('# [PAPER TITLE]');
+    expect(prompt).toContain('Write a complete, authentic exam paper in Markdown only.');
+    expect(prompt).toContain('# [EXAM TITLE]');
     expect(prompt).toContain('**Board:** CBSE');
     expect(prompt).toContain('Do not return JSON.');
+    expect(prompt).toContain('Follow this official format exactly:');
+  });
+
+  test('buildQuestionPaperMarkdownPrompt asks model to determine authentic format when hint has no sections', () => {
+    const prompt = buildQuestionPaperMarkdownPrompt({
+      subject: 'Physics',
+      educationLevel: 'Competitive Exam',
+      examBoard: 'Unknown Exam',
+      formatHint: {
+        totalMarks: 0,
+        duration: '',
+        formatSource: 'family_fallback',
+        sections: [],
+      },
+    });
+
+    expect(prompt).toContain('Determine the authentic official format');
+    expect(prompt).toContain('Do not default to a generic 3-section format.');
   });
 
   test('generateQuestionPaperForUser saves raw markdown output and parse warnings as ready paper', async () => {
@@ -242,6 +381,50 @@ describe('questionPapers markdown reliability flow', () => {
     expect(result.paper.parseWarnings).toBeUndefined();
     expect(setMock).toHaveBeenCalledWith(expect.objectContaining({ rawMarkdownOutput: markdownPaper }), { merge: true });
     expect(setMock.mock.calls[2][0]).not.toHaveProperty('subjectCode');
+  });
+
+  test('normalization trusts parsed sections when format hint has empty sections', async () => {
+    searchExamFormatSources.mockResolvedValue([]);
+    executeHybridAiRequest.mockResolvedValueOnce({
+      text: markdownPaper,
+      usage: { inputTokens: 20, outputTokens: 40, totalTokens: 60, usageSource: 'provider' },
+    });
+
+    const result = await generateQuestionPaperForUser({
+      uid: 'user-1',
+      subject: 'Chemistry',
+      educationLevel: 'Competitive Exam',
+      examBoard: 'Unknown Board',
+      topic: 'Atomic Structure',
+      plan: 'Plus',
+      sourceType: 'topic',
+      requestId: 'req-empty-hint-sections',
+    });
+
+    expect(result.paper.status).toBe('ready');
+    expect(result.paper.format.sections.length).toBeGreaterThan(1);
+    expect(result.paper.format.sections[0].name).toContain('Section A');
+  });
+
+  test('generation trims options above schema max and keeps paper ready', async () => {
+    searchExamFormatSources.mockResolvedValue([]);
+    executeHybridAiRequest.mockResolvedValueOnce({
+      text: markdownPaperWithTooManyOptions,
+      usage: { inputTokens: 20, outputTokens: 40, totalTokens: 60, usageSource: 'provider' },
+    });
+
+    const result = await generateQuestionPaperForUser({
+      uid: 'user-1',
+      subject: 'Physics',
+      educationLevel: 'Class 10',
+      examBoard: 'CBSE',
+      plan: 'Plus',
+      sourceType: 'topic',
+      requestId: 'req-too-many-options',
+    });
+
+    expect(result.paper.status).toBe('ready');
+    expect((result.paper.questions[0]?.options?.length ?? 0)).toBeLessThanOrEqual(8);
   });
 
   test('marks mismatches produce warnings instead of failed status', async () => {
