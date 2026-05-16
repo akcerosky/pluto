@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HOST_NAME="${HOST_NAME:-65.1.22.81}"
+HOST_NAME="${HOST_NAME:-43.204.17.9}"
 SSH_USER="${SSH_USER:-ubuntu}"
 KEY_PATH="${KEY_PATH:-$HOME/.ssh/manish-pluto.pem}"
 REPO_URL="${REPO_URL:-https://github.com/akcerosky/pluto.git}"
