@@ -1,23 +1,22 @@
 # Pluto EC2 Deployment Runbook
 
-Last updated: 2026-05-16
+Last updated: 2026-05-17
 
-## 1) Current Status (This Session)
+## 1) Current Status (Latest Verified)
 
-- Local changes were committed and pushed to GitHub branch `learning-modes`.
-- Commit deployed target: `b32acdb` (`Sync local Pluto changes before EC2 deploy`).
+- Local changes are committed and pushed to GitHub branch `learning-modes`.
+- Latest deployed commit: `7e943e9` (`Add EC2 deployment and AWS cost runbook`).
 - Deployment script used: `scripts/deploy-frontend-ec2.sh`.
-- Deployment attempt time: 2026-05-16 (IST).
-- Result: `FAILED` from this environment due to network connectivity to EC2:
-  - `ssh: connect to host 65.1.22.81 port 22: Connection timed out`
-- Live endpoint verification from this environment also failed:
-  - `curl https://pluto.akcero.ai` connection failed.
-
-Because SSH was unreachable, final on-host verification could not be completed in this session.
+- Latest successful deployment time: 2026-05-17 (IST).
+- Result: `SUCCESS`.
+- Verification evidence:
+  - Server commit SHA: `7e943e9`
+  - Nginx status: `active`
+  - Public URL: `https://pluto.akcero.ai` returned `HTTP/1.1 200 OK`
 
 ## 2) Deployment Topology (From Repo)
 
-Confirmed from `scripts/deploy-frontend-ec2.sh`:
+Confirmed from production host + deployment script:
 
 - Host/IP: `65.1.22.81`
 - SSH user: `ubuntu`
@@ -26,6 +25,9 @@ Confirmed from `scripts/deploy-frontend-ec2.sh`:
 - Default branch in script: `main` (override supported)
 - Runtime: static frontend build + Nginx reload (`npm ci`, `npm run build`, `nginx -t`, `systemctl reload nginx`)
 - Environment file copied to server: `.env.production` -> `/var/www/pluto/.env.production` -> copied as `.env`
+- EC2 instance type: `t2.micro`
+- EC2 instance ID: `i-044c8678bce81929d`
+- Root disk: `8 GB` (`xvda`, root partition ~`7 GB`, mounted `/`)
 
 ## 3) Exact Deployment Procedure
 
@@ -35,7 +37,7 @@ Run from repo root.
 
 ```bash
 BRANCH=learning-modes \
-KEY_PATH=/c/Users/prave/Downloads/Pluto/.tmp/manish-pluto.pem \
+KEY_PATH=/c/Users/prave/Downloads/Pluto/.tmp/manish-pluto-copy.pem \
 LOCAL_ENV_FILE=.env.production \
 ./scripts/deploy-frontend-ec2.sh
 ```
@@ -43,6 +45,11 @@ LOCAL_ENV_FILE=.env.production \
 Notes:
 - This script builds `dist` on EC2 itself.
 - If deploying `main`, omit `BRANCH` override.
+- If provided key is at `C:\Users\prave\manish-pluto.pem`, copy it into workspace first:
+
+```powershell
+Copy-Item -LiteralPath "C:\Users\prave\manish-pluto.pem" -Destination "C:\Users\prave\Downloads\Pluto\.tmp\manish-pluto-copy.pem" -Force
+```
 
 ### 3.2 What the script does on EC2
 
@@ -74,6 +81,11 @@ Success criteria:
 - Nginx is active and config test passes.
 - Public endpoint returns `200` or `304`.
 
+Latest successful verification snapshot:
+- `git rev-parse --short HEAD` -> `7e943e9`
+- `systemctl is-active nginx` -> `active`
+- `curl -I https://pluto.akcero.ai` -> `HTTP/1.1 200 OK`
+
 ## 5) Rollback Procedure
 
 If latest deploy fails:
@@ -97,10 +109,12 @@ Confirmed:
 - EC2 host exists and is targeted by direct SSH.
 - Nginx serves built frontend from EC2.
 - EBS is implicitly used (all EC2 root volumes are EBS-backed unless explicitly instance-store AMI).
+- Instance type confirmed: `t2.micro`.
+- Instance public IPv4 confirmed: `65.1.22.81`.
+- Root block device observed as `8 GB` (`xvda`).
 
 Unknown in this session (requires successful SSH/AWS Console):
-- EC2 instance type (for example `t3.small`, `t3.medium`, etc.).
-- EBS volume type/size (`gp3`, `gp2`, etc.).
+- EBS volume type (`gp3`, `gp2`, etc.) from AWS console/billing view.
 - Whether Elastic IP is attached/billed.
 - Whether Route 53, CloudFront, ALB/NLB, WAF, CloudWatch Logs/alarms are configured.
 
