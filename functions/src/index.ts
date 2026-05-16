@@ -50,7 +50,7 @@ export const meUsageHistory = lazySecureCallable(
 );
 
 export const aiChat = lazySecureCallable(async () => (await import('./handlers/ai.js')).aiChatHandler as CloudCallableHandler, {
-  minInstances: 1,
+  minInstances: 0,
   timeoutSeconds: 120,
 });
 export const deleteThread = lazySecureCallable(
@@ -58,7 +58,7 @@ export const deleteThread = lazySecureCallable(
 );
 export const generateQuestionPaper = lazySecureCallable(
   async () => (await import('./handlers/learning.js')).generateQuestionPaperHandler as CloudCallableHandler,
-  { minInstances: 1, timeoutSeconds: 120 }
+  { minInstances: 0, timeoutSeconds: 120 }
 );
 export const getQuestionPapers = lazySecureCallable(
   async () => (await import('./handlers/learning.js')).getQuestionPapersHandler as CloudCallableHandler
@@ -68,15 +68,15 @@ export const deleteQuestionPaper = lazySecureCallable(
 );
 export const generateQuestionPaperPdf = lazySecureCallable(
   async () => (await import('./handlers/learning.js')).generateQuestionPaperPdfHandler as CloudCallableHandler,
-  { minInstances: 1, timeoutSeconds: 120 }
+  { minInstances: 0, timeoutSeconds: 120 }
 );
 export const generateFlashcardSet = lazySecureCallable(
   async () => (await import('./handlers/learning.js')).generateFlashcardSetHandler as CloudCallableHandler,
-  { minInstances: 1, timeoutSeconds: 120 }
+  { minInstances: 0, timeoutSeconds: 120 }
 );
 export const addCardsToFlashcardSet = lazySecureCallable(
   async () => (await import('./handlers/learning.js')).addCardsToFlashcardSetHandler as CloudCallableHandler,
-  { minInstances: 1, timeoutSeconds: 120 }
+  { minInstances: 0, timeoutSeconds: 120 }
 );
 export const getFlashcardSets = lazySecureCallable(
   async () => (await import('./handlers/learning.js')).getFlashcardSetsHandler as CloudCallableHandler
@@ -95,34 +95,34 @@ export const getFlashcardCards = lazySecureCallable(
 );
 export const generatePaperFromPdfs = lazySecureCallable(
   async () => (await import('./handlers/learning.js')).generatePaperFromPdfsHandler as CloudCallableHandler,
-  { minInstances: 1, timeoutSeconds: 300 }
+  { minInstances: 0, timeoutSeconds: 300 }
 );
 
 export const billingCheckout = lazySecureCallable(
   async () => (await import('./handlers/billing.js')).billingCheckoutHandler as CloudCallableHandler,
-  { minInstances: 1 }
+  { minInstances: 0 }
 );
 export const billingVerifyPayment = lazySecureCallable(
   async () => (await import('./handlers/billing.js')).billingVerifyPaymentHandler as CloudCallableHandler,
-  { minInstances: 1 }
+  { minInstances: 0 }
 );
 export const billingHistory = lazySecureCallable(
   async () => (await import('./handlers/billing.js')).billingHistoryHandler as CloudCallableHandler
 );
 export const billingRequestRefund = lazySecureCallable(
   async () => (await import('./handlers/billing.js')).billingRequestRefundHandler as CloudCallableHandler,
-  { minInstances: 1 }
+  { minInstances: 0 }
 );
 export const billingSubscriptionGet = lazySecureCallable(
   async () => (await import('./handlers/billing.js')).billingSubscriptionGetHandler as CloudCallableHandler
 );
 export const billingSubscriptionCancel = lazySecureCallable(
   async () => (await import('./handlers/billing.js')).billingSubscriptionCancelHandler as CloudCallableHandler,
-  { minInstances: 1 }
+  { minInstances: 0 }
 );
 export const billingSubscriptionResume = lazySecureCallable(
   async () => (await import('./handlers/billing.js')).billingSubscriptionResumeHandler as CloudCallableHandler,
-  { minInstances: 1 }
+  { minInstances: 0 }
 );
 export const adminSyncPayment = lazySecureCallable(
   async () => (await import('./handlers/billing.js')).adminSyncPaymentHandler as CloudCallableHandler

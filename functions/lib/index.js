@@ -21,29 +21,29 @@ export const meGet = lazySecureCallable(async () => (await import('./handlers/me
 export const meUpdateProfile = lazySecureCallable(async () => (await import('./handlers/me.js')).meUpdateProfileHandler);
 export const meUsageHistory = lazySecureCallable(async () => (await import('./handlers/me.js')).meUsageHistoryHandler);
 export const aiChat = lazySecureCallable(async () => (await import('./handlers/ai.js')).aiChatHandler, {
-    minInstances: 1,
+    minInstances: 0,
     timeoutSeconds: 120,
 });
 export const deleteThread = lazySecureCallable(async () => (await import('./handlers/chatState.js')).deleteThreadHandler);
-export const generateQuestionPaper = lazySecureCallable(async () => (await import('./handlers/learning.js')).generateQuestionPaperHandler, { minInstances: 1, timeoutSeconds: 120 });
+export const generateQuestionPaper = lazySecureCallable(async () => (await import('./handlers/learning.js')).generateQuestionPaperHandler, { minInstances: 0, timeoutSeconds: 120 });
 export const getQuestionPapers = lazySecureCallable(async () => (await import('./handlers/learning.js')).getQuestionPapersHandler);
 export const deleteQuestionPaper = lazySecureCallable(async () => (await import('./handlers/learning.js')).deleteQuestionPaperHandler);
-export const generateQuestionPaperPdf = lazySecureCallable(async () => (await import('./handlers/learning.js')).generateQuestionPaperPdfHandler, { minInstances: 1, timeoutSeconds: 120 });
-export const generateFlashcardSet = lazySecureCallable(async () => (await import('./handlers/learning.js')).generateFlashcardSetHandler, { minInstances: 1, timeoutSeconds: 120 });
-export const addCardsToFlashcardSet = lazySecureCallable(async () => (await import('./handlers/learning.js')).addCardsToFlashcardSetHandler, { minInstances: 1, timeoutSeconds: 120 });
+export const generateQuestionPaperPdf = lazySecureCallable(async () => (await import('./handlers/learning.js')).generateQuestionPaperPdfHandler, { minInstances: 0, timeoutSeconds: 120 });
+export const generateFlashcardSet = lazySecureCallable(async () => (await import('./handlers/learning.js')).generateFlashcardSetHandler, { minInstances: 0, timeoutSeconds: 120 });
+export const addCardsToFlashcardSet = lazySecureCallable(async () => (await import('./handlers/learning.js')).addCardsToFlashcardSetHandler, { minInstances: 0, timeoutSeconds: 120 });
 export const getFlashcardSets = lazySecureCallable(async () => (await import('./handlers/learning.js')).getFlashcardSetsHandler);
 export const getDueCards = lazySecureCallable(async () => (await import('./handlers/learning.js')).getDueCardsHandler);
 export const submitCardReview = lazySecureCallable(async () => (await import('./handlers/learning.js')).submitCardReviewHandler);
 export const deleteFlashcardSet = lazySecureCallable(async () => (await import('./handlers/learning.js')).deleteFlashcardSetHandler);
 export const getFlashcardCards = lazySecureCallable(async () => (await import('./handlers/learning.js')).getFlashcardCardsHandler);
-export const generatePaperFromPdfs = lazySecureCallable(async () => (await import('./handlers/learning.js')).generatePaperFromPdfsHandler, { minInstances: 1, timeoutSeconds: 300 });
-export const billingCheckout = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingCheckoutHandler, { minInstances: 1 });
-export const billingVerifyPayment = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingVerifyPaymentHandler, { minInstances: 1 });
+export const generatePaperFromPdfs = lazySecureCallable(async () => (await import('./handlers/learning.js')).generatePaperFromPdfsHandler, { minInstances: 0, timeoutSeconds: 300 });
+export const billingCheckout = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingCheckoutHandler, { minInstances: 0 });
+export const billingVerifyPayment = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingVerifyPaymentHandler, { minInstances: 0 });
 export const billingHistory = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingHistoryHandler);
-export const billingRequestRefund = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingRequestRefundHandler, { minInstances: 1 });
+export const billingRequestRefund = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingRequestRefundHandler, { minInstances: 0 });
 export const billingSubscriptionGet = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingSubscriptionGetHandler);
-export const billingSubscriptionCancel = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingSubscriptionCancelHandler, { minInstances: 1 });
-export const billingSubscriptionResume = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingSubscriptionResumeHandler, { minInstances: 1 });
+export const billingSubscriptionCancel = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingSubscriptionCancelHandler, { minInstances: 0 });
+export const billingSubscriptionResume = lazySecureCallable(async () => (await import('./handlers/billing.js')).billingSubscriptionResumeHandler, { minInstances: 0 });
 export const adminSyncPayment = lazySecureCallable(async () => (await import('./handlers/billing.js')).adminSyncPaymentHandler);
 export const health = onRequest({
     region: env.region,
